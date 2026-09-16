@@ -1,0 +1,28 @@
+{
+  "roots": [
+    "dartchess_probe"
+  ],
+  "packages": [
+    {
+      "name": "dartchess_probe",
+      "version": "0.0.0",
+      "dependencies": [
+        "dartchess"
+      ],
+      "devDependencies": []
+    },
+    {
+      "name": "dartchess",
+      "version": "0.13.1",
+      "dependencies": [
+        "meta"
+      ]
+    },
+    {
+      "name": "meta",
+      "version": "1.19.0",
+      "dependencies": []
+    }
+  ],
+  "configVersion": 1
+}

@@ -1,0 +1,7 @@
+name: dartchess_probe
+description: Disposable research probe for dartchess PGN behavior.
+publish_to: none
+environment:
+  sdk: '>=3.13.0 <4.0.0'
+dependencies:
+  dartchess: 0.13.1

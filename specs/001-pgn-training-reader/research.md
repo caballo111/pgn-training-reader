@@ -2,7 +2,7 @@
 
 **Feature**: `001-pgn-training-reader`  
 **Decision date**: 2026-09-15  
-**Scope completed**: T002-T004
+**Scope completed**: T002-T008
 
 ## T002 — Flutter and Dart versions
 
@@ -159,3 +159,129 @@ Additional evidence:
 Complete. These decisions do not require a change to the architecture in
 `plan.md`. T008 remains the required empirical check for provider-specific
 seek and persistent-permission behavior before implementation of file access.
+
+## T005 — `dartchess` parser probe
+
+### Probe and command
+
+The disposable project is under
+`research/prototypes/dartchess_probe/`. It pins `dartchess: 0.13.1` and runs
+without Flutter:
+
+```text
+cd /Users/lberrios/Source/pgn-training-reader/research/prototypes/dartchess_probe
+/Users/lberrios/Source/flutter/bin/cache/dart-sdk/bin/dart pub get
+/Users/lberrios/Source/flutter/bin/cache/dart-sdk/bin/dart format bin
+/Users/lberrios/Source/flutter/bin/cache/dart-sdk/bin/dart run bin/probe.dart
+```
+
+### Observed result
+
+The probe passed for all requested inputs:
+
+- A conventional game parses with standard headers and result.
+- `SetUp` plus `FEN` produces the expected initial position and white
+  side-to-move from the FEN active-color field.
+- Brace comments are retained on the move node.
+- `$1` is retained as NAG 1.
+- A single variation is represented as an additional child of the relevant
+  tree node.
+- A variation nested inside another variation is represented by another child
+  subtree; the parser does not flatten it.
+
+The observed API is `PgnGame.parsePgn`, `PgnGame.startingPosition`, and the
+`PgnNode`/`PgnChildNode` tree. Full move-tree parsing is therefore viable for
+the on-demand content adapter, while the lazy/header-only API remains useful
+for indexing.
+
+## T006 — Custom-tag retention and export
+
+### Probe and command
+
+`bin/export_probe.dart` parses a PGN containing `X-ContentType`,
+`X-ExerciseId`, and an otherwise unknown `X-Uncatalogued` tag, exports it with
+`PgnGame.makePgn()`, and parses the export again:
+
+```text
+/Users/lberrios/Source/flutter/bin/cache/dart-sdk/bin/dart run bin/export_probe.dart
+```
+
+### Observed result and adapter decision
+
+The unknown `X-Uncatalogued` key and value survived parse → `makePgn()` →
+parse. `makePgn()` also added the library's default standard headers (`Site`,
+`Date`, `Round`, `White`, and `Black`) when they were absent. No custom-tag
+preservation adapter is required for `X-` tags with `dartchess 0.13.1`.
+
+The production adapter must still treat the original source bytes as
+canonical and must not use a parse/export round trip during import, because
+export normalizes header presence and formatting. Unknown standard tags and
+provider-specific encoding behavior remain separate preservation tests.
+
+## T007 — Chunked PGN boundary scanner probe
+
+The disposable experiment is under
+`research/prototypes/pgn_scanner_probe/`. It carries state across chunks for
+tag strings, escaped tag quotes, brace comments, semicolon comments, and
+recursive variation depth. It only discovers top-level `[Event ...]` starts;
+it is not production code.
+
+Command:
+
+```text
+cd /Users/lberrios/Source/pgn-training-reader/research/prototypes/pgn_scanner_probe
+/Users/lberrios/Source/flutter/bin/cache/dart-sdk/bin/dart format bin
+/Users/lberrios/Source/flutter/bin/cache/dart-sdk/bin/dart run bin/probe.dart
+```
+
+The experiment passed with identical ranges for chunk sizes 1, 2, 7, 64, and
+4096 bytes, plus explicit splits inside a tag, brace comment, semicolon
+comment, move token, and recursive variation. The three fixture blocks emitted
+these byte ranges:
+
+```text
+0..243, 243..309, 309..373
+```
+
+An `[Event ...]` string inside either comment type and an `[Event ...]` line
+inside a variation did not create a false boundary. The final block ends at
+EOF. The production scanner must retain equivalent lexical state and must
+add malformed-block diagnostics; neither behavior is implemented by this
+research-only experiment.
+
+## T008 — Android document-provider probe
+
+The manual spike is under
+`research/prototypes/android_file_probe/`. `ProbeActivity.java` uses
+`ACTION_OPEN_DOCUMENT`, attempts persistable read permission, reads the
+provider-reported length, seeks with `FileChannel.position`, and requests two
+non-overlapping ranges. The procedure requires running the same PGN through at
+least two providers and recording authority, persistence, length, seek, range,
+and post-restart results.
+
+The intended baseline providers are Android Downloads and Media/Documents;
+Google Drive should be added when available. A provider that cannot offer
+stable length, seek, and repeatable range reads is classified as stream-only
+and must use managed-copy import.
+
+The probe was built and installed on the Pixel 9 emulator (`emulator-5554`).
+The same 235-byte UTF-8 PGN fixture was placed in Downloads and shared-storage
+Documents and selected through `ACTION_OPEN_DOCUMENT`.
+
+| Provider-backed location | URI authority | Persistable permission | Reported length | Seek | Range reads |
+| --- | --- | ---: | ---: | ---: | --- |
+| Downloads | `com.android.providers.downloads.documents` | true | 235 | true | offset 0: 32/32; offset 203: 32/32 |
+| Shared storage/Documents | `com.android.externalstorage.documents` | true | 235 | true | offset 0: 32/32; offset 203: 32/32 |
+
+The selected URIs were:
+
+```text
+content://com.android.providers.downloads.documents/document/raw%3A%2Fstorage%2Femulated%2F0%2FDownload%2Ft008_downloads.pgn
+content://com.android.externalstorage.documents/document/primary%3ADocuments%2Ft008_external.pgn
+```
+
+Both providers therefore support the MVP probe's required permission, length,
+seek, and range-read operations on this emulator. This is provider-specific
+evidence, not a universal guarantee: other providers may be stream-only and
+must fall back to managed-copy import. The probe procedure remains available
+for a real reference device and for future providers.

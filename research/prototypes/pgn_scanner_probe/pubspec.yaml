@@ -1,0 +1,5 @@
+name: pgn_scanner_probe
+description: Disposable chunk-boundary experiment for PGN block discovery.
+publish_to: none
+environment:
+  sdk: '>=3.13.0 <4.0.0'

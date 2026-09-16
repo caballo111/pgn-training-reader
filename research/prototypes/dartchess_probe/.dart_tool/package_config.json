@@ -1,0 +1,28 @@
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "dartchess",
+      "rootUri": "file:///Users/lberrios/.pub-cache/hosted/pub.dev/dartchess-0.13.1",
+      "packageUri": "lib/",
+      "languageVersion": "3.3"
+    },
+    {
+      "name": "meta",
+      "rootUri": "file:///Users/lberrios/.pub-cache/hosted/pub.dev/meta-1.19.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.5"
+    },
+    {
+      "name": "dartchess_probe",
+      "rootUri": "../",
+      "packageUri": "lib/",
+      "languageVersion": "3.13"
+    }
+  ],
+  "generator": "pub",
+  "generatorVersion": "3.13.3",
+  "flutterRoot": "file:///Users/lberrios/Source/flutter",
+  "flutterVersion": "3.47.4",
+  "pubCache": "file:///Users/lberrios/.pub-cache"
+}

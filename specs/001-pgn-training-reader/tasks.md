@@ -48,9 +48,9 @@ For every task:
 > Do not begin application implementation until T001 through T012 are complete.
 
 - [x] T001 Create `specs/001-pgn-training-reader/spec.md` from the accepted feature summary. Include prioritized user stories US1 through US6, acceptance scenarios, functional requirements, edge cases, key entities, and measurable success criteria. Do not include implementation details.
-- [ ] T002 [P] Create `specs/001-pgn-training-reader/research.md` and document the selected Flutter and Dart versions. Record the exact commands used to verify them and mark the decision date.
-- [ ] T003 [P] In `research.md`, document compatible pinned versions of `dartchess`, `chessground`, Drift, SQLite support packages, file selection, and path/storage packages. Include license, repository, maintenance status, and platform support for each.
-- [ ] T004 [P] In `research.md`, document the minimum supported Android API level and the reason for the choice. Include storage-access and dependency constraints.
+- [x] T002 [P] Create `specs/001-pgn-training-reader/research.md` and document the selected Flutter and Dart versions. Record the exact commands used to verify them and mark the decision date.
+- [x] T003 [P] In `research.md`, document compatible pinned versions of `dartchess`, `chessground`, Drift, SQLite support packages, file selection, and path/storage packages. Include license, repository, maintenance status, and platform support for each.
+- [x] T004 [P] In `research.md`, document the minimum supported Android API level and the reason for the choice. Include storage-access and dependency constraints.
 - [ ] T005 [P] Create a disposable Dart research test under `research/prototypes/dartchess_probe/`. Verify parsing of standard PGN, `SetUp` plus `FEN`, comments, NAGs, one variation, and a nested variation. Record outcomes in `research.md`.
 - [ ] T006 [P] Extend the parser probe to test whether unknown `X-` tags are retained and whether PGN export preserves them. Record any preservation adapter required.
 - [ ] T007 [P] Create `research/prototypes/pgn_scanner_probe/` with a minimal chunked scanner experiment. Test chunk boundaries inside a tag, brace comment, semicolon comment, move token, and recursive variation. Record findings only; do not copy prototype code into production yet.

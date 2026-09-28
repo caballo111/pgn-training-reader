@@ -321,3 +321,100 @@ Index-in-place remains a later option behind the file-source interface. It
 requires separate evidence for stable length, repeatable range reads, access
 after restart, and source-change detection on the target provider. No MVP
 import will rely on that option.
+
+## T010 — Lifecycle signals and active-time policy
+
+**Decision (2026-09-28):** Observe Flutter's application lifecycle with
+`AppLifecycleListener` (or `WidgetsBindingObserver.didChangeAppLifecycleState`
+if the observer is integrated into an existing binding owner). Flutter
+currently exposes `resumed`, `inactive`, `hidden`, `paused`, and `detached`.
+On Android, `inactive` can mean that the activity lost focus while still
+visible, or is partially obscured; `hidden` is synthesized before a transition
+to `paused`; `paused` means the app is no longer visible. `detached` means the
+Flutter engine has no host view. Android's underlying Activity callbacks
+include `onPause`, `onStop`, and `onDestroy`, but `onDestroy` is not guaranteed
+when the process is killed.
+
+The selected timing policy is conservative and idempotent:
+
+- Count time only while Flutter reports `resumed` and the active puzzle attempt
+  is in its running state.
+- On any transition away from `resumed` (`inactive`, `hidden`, `paused`, or
+  `detached`), immediately capture the monotonic boundary and close the current
+  timing segment. Treat duplicate or skipped notifications as harmless; closing
+  an already-closed segment is a no-op.
+- Start a new segment only when the app returns to `resumed` and the same
+  attempt/session is still explicitly running. A user-paused or finalized
+  attempt remains stopped.
+- Navigation away and explicit pause use the same close operation even when
+  the app lifecycle remains `resumed`.
+- Persist the close boundary transactionally with accumulated active time.
+  Lifecycle callbacks are best-effort and may not arrive before process death;
+  recovery therefore closes any persisted open segment at its last safe
+  persisted boundary and excludes all unknown time after that boundary.
+
+`inactive` is intentionally a stop signal even though Android may leave the
+activity partially visible: a system dialog, notification shade, focus loss, or
+app switch must not add uncertain user study time. Flutter's lifecycle
+documentation explicitly warns that applications must not rely on receiving
+every state notification. The implementation must not depend on a final
+`detached` or Android `onDestroy` callback for correctness.
+
+Evidence:
+
+- [Flutter `AppLifecycleState`](https://api.flutter.dev/flutter/dart-ui/AppLifecycleState.html)
+- [Flutter `AppLifecycleListener`](https://api.flutter.dev/flutter/widgets/AppLifecycleListener-class.html)
+- [Flutter `WidgetsBindingObserver`](https://api.flutter.dev/flutter/widgets/WidgetsBindingObserver-class.html)
+- [Android activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle)
+- [Android process lifecycle and process death](https://developer.android.com/guide/components/activities/process-lifecycle)
+
+
+## T011 — Benchmark fixtures and reference Android device
+
+**Recorded:** 2026-09-28.
+
+### Reference device
+
+Use the paired physical **Samsung Galaxy S25** (`SM-S931B`, device code
+`pa1q`) as the reference Android test device. It reports Android 16 (API 36),
+build `BP4A.251205.006`, and is reachable through ADB wireless debugging.
+Record the device model, OS/API level, build, and app build with each benchmark
+run; results from the Pixel 9 emulator used for T008 are not the reference
+baseline.
+
+Observed with `adb devices -l` and `adb shell getprop`:
+
+```text
+manufacturer=samsung
+model=SM-S931B
+device=pa1q
+android=16
+api=36
+build=BP4A.251205.006
+```
+
+### Target PGNs
+
+Use the PGN already on the reference device as the deterministic source corpus:
+`Download/Quick Share/The Woodpecker Method (September 2024).pgn`. On
+2026-09-28 it was 740,417 bytes and contained 1,167 top-level `[Event ...]`
+blocks. Its SHA-256 was
+`39081950cb746be03af47cdce7577aac8f685ec25cb85473dce4b8299b58ba12`.
+The file remains on the device and is not copied into the repository.
+
+Define two generated benchmark targets from complete blocks in that source,
+preserving source order and cycling the source corpus as needed:
+
+| Target fixture | Top-level blocks | Purpose |
+| --- | ---: | --- |
+| `benchmark_10000.pgn` | 10,000 | Import/index throughput and memory benchmark |
+| `benchmark_100000.pgn` | 100,000 | Large-file scaling and resume benchmark |
+
+The fixture generator must stop at the exact target block count, write complete
+PGN blocks with valid separators, and use byte-for-byte source blocks. Keep
+generated copies outside version control and use the source hash above to
+identify the input. The source
+corpus is smaller than either target, so repeated blocks are expected and these
+fixtures measure scanner/index scaling rather than content uniqueness. T182
+records measured results for the 10,000-block target; the 100,000-block target
+is the stress target.

@@ -4,6 +4,8 @@
 **Status**: Accepted feature baseline  
 **Date**: 2026-09-15
 
+**Android application ID**: `lberrios.pgntrainingreader`
+
 ## 1. Product summary
 
 PGN Training Reader is an offline-first application for importing a user's chess

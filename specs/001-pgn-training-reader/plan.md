@@ -24,6 +24,8 @@ The application will use Lichess-maintained Flutter chess components where pract
 
 - Keep the interface responsive during import and indexing.
 - Never load a complete large PGN into memory solely to enumerate games.
+- On the reference Android device, keep peak process memory at or below 512 MiB while importing/indexing the 100,000-block benchmark fixture; memory use must not grow in proportion to total source size.
+- On the reference Android device, complete indexing of the 10,000-block fixture within 60 seconds and the 100,000-block fixture within 10 minutes, excluding the managed-copy transfer and any user-selected pauses.
 - Render board interaction at a perceived 60 fps on supported devices.
 - Open an already indexed individual game in under 500 ms at p95 on the reference Android device.
 - Load game-list pages in under 250 ms at p95 for a database containing 100,000 indexed entries.
@@ -60,27 +62,69 @@ The application will use Lichess-maintained Flutter chess components where pract
 
 ## Constitution Check
 
-### Gate Before Phase 0
+### Initial Check (2026-09-15)
 
-- **PGN Fidelity and Portability**: PASS. Source files remain canonical; solution concealment is presentation-only.
-- **Explicit Content Semantics**: PASS. The index recognizes `Puzzle`, `Instruction`, and `Demonstration`, with `X-ContentType` authoritative.
-- **Large-File and Offline-First Operation**: PASS. Import is incremental and creates an on-demand game index.
-- **Deterministic Puzzle Integrity**: PASS. Legal moves come from `dartchess`; authored child variations determine correctness.
-- **Attempt History and Honest Timing**: PASS. Cycles, sessions, and attempts are separate persisted entities.
-- **Simple, Explainable Scoring**: PASS. MVP metrics are counts, accuracy, active time, and error reasons.
-- **Separation of Concerns**: PASS. PGN content, training state, presentation, and future engine integration are separate modules.
-- **Local Data Ownership and Recoverability**: PASS. No automatic upload; writes are transactional; interrupted imports are recoverable.
-- **MVP Simplicity**: PASS. No backend, account system, remote analysis, or generalized plugin system.
+This was the pre-research architecture check. The completed check against the
+specification and T001-T011 evidence is recorded below.
 
-### Required Re-check After Phase 1
+### Post-Research Check (2026-09-28) — T012
 
-Confirm that:
+**Result: PASS.** Reviewed the constitution against `spec.md`, this plan,
+`research.md`, and the completed Phase 0 tasks T001-T011. No architecture-
+changing `NEEDS CLARIFICATION` remains.
 
-- No solution-bearing move or comment is exposed through reader navigation, accessibility labels, logs, previews, or persisted transient UI state.
-- File-source handling does not make byte offsets invalid without detection.
-- Attempt records remain append-only when puzzles are retried.
-- Storage schema separates source content locators from training state.
-- All new dependencies have compatible licenses and active maintenance.
+- **I. PGN Fidelity and Portability — PASS.** FR-011/012 and the import
+  decisions preserve the original PGN bytes in an app-managed snapshot;
+  parser/export normalization is not used for import. Solution concealment is
+  presentation-only, and custom tags and reciprocal dependency licenses are
+  documented.
+- **II. Explicit Content Semantics — PASS.** FR-013–018 require explicit
+  `Puzzle`, `Instruction`, `Demonstration`, or `Unsupported` classification,
+  make valid `X-ContentType` authoritative, visibly distinguish inferred
+  classification, and derive side to move from PGN/FEN. Stable identities are
+  not based solely on file order.
+- **III. Large-File and Offline-First Operation — PASS.** FR-002–008 specify
+  incremental import, bounded list loading, cancellation, and source-change
+  detection. T007 validates scanner boundary state; T009 selects managed-copy
+  import for stable random access; T011 defines 10,000- and 100,000-block
+  fixtures. The plan now sets a 512 MiB peak-process-memory ceiling and
+  indexing targets of 60 seconds and 10 minutes respectively, measured on the
+  reference device and excluding copy time and user pauses. Existing p95
+  list/open targets remain 250 ms and 500 ms.
+- **IV. Deterministic Puzzle Integrity — PASS.** FR-021–026 keep authored
+  solutions intact and hidden before terminal outcomes, require legal moves
+  and authored solution-tree matching, define immediate wrong-move failure,
+  and include accessibility concealment checks.
+- **V. Attempt History and Honest Timing — PASS.** The entity/lifecycle model
+  separates cycles, sessions, attempts, and timing segments. FR-029–034
+  require resumability and append-only finalized attempts. T010 defines
+  idempotent segment closure on lifecycle loss and excludes unknown time after
+  process death.
+- **VI. Simple, Explainable Scoring — PASS.** FR-035–038 define raw outcomes,
+  accuracy formula, empty-state behavior, and cycle comparisons without a
+  composite score.
+- **VII. Separation of Content, Training, and Presentation — PASS.** The
+  plan's module boundaries and data model keep PGN content/index locators,
+  training state, and presentation state separate; engine analysis remains a
+  deferred adapter.
+- **VIII. Local Data Ownership, Safety, and Recoverability — PASS.** The MVP
+  is offline/local-first; FR-039–042 require atomic writes, preservation of
+  committed data, deliberate destructive actions, and sanitized diagnostics.
+  T009 specifies temporary-copy promotion and safe cancellation/failure
+  behavior.
+- **IX. MVP Simplicity and Evidence-Based Expansion — PASS.** The plan defers
+  backend, account, sync, remote engine, and generalized plugin infrastructure.
+  T003 records package pins, repositories, platforms, maintenance evidence,
+  and licenses. GPL-3.0 distribution compatibility is explicitly reserved as
+  a pre-release decision in T187; it does not change the selected local MVP
+  architecture and must be settled before distribution.
+
+Quality, UX, and compatibility standards were also checked: `spec.md`
+contains failure scenarios, measurable success criteria, accessibility
+requirements, database/source recovery behavior, and coverage expectations.
+The plan's 100,000-entry p95 navigation target and T011 fixtures provide
+measurable large-file navigation and scaling checks. No complexity exception
+is required.
 
 ## Project Structure
 

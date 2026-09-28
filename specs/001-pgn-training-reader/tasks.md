@@ -56,9 +56,9 @@ For every task:
 - [x] T007 [P] Create `research/prototypes/pgn_scanner_probe/` with a minimal chunked scanner experiment. Test chunk boundaries inside a tag, brace comment, semicolon comment, move token, and recursive variation. Record findings only; do not copy prototype code into production yet.
 - [x] T008 [P] Create `research/prototypes/android_file_probe/` or a documented manual spike. Verify whether selected Android documents support persistent permission, seek, length, and range reads across at least two document providers available to the team.
 - [x] T009 In `research.md`, choose managed-copy import as the MVP default or justify a different reliable option using T008 results. Document fallback behavior for non-seekable providers.
-- [ ] T010 [P] Document the app lifecycle events available for closing active timing segments when the app becomes inactive, detached, or backgrounded. Add the selected lifecycle policy to `research.md`.
-- [ ] T011 [P] Define benchmark fixtures and the reference Android test device in `research.md`. Include target PGNs with approximately 10,000 and 100,000 blocks.
-- [ ] T012 Review T001 through T011 against the constitution. Add a completed post-research Constitution Check to `plan.md`. Resolve every architecture-changing `NEEDS CLARIFICATION` before continuing.
+- [x] T010 [P] Document the app lifecycle events available for closing active timing segments when the app becomes inactive, detached, or backgrounded. Add the selected lifecycle policy to `research.md`.
+- [x] T011 [P] Define benchmark fixtures and the reference Android test device in `research.md`. Include target PGNs with approximately 10,000 and 100,000 blocks.
+- [x] T012 Review T001 through T011 against the constitution. Add a completed post-research Constitution Check to `plan.md`. Resolve every architecture-changing `NEEDS CLARIFICATION` before continuing.
 
 **Phase 0 checkpoint**: Specification exists, research decisions are recorded, selected dependencies are pinned, and the constitution gate passes.
 
@@ -66,7 +66,7 @@ For every task:
 
 # Phase 1: Project Foundation
 
-- [ ] T013 Initialize the Flutter project in the repository root for Android first. Use the application package identifier defined in `spec.md`; if absent, stop and report the missing decision.
+- [x] T013 Initialize the Flutter project in the repository root for Android first. Use the application package identifier defined in `spec.md`; if absent, stop and report the missing decision.
 - [ ] T014 Configure the pinned Flutter SDK mechanism selected in T002. Add the version file and brief setup instructions to `README.md`.
 - [ ] T015 [P] Add `analysis_options.yaml` with strict analysis based on the selected Flutter lint package. Do not suppress warnings globally.
 - [ ] T016 [P] Add `.editorconfig`, update `.gitignore`, and add repository formatting conventions. Preserve existing repository-specific entries.

@@ -2,7 +2,7 @@
 
 **Feature**: `001-pgn-training-reader`  
 **Decision date**: 2026-09-15  
-**Scope completed**: T002-T008
+**Scope completed**: T002-T009
 
 ## T002 — Flutter and Dart versions
 
@@ -285,3 +285,39 @@ seek, and range-read operations on this emulator. This is provider-specific
 evidence, not a universal guarantee: other providers may be stream-only and
 must fall back to managed-copy import. The probe procedure remains available
 for a real reference device and for future providers.
+
+## T009 — MVP import storage decision
+
+**Decision (2026-09-28):** Use a managed, byte-for-byte copy in
+application-controlled storage for every MVP import. Index and retrieve PGN
+blocks from that completed copy. The selected document remains the user's
+canonical source; the managed copy is a local snapshot, not a rewritten PGN.
+Record its source identity and fingerprint so a later re-import can detect a
+changed selection instead of silently reusing stale byte ranges.
+
+T008 showed that Downloads and shared-storage Documents on the Pixel 9
+emulator both allowed persistent permission, a reported length, seeking, and
+two complete range reads for a 235-byte fixture. That is useful evidence for
+an eventual index-in-place mode, but does not establish the same behavior for
+other providers, larger files, or access after an app/device restart. The
+managed copy gives the scanner stable byte offsets and repeatable range reads
+without depending on provider-specific seek or persistent URI behavior. Its
+cost is local storage roughly equal to the PGN size, plus temporary space
+during import; report that cost to the user before copying when size is known.
+
+For a non-seekable provider, or one with unknown length or only transient
+permission, open its sequential read stream and copy in bounded chunks to a
+temporary file in app-controlled storage. Do not require source seeks or a
+known length to complete the copy; progress may show bytes copied without a
+percentage. After the stream reaches EOF and the copy is closed and verified,
+promote it to the managed source and begin indexing. If reading, copying, or
+storage allocation fails, or the user cancels, discard the incomplete copy,
+leave existing library data intact, and offer a retry or source reselection.
+Never persist locators into an incomplete copy. A provider that cannot supply
+even a readable stream cannot be imported; explain that the user must select a
+readable source.
+
+Index-in-place remains a later option behind the file-source interface. It
+requires separate evidence for stable length, repeatable range reads, access
+after restart, and source-change detection on the target provider. No MVP
+import will rely on that option.

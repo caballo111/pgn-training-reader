@@ -8,21 +8,28 @@
 
 ### Decision
 
-Use the stable Flutter SDK checkout already available to the project:
+Use the stable Flutter SDK. At the initial T002 decision, the available
+checkout was:
 
-- Flutter `3.47.4` (stable)
-- Dart `3.13.3` (the Dart SDK bundled with that Flutter checkout)
+- Flutter `3.47.5` (stable; latest stable release checked 2026-09-28)
+- Dart `3.13.4` (the Dart SDK bundled with Flutter 3.47.5)
 - Android-first application target
 
-The project should pin Flutter `3.47.4` with the repository's version-management
-mechanism during T014. Dart must not be installed or managed independently for
-the Flutter application; it is supplied by the pinned Flutter SDK.
+The project pins Flutter `3.47.5` with FVM in `.fvmrc` (configured in T014).
+Dart must not be installed or managed independently for the Flutter
+application; it is supplied by the pinned Flutter SDK.
 
 Flutter 3.47 is the current stable feature release recorded by the official
 Flutter release documentation, and Dart 3.13 is the corresponding stable Dart
 release. The local checkout is on the `stable` branch and is tagged
 `3.47.4`; its bundled SDK reports `3.13.3` in
 `bin/cache/dart-sdk/version`.
+
+The pin was refreshed for T014 on 2026-09-28 after checking the Flutter stable
+release archive and current stable release metadata. Flutter `3.47.5` (Dart
+`3.13.4`) is the current stable patch release; use the exact patch version so
+local development and CI are reproducible. FVM reads the project pin from
+`.fvmrc` and provides `fvm flutter`/`fvm dart` commands.
 
 ### Verification commands
 

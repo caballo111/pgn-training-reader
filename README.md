@@ -1,17 +1,27 @@
-# pgntrainingreader
+# PGN Training Reader
 
-A new Flutter project.
+An offline-first Flutter app for reading PGN libraries and training with chess
+puzzles.
 
-## Getting Started
+## Development setup
 
-This project is a starting point for a Flutter application.
+Install [FVM](https://fvm.app/documentation/getting-started/installation), then
+from the repository root install the Flutter SDK version pinned in `.fvmrc` and
+fetch packages:
 
-A few resources to get you started if this is your first Flutter project:
+```sh
+fvm install
+fvm flutter pub get
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Run Flutter and Dart commands through FVM so they use the pinned SDK, for
+example `fvm flutter run` or `fvm dart format .`. The pin currently uses the
+latest stable Flutter release, 3.47.5.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Formatting conventions
+
+`.editorconfig` sets UTF-8 encoding, LF line endings, final newlines, and
+space-based indentation. Dart, YAML, JSON, and Markdown use two-space
+indentation; Gradle and Kotlin use four spaces. Use the pinned Dart formatter
+(`fvm dart format .`) as the authority for Dart formatting. Markdown trailing
+spaces are preserved for intentional line breaks.

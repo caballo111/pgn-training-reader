@@ -67,13 +67,13 @@ For every task:
 # Phase 1: Project Foundation
 
 - [x] T013 Initialize the Flutter project in the repository root for Android first. Use the application package identifier defined in `spec.md`; if absent, stop and report the missing decision.
-- [ ] T014 Configure the pinned Flutter SDK mechanism selected in T002. Add the version file and brief setup instructions to `README.md`.
-- [ ] T015 [P] Add `analysis_options.yaml` with strict analysis based on the selected Flutter lint package. Do not suppress warnings globally.
-- [ ] T016 [P] Add `.editorconfig`, update `.gitignore`, and add repository formatting conventions. Preserve existing repository-specific entries.
-- [ ] T017 Add only the dependencies approved in T003 to `pubspec.yaml`. Fetch packages and commit the generated lockfile.
-- [ ] T018 Create the source directories defined by the plan under `lib/`, `test/`, and `integration_test/`. Add only minimal library marker files where needed.
-- [ ] T019 [P] Create `lib/core/errors/app_failure.dart` with a sealed or equivalent typed failure hierarchy for file, PGN, database, validation, and unsupported-content failures.
-- [ ] T020 [P] Create `lib/core/time/app_clock.dart` with an injectable abstraction for wall-clock timestamps and monotonic elapsed time. Add a production implementation and fake test implementation.
+- [x] T014 Configure the pinned Flutter SDK mechanism selected in T002. Add the version file and brief setup instructions to `README.md`.
+- [x] T015 [P] Add `analysis_options.yaml` with strict analysis based on the selected Flutter lint package. Do not suppress warnings globally.
+- [x] T016 [P] Add `.editorconfig`, update `.gitignore`, and add repository formatting conventions. Preserve existing repository-specific entries.
+- [x] T017 Add only the dependencies approved in T003 to `pubspec.yaml`. Fetch packages and commit the generated lockfile.
+- [x] T018 Create the source directories defined by the plan under `lib/`, `test/`, and `integration_test/`. Add only minimal library marker files where needed.
+- [x] T019 [P] Create `lib/core/errors/app_failure.dart` with a sealed or equivalent typed failure hierarchy for file, PGN, database, validation, and unsupported-content failures.
+- [x] T020 [P] Create `lib/core/time/app_clock.dart` with an injectable abstraction for wall-clock timestamps and monotonic elapsed time. Add a production implementation and fake test implementation.
 - [ ] T021 [P] Create `lib/core/logging/app_logger.dart` with redaction-safe structured logging methods. Do not accept raw PGN text, comments, file paths, content URIs, or solution moves as log fields.
 - [ ] T022 [P] Create `lib/core/utilities/id_generator.dart` with injectable random ID generation. Add deterministic fake generation for tests.
 - [ ] T023 Create a minimal dependency composition root in `lib/app/dependencies.dart`. Construct abstractions only; feature implementation remains empty.

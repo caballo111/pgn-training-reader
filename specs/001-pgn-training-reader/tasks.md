@@ -107,24 +107,24 @@ For every task:
 
 # Phase 3: Domain Models and Contracts
 
-- [ ] T040 [P] Create `lib/domain/chess_content/content_type.dart` with Puzzle, Instruction, Demonstration, and Unsupported values plus strict database serialization.
-- [ ] T041 [P] Create `lib/domain/chess_content/pgn_source.dart` and its access-mode enum. Keep platform URI classes out of the domain model.
-- [ ] T042 [P] Create `lib/domain/chess_content/pgn_block_index.dart` with immutable indexed metadata and parse status.
-- [ ] T043 [P] Create `lib/domain/chess_content/move_node.dart` as an immutable tree node supporting SAN, UCI, FEN before/after, comments, NAGs, and ordered children.
-- [ ] T044 [P] Create `lib/domain/chess_content/chess_content.dart` for headers, starting position, root move node, comments, result, and content classification.
-- [ ] T045 [P] Create `lib/domain/training/training_set.dart` and `training_set_item.dart` with ordered mixed content.
-- [ ] T046 [P] Create `lib/domain/training/cycle.dart`, `training_session.dart`, and lifecycle status enums.
-- [ ] T047 [P] Create `lib/domain/training/puzzle_attempt.dart`, `attempt_move.dart`, `timing_segment.dart`, outcome enum, and failure-reason enum.
-- [ ] T048 [P] Create `lib/domain/training/progress_aggregate.dart` with raw counts and durations. Do not calculate metrics inside widgets.
-- [ ] T049 Create `specs/001-pgn-training-reader/data-model.md`. Document identities, fields, invariants, relationships, state transitions, retention, and deletion behavior for the models created in T040 through T048.
-- [ ] T050 [P] Create `lib/domain/library/pgn_source_repository.dart` and `pgn_index_repository.dart` interfaces.
-- [ ] T051 [P] Create `lib/domain/chess_content/chess_content_repository.dart` for loading one indexed block as parsed content.
-- [ ] T052 [P] Create `lib/domain/training/training_repository.dart` for sets, cycles, sessions, attempts, timing segments, and aggregates.
-- [ ] T053 [P] Create `lib/domain/library/pgn_import_service.dart` contract with progress stream, cancellation, resume, and diagnostics.
-- [ ] T054 [P] Create `lib/domain/training/puzzle_evaluator.dart` contract with initialize, legal destinations, submit move, reveal, and final state.
-- [ ] T055 [P] Create `lib/domain/training/training_session_service.dart` contract with start/resume cycle, open/close session, select next item, pause/resume attempt, and finalize attempt.
-- [ ] T056 Write the corresponding contract documents under `specs/001-pgn-training-reader/contracts/` using domain language and explicit preconditions, results, and errors.
-- [ ] T057 Add equality, serialization-boundary, and state-invariant tests for all Phase 3 domain types.
+- [x] T040 [P] Create `lib/domain/chess_content/content_type.dart` with Puzzle, Instruction, Demonstration, and Unsupported values plus strict database serialization.
+- [x] T041 [P] Create `lib/domain/chess_content/pgn_source.dart` and its access-mode enum. Keep platform URI classes out of the domain model.
+- [x] T042 [P] Create `lib/domain/chess_content/pgn_block_index.dart` with immutable indexed metadata and parse status.
+- [x] T043 [P] Create `lib/domain/chess_content/move_node.dart` as an immutable tree node supporting SAN, UCI, FEN before/after, comments, NAGs, and ordered children.
+- [x] T044 [P] Create `lib/domain/chess_content/chess_content.dart` for headers, starting position, root move node, comments, result, and content classification.
+- [x] T045 [P] Create `lib/domain/training/training_set.dart` and `training_set_item.dart` with ordered mixed content.
+- [x] T046 [P] Create `lib/domain/training/cycle.dart`, `training_session.dart`, and lifecycle status enums.
+- [x] T047 [P] Create `lib/domain/training/puzzle_attempt.dart`, `attempt_move.dart`, `timing_segment.dart`, outcome enum, and failure-reason enum.
+- [x] T048 [P] Create `lib/domain/training/progress_aggregate.dart` with raw counts and durations. Do not calculate metrics inside widgets.
+- [x] T049 Create `specs/001-pgn-training-reader/data-model.md`. Document identities, fields, invariants, relationships, state transitions, retention, and deletion behavior for the models created in T040 through T048.
+- [x] T050 [P] Create `lib/domain/library/pgn_source_repository.dart` and `pgn_index_repository.dart` interfaces.
+- [x] T051 [P] Create `lib/domain/chess_content/chess_content_repository.dart` for loading one indexed block as parsed content.
+- [x] T052 [P] Create `lib/domain/training/training_repository.dart` for sets, cycles, sessions, attempts, timing segments, and aggregates.
+- [x] T053 [P] Create `lib/domain/library/pgn_import_service.dart` contract with progress stream, cancellation, resume, and diagnostics.
+- [x] T054 [P] Create `lib/domain/training/puzzle_evaluator.dart` contract with initialize, legal destinations, submit move, reveal, and final state.
+- [x] T055 [P] Create `lib/domain/training/training_session_service.dart` contract with start/resume cycle, open/close session, select next item, pause/resume attempt, and finalize attempt.
+- [x] T056 Write the corresponding contract documents under `specs/001-pgn-training-reader/contracts/` using domain language and explicit preconditions, results, and errors.
+- [x] T057 Add equality, serialization-boundary, and state-invariant tests for all Phase 3 domain types.
 
 **Phase 3 checkpoint**: Domain code has no Flutter widget, Drift, Android, or Stockfish dependency.
 

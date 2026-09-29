@@ -87,19 +87,19 @@ For every task:
 
 # Phase 2: Persistence Foundation
 
-- [ ] T027 Create `lib/data/database/app_database.dart` using Drift. Set schema version to 1 and configure dependency injection rather than a global singleton.
-- [ ] T028 [P] Create the `pgn_sources` table with source ID, display name, access mode, managed path or opaque external reference, size, modified value, fingerprint, scanner version, import state, safe checkpoint, created timestamp, and updated timestamp.
-- [ ] T029 [P] Create the `pgn_blocks` table with block ID, source ID, start locator, end locator, ordinal, standard indexed headers, content type, exercise ID, section, sequence, theme, difficulty, parse status, and diagnostic summary.
-- [ ] T030 [P] Create the `import_jobs` and `import_diagnostics` tables with progress, checkpoint, counts, cancellation state, severity, block locator, diagnostic code, and sanitized message.
-- [ ] T031 [P] Create the `training_sets` and `training_set_items` tables. Preserve explicit order and allow Puzzle, Instruction, and Demonstration items.
-- [ ] T032 [P] Create the `cycles` and `training_sessions` tables. Include lifecycle status and wall-clock start/end timestamps.
-- [ ] T033 [P] Create the `puzzle_attempts`, `attempt_moves`, and `timing_segments` tables. Include active milliseconds, result, failure reason, wrong-move count, hint count, reveal flag, and immutable completion fields.
-- [ ] T034 Create Drift relationships, indexes, and uniqueness constraints. Include source plus ordinal uniqueness and a documented exercise-ID conflict strategy.
-- [ ] T035 Generate Drift code using the repository's standard command. Do not hand-edit generated files.
-- [ ] T036 [P] Add `test/unit/data/database/schema_v1_test.dart` to verify all tables and required indexes are created.
-- [ ] T037 [P] Add `test/unit/data/database/transaction_test.dart` proving that attempt finalization and its final timing segment commit atomically.
-- [ ] T038 Create `lib/data/database/database_migrator.dart` with explicit version handling and a backup-before-destructive-migration hook. Version 1 still requires tests for fresh creation.
-- [ ] T039 Run database generation, formatting, static analysis, and database tests.
+- [x] T027 Create `lib/data/database/app_database.dart` using Drift. Set schema version to 1 and configure dependency injection rather than a global singleton.
+- [x] T028 [P] Create the `pgn_sources` table with source ID, display name, access mode, managed path or opaque external reference, size, modified value, fingerprint, scanner version, import state, safe checkpoint, created timestamp, and updated timestamp.
+- [x] T029 [P] Create the `pgn_blocks` table with block ID, source ID, start locator, end locator, ordinal, standard indexed headers, content type, exercise ID, section, sequence, theme, difficulty, parse status, and diagnostic summary.
+- [x] T030 [P] Create the `import_jobs` and `import_diagnostics` tables with progress, checkpoint, counts, cancellation state, severity, block locator, diagnostic code, and sanitized message.
+- [x] T031 [P] Create the `training_sets` and `training_set_items` tables. Preserve explicit order and allow Puzzle, Instruction, and Demonstration items.
+- [x] T032 [P] Create the `cycles` and `training_sessions` tables. Include lifecycle status and wall-clock start/end timestamps.
+- [x] T033 [P] Create the `puzzle_attempts`, `attempt_moves`, and `timing_segments` tables. Include active milliseconds, result, failure reason, wrong-move count, hint count, reveal flag, and immutable completion fields.
+- [x] T034 Create Drift relationships, indexes, and uniqueness constraints. Include source plus ordinal uniqueness and a documented exercise-ID conflict strategy.
+- [x] T035 Generate Drift code using the repository's standard command. Do not hand-edit generated files.
+- [x] T036 [P] Add `test/unit/data/database/schema_v1_test.dart` to verify all tables and required indexes are created.
+- [x] T037 [P] Add `test/unit/data/database/transaction_test.dart` proving that attempt finalization and its final timing segment commit atomically.
+- [x] T038 Create `lib/data/database/database_migrator.dart` with explicit version handling and a backup-before-destructive-migration hook. Version 1 still requires tests for fresh creation.
+- [x] T039 Run database generation, formatting, static analysis, and database tests.
 
 **Phase 2 checkpoint**: Schema version 1 exists, generated code is current, and transaction tests pass.
 

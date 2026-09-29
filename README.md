@@ -18,6 +18,12 @@ Run Flutter and Dart commands through FVM so they use the pinned SDK, for
 example `fvm flutter run` or `fvm dart format .`. The pin currently uses the
 latest stable Flutter release, 3.47.5.
 
+Generate Drift database code after changing the schema:
+
+```sh
+fvm dart run build_runner build
+```
+
 ## Formatting conventions
 
 `.editorconfig` sets UTF-8 encoding, LF line endings, final newlines, and

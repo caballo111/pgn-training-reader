@@ -38,5 +38,8 @@ final class ValidationFailure extends AppFailure {
 
 /// A failure for content that the application cannot safely interpret.
 final class UnsupportedContentFailure extends AppFailure {
-  const UnsupportedContentFailure({required super.code, required super.message});
+  const UnsupportedContentFailure({
+    required super.code,
+    required super.message,
+  });
 }

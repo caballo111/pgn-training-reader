@@ -74,12 +74,12 @@ For every task:
 - [x] T018 Create the source directories defined by the plan under `lib/`, `test/`, and `integration_test/`. Add only minimal library marker files where needed.
 - [x] T019 [P] Create `lib/core/errors/app_failure.dart` with a sealed or equivalent typed failure hierarchy for file, PGN, database, validation, and unsupported-content failures.
 - [x] T020 [P] Create `lib/core/time/app_clock.dart` with an injectable abstraction for wall-clock timestamps and monotonic elapsed time. Add a production implementation and fake test implementation.
-- [ ] T021 [P] Create `lib/core/logging/app_logger.dart` with redaction-safe structured logging methods. Do not accept raw PGN text, comments, file paths, content URIs, or solution moves as log fields.
-- [ ] T022 [P] Create `lib/core/utilities/id_generator.dart` with injectable random ID generation. Add deterministic fake generation for tests.
-- [ ] T023 Create a minimal dependency composition root in `lib/app/dependencies.dart`. Construct abstractions only; feature implementation remains empty.
-- [ ] T024 Create `lib/app/app.dart`, `lib/app/navigation.dart`, and `lib/main.dart` with a minimal accessible application shell and placeholder library route.
-- [ ] T025 [P] Add CI configuration that runs dependency resolution, formatting check, static analysis, unit tests, and integration-test compilation where feasible.
-- [ ] T026 Run formatting, static analysis, and tests. Fix foundation failures without adding feature code.
+- [x] T021 [P] Create `lib/core/logging/app_logger.dart` with redaction-safe structured logging methods. Do not accept raw PGN text, comments, file paths, content URIs, or solution moves as log fields.
+- [x] T022 [P] Create `lib/core/utilities/id_generator.dart` with injectable random ID generation. Add deterministic fake generation for tests.
+- [x] T023 Create a minimal dependency composition root in `lib/app/dependencies.dart`. Construct abstractions only; feature implementation remains empty.
+- [x] T024 Create `lib/app/app.dart`, `lib/app/navigation.dart`, and `lib/main.dart` with a minimal accessible application shell and placeholder library route.
+- [x] T025 [P] Add CI configuration that runs dependency resolution, formatting check, static analysis, unit tests, and integration-test compilation where feasible.
+- [x] T026 Run formatting, static analysis, and tests. Fix foundation failures without adding feature code.
 
 **Phase 1 checkpoint**: The empty app builds, dependencies are pinned, CI is active, and foundational abstractions have tests.
 

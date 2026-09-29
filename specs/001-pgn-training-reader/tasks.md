@@ -132,14 +132,14 @@ For every task:
 
 # Phase 4: File Access and Managed Import
 
-- [ ] T058 [P] Create `lib/data/file_access/file_source.dart` with open-read-stream, copy-to-managed-storage, length, fingerprint input, and range-read operations.
-- [ ] T059 [P] Create `lib/data/file_access/file_source_picker.dart` as a platform-neutral selection contract returning an opaque source reference and display metadata.
-- [ ] T060 Implement the Android/Flutter file-picker adapter selected in research. Request only required permissions and return no raw platform object to the domain layer.
-- [ ] T061 Implement `lib/data/file_access/managed_file_source.dart` for application-controlled PGN copies with reliable range reads.
-- [ ] T062 Implement `lib/data/file_access/source_fingerprint.dart` using size, available modified timestamp, and sampled bytes. Document collision limitations in code comments.
-- [ ] T063 [P] Add tests for copying, cancellation, insufficient-space failure mapping, range reads, and fingerprint changes.
-- [ ] T064 Create `lib/data/repositories/drift_pgn_source_repository.dart` implementing source creation, state updates, relink metadata, and revision invalidation.
-- [ ] T065 Add repository tests using a temporary directory and in-memory Drift database.
+- [x] T058 [P] Create `lib/data/file_access/file_source.dart` with open-read-stream, copy-to-managed-storage, length, fingerprint input, and range-read operations.
+- [x] T059 [P] Create `lib/data/file_access/file_source_picker.dart` as a platform-neutral selection contract returning an opaque source reference and display metadata.
+- [x] T060 Implement the Android/Flutter file-picker adapter selected in research. Request only required permissions and return no raw platform object to the domain layer.
+- [x] T061 Implement `lib/data/file_access/managed_file_source.dart` for application-controlled PGN copies with reliable range reads.
+- [x] T062 Implement `lib/data/file_access/source_fingerprint.dart` using size, available modified timestamp, and sampled bytes. Document collision limitations in code comments.
+- [x] T063 [P] Add tests for copying, cancellation, insufficient-space failure mapping, range reads, and fingerprint changes.
+- [x] T064 Create `lib/data/repositories/drift_pgn_source_repository.dart` implementing source creation, state updates, relink metadata, and revision invalidation.
+- [x] T065 Add repository tests using a temporary directory and in-memory Drift database.
 
 **Phase 4 checkpoint**: A selected PGN can be copied to managed storage, fingerprinted, reopened, and read by byte range.
 

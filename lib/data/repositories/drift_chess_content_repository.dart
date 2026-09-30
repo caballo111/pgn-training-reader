@@ -9,7 +9,7 @@ import '../../domain/chess_content/pgn_block_index.dart';
 import '../../domain/chess_content/pgn_source.dart';
 import '../../domain/library/pgn_index_repository.dart';
 import '../../domain/library/pgn_source_repository.dart';
-import '../pgn/chess_content_parser.dart';
+import '../pgn/dartchess_content_parser.dart';
 
 /// Loads one complete PGN game through its stable byte locator.
 final class DriftChessContentRepository implements ChessContentRepository {
@@ -17,23 +17,33 @@ final class DriftChessContentRepository implements ChessContentRepository {
     required this.indexRepository,
     required this.sourceRepository,
     required this.fileSource,
-    this.parser = const ChessContentParser(),
+    this.parser = const DartchessContentParser(),
   });
 
   final PgnIndexRepository indexRepository;
   final PgnSourceRepository sourceRepository;
   final FileSource fileSource;
-  final ChessContentParser parser;
+  final DartchessContentParser parser;
 
   @override
   Future<ChessContent?> getById(String id) async {
     final block = await indexRepository.getById(id);
     if (block == null) return null;
-    if (block.parseStatus != PgnBlockParseStatus.valid) {
-      throw const PgnFailure(
-        code: 'indexed_block_not_valid',
-        message: 'This library item is not available for training.',
-      );
+    switch (block.parseStatus) {
+      case PgnBlockParseStatus.valid || PgnBlockParseStatus.notParsed:
+        // Supported blocks are parsed on demand. The index deliberately does
+        // not parse and retain every move tree during import.
+        break;
+      case PgnBlockParseStatus.malformed:
+        throw const PgnFailure(
+          code: 'indexed_block_malformed',
+          message: 'This library item contains PGN that cannot be read safely.',
+        );
+      case PgnBlockParseStatus.unsupported:
+        throw const UnsupportedContentFailure(
+          code: 'indexed_block_unsupported',
+          message: 'This library item uses content that is not supported.',
+        );
     }
     final source = await sourceRepository.getById(block.sourceId);
     if (source == null) {

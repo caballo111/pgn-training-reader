@@ -184,17 +184,17 @@ For every task:
 
 # Phase 7: Browse Library and Open Content
 
-- [ ] T089 [P] [US2] Create `lib/features/browse_library/application/library_query.dart` with paging, search text, sort, and supported filters.
-- [ ] T090 [US2] Create `library_controller.dart` that requests one database page at a time and cancels stale searches.
-- [ ] T091 [P] [US2] Create `library_page.dart` with lazy list rendering, empty state, loading state, failure state, and import action.
-- [ ] T092 [P] [US2] Create filter controls for content type, section, theme, difficulty, result, and source. Ensure filters work with keyboard and screen reader navigation.
-- [ ] T093 [US2] Implement retrieval of the exact selected byte range from managed storage.
-- [ ] T094 [US2] Create `lib/data/pgn/dartchess_content_parser.dart` adapter that parses one complete block into the domain `ChessContent` and immutable `MoveNode` tree.
-- [ ] T095 [US2] Preserve standard headers, custom headers, comments, NAGs, nested variations, starting FEN, side to move, and result in the parsed domain object.
-- [ ] T096 [US2] Return typed failures for malformed PGN and unsupported variants. Do not reinterpret unsupported variants as standard chess.
-- [ ] T097 [US2] Implement `drift_chess_content_repository.dart` using the source repository, range reader, and parser adapter.
-- [ ] T098 [US2] Add tests proving stored locators return the exact original bytes for the first, middle, and last block.
-- [ ] T099 [US2] Add parser-adapter tests for normal game, FEN-start game, comments, NAGs, one variation, nested variations, and unknown tags.
+- [x] T089 [P] [US2] Create `lib/features/browse_library/application/library_query.dart` with paging, search text, sort, and supported filters.
+- [x] T090 [US2] Create `library_controller.dart` that requests one database page at a time and cancels stale searches.
+- [x] T091 [P] [US2] Create `library_page.dart` with lazy list rendering, empty state, loading state, failure state, and import action.
+- [x] T092 [P] [US2] Create filter controls for content type, section, theme, difficulty, result, and source. Ensure filters work with keyboard and screen reader navigation.
+- [x] T093 [US2] Implement retrieval of the exact selected byte range from managed storage.
+- [x] T094 [US2] Create `lib/data/pgn/dartchess_content_parser.dart` adapter that parses one complete block into the domain `ChessContent` and immutable `MoveNode` tree.
+- [x] T095 [US2] Preserve standard headers, custom headers, comments, NAGs, nested variations, starting FEN, side to move, and result in the parsed domain object.
+- [x] T096 [US2] Return typed failures for malformed PGN and unsupported variants. Do not reinterpret unsupported variants as standard chess.
+- [x] T097 [US2] Implement `drift_chess_content_repository.dart` using the source repository, range reader, and parser adapter.
+- [x] T098 [US2] Add tests proving stored locators return the exact original bytes for the first, middle, and last block.
+- [x] T099 [US2] Add parser-adapter tests for normal game, FEN-start game, comments, NAGs, one variation, nested variations, and unknown tags.
 
 **User Story 2A checkpoint**: User can browse a paginated library and load one correctly parsed block on demand.
 

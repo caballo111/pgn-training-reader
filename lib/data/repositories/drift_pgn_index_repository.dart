@@ -35,6 +35,7 @@ final class DriftPgnIndexRepository implements PgnIndexRepository {
   @override
   Future<PgnIndexPage> search({
     PgnIndexFilter filter = const PgnIndexFilter(),
+    PgnIndexSort sort = PgnIndexSort.sourceOrder,
     int offset = 0,
     required int limit,
   }) => _guard(() async {
@@ -93,12 +94,14 @@ final class DriftPgnIndexRepository implements PgnIndexRepository {
     if (clauses.isNotEmpty) {
       query.where((_) => clauses.reduce((left, right) => left & right));
     }
-    query
-      ..orderBy([
-        (block) => OrderingTerm.asc(block.sourceId),
-        (block) => OrderingTerm.asc(block.ordinal),
-      ])
-      ..limit(limit + 1, offset: offset);
+    switch (sort) {
+      case PgnIndexSort.sourceOrder:
+        query.orderBy([
+          (block) => OrderingTerm.asc(block.sourceId),
+          (block) => OrderingTerm.asc(block.ordinal),
+        ]);
+    }
+    query.limit(limit + 1, offset: offset);
     final rows = await query.get();
     final hasMore = rows.length > limit;
     final visible = hasMore ? rows.take(limit) : rows;

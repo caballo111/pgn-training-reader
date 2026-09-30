@@ -6,8 +6,8 @@ import '../../domain/chess_content/content_type.dart';
 import '../../domain/chess_content/move_node.dart';
 
 /// Converts one indexed PGN block into its immutable chess-content tree.
-final class ChessContentParser {
-  const ChessContentParser();
+final class DartchessContentParser {
+  const DartchessContentParser();
 
   ChessContent parse(String pgn, {required ContentType contentType}) {
     if (contentType == ContentType.unsupported) {
@@ -18,6 +18,13 @@ final class ChessContentParser {
     }
     try {
       final game = PgnGame.parsePgn(pgn, initHeaders: PgnGame.emptyHeaders);
+      final variant = game.headers['Variant'];
+      if (variant != null && variant != 'Standard') {
+        throw const UnsupportedContentFailure(
+          code: 'unsupported_chess_variant',
+          message: 'This PGN uses a chess variant that is not supported.',
+        );
+      }
       if (game.headers.isEmpty && game.moves.children.isEmpty) {
         throw const PgnFailure(
           code: 'empty_pgn_block',

@@ -127,6 +127,7 @@ final class _IndexRepository implements PgnIndexRepository {
   @override
   Future<PgnIndexPage> search({
     PgnIndexFilter filter = const PgnIndexFilter(),
+    PgnIndexSort sort = PgnIndexSort.sourceOrder,
     int offset = 0,
     required int limit,
   }) async {

@@ -1,6 +1,12 @@
 import '../chess_content/content_type.dart';
 import '../chess_content/pgn_block_index.dart';
 
+/// Supported ordering for searchable index pages.
+///
+/// Source order is the canonical library ordering and is applied in the
+/// database query before pagination.
+enum PgnIndexSort { sourceOrder }
+
 /// Optional metadata constraints for searching indexed PGN blocks.
 ///
 /// Text constraints are case-insensitive substring matches. [player] matches
@@ -70,6 +76,7 @@ abstract interface class PgnIndexRepository {
   /// [PgnIndexPage.nextOffset] is null when there are no more results.
   Future<PgnIndexPage> search({
     PgnIndexFilter filter = const PgnIndexFilter(),
+    PgnIndexSort sort = PgnIndexSort.sourceOrder,
     int offset = 0,
     required int limit,
   });

@@ -79,83 +79,108 @@ final class _MoveBranch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = _isCurrentPath();
-    return Padding(
-      padding: EdgeInsetsDirectional.only(start: depth * 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Flexible(
-                child: Semantics(
-                  button: true,
-                  selected: isActive,
-                  label:
-                      'Move ${node.san}${isActive ? ', current position' : ''}',
-                  child: TextButton(
-                    onPressed: () => onSelected(_navigationAfterPath()),
-                    style: TextButton.styleFrom(
-                      backgroundColor: isActive
-                          ? Theme.of(context).colorScheme.secondaryContainer
-                          : null,
-                      minimumSize: const Size(48, 44),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      tapTargetSize: MaterialTapTargetSize.padded,
-                    ),
-                    child: Text(node.san),
-                  ),
-                ),
-              ),
-              if (node.nags.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 4, top: 12),
-                  child: Text(
-                    node.nags.map((nag) => '\$$nag').join(' '),
-                    semanticsLabel: 'Annotations ${node.nags.join(', ')}',
-                  ),
-                ),
-            ],
-          ),
-          for (final comment in node.comments)
+    final sections = <Widget>[];
+    var inlineMoves = <Widget>[];
+
+    void flushMoves() {
+      if (inlineMoves.isEmpty) return;
+      sections.add(Wrap(children: inlineMoves));
+      inlineMoves = <Widget>[];
+    }
+
+    void appendLine(MoveNode move, List<int> movePath) {
+      inlineMoves.add(_moveButton(context, move, movePath));
+      if (move.comments.isNotEmpty) {
+        flushMoves();
+        for (final comment in move.comments) {
+          sections.add(
             Padding(
               padding: const EdgeInsetsDirectional.only(start: 10, bottom: 6),
               child: Text(comment),
             ),
-          if (node.children.isNotEmpty) ...[
+          );
+        }
+      }
+      if (move.children.isNotEmpty) {
+        appendLine(move.children.first, [...movePath, 0]);
+        for (var index = 1; index < move.children.length; index++) {
+          flushMoves();
+          sections.add(
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 10, top: 4),
+              child: Text(
+                'Variation $index',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            ),
+          );
+          sections.add(
             _MoveBranch(
-              node: node.children.first,
+              node: move.children[index],
               content: content,
-              depth: depth,
-              path: [...path, 0],
+              depth: 1,
+              path: [...movePath, index],
               activePath: activePath,
               onSelected: onSelected,
             ),
-            for (var index = 1; index < node.children.length; index++) ...[
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 10, top: 4),
-                child: Text(
-                  'Variation $index',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-              ),
-              _MoveBranch(
-                node: node.children[index],
-                content: content,
-                depth: depth + 1,
-                path: [...path, index],
-                activePath: activePath,
-                onSelected: onSelected,
-              ),
-            ],
-          ],
-        ],
+          );
+        }
+      }
+    }
+
+    appendLine(node, path);
+    flushMoves();
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: depth * 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: sections,
       ),
     );
   }
 
-  bool _isCurrentPath() {
+  Widget _moveButton(BuildContext context, MoveNode move, List<int> movePath) {
+    final isActive = _isCurrentPath(movePath);
+    final fen = move.fenBefore.split(' ');
+    final number = fen.length >= 6
+        ? int.tryParse(fen[5]) ?? (movePath.length + 1) ~/ 2
+        : (movePath.length + 1) ~/ 2;
+    final isBlack = fen.length >= 6 ? fen[1] == 'b' : movePath.length.isEven;
+    final prefix = '$number${isBlack ? '...' : '.'}';
+    return Semantics(
+      button: true,
+      selected: isActive,
+      label: 'Move $prefix ${move.san}${isActive ? ', current position' : ''}',
+      child: TextButton(
+        onPressed: () => onSelected(_navigationAfterPath(movePath)),
+        style: TextButton.styleFrom(
+          backgroundColor: isActive
+              ? Theme.of(context).colorScheme.secondaryContainer
+              : null,
+          minimumSize: const Size(48, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          tapTargetSize: MaterialTapTargetSize.padded,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('$prefix ', style: Theme.of(context).textTheme.bodySmall),
+            Text(move.san),
+            if (move.nags.isNotEmpty)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 4),
+                child: Text(
+                  move.nags.map((nag) => '\$$nag').join(' '),
+                  semanticsLabel: 'Annotations ${move.nags.join(', ')}',
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _isCurrentPath(List<int> path) {
     if (path.length != activePath.length) return false;
     var moves = content.rootMoves;
     for (var depth = 0; depth < path.length; depth++) {
@@ -168,7 +193,7 @@ final class _MoveBranch extends StatelessWidget {
     return true;
   }
 
-  ReaderNavigationState _navigationAfterPath() {
+  ReaderNavigationState _navigationAfterPath(List<int> path) {
     var state = ReaderNavigationState.initial(content);
     for (final index in path) {
       state = state.selectVariation(index);

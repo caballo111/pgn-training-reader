@@ -1,0 +1,11 @@
+schemaVersion: "1"
+name: pgn-training-reader
+agent: codex
+workspace: .
+sandboxOptions:
+  cpus: 4
+  memory: 6g
+lifecycle:
+  postCreate:
+    - command: sbx exec pgn-training-reader bash .sbx/setup-flutter.sh
+      timeout: 15m

@@ -17,7 +17,8 @@ final class PgnTrainingReaderApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
       ),
       initialRoute: AppRoutes.library,
-      onGenerateRoute: onGenerateAppRoute,
+      onGenerateRoute: (settings) =>
+          onGenerateAppRoute(settings, dependencies: dependencies),
     );
   }
 }
@@ -47,6 +48,13 @@ final class LibraryPage extends StatelessWidget {
                 'Your PGN library will appear here.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: () =>
+                    Navigator.of(context).pushNamed(AppRoutes.import),
+                icon: const Icon(Icons.file_open_outlined),
+                label: const Text('Import PGN'),
               ),
             ],
           ),

@@ -170,13 +170,13 @@ For every task:
 
 # Phase 6: Import User Interface
 
-- [ ] T082 [US1] Create `lib/features/import_library/application/import_controller.dart` with idle, selecting, copying, indexing, cancelled, failed, and completed states.
-- [ ] T083 [P] [US1] Create an accessible file-selection view in `lib/features/import_library/presentation/import_page.dart`.
-- [ ] T084 [P] [US1] Create progress widgets showing current phase, bytes processed when known, blocks indexed, diagnostics count, and cancellability.
-- [ ] T085 [US1] Wire selection, managed copy, indexing, cancellation, and completion through the import controller.
-- [ ] T086 [US1] Add clear error states for unsupported file access, insufficient storage, malformed content, cancellation, and database failure. State what data was preserved and what action is available.
-- [ ] T087 [US1] Add widget tests for every import-controller state. Do not use a real filesystem in widget tests.
-- [ ] T088 [US1] Add an integration test for select fixture, import, cancel, resume, and completion.
+- [x] T082 [US1] Create `lib/features/import_library/application/import_controller.dart` with idle, selecting, copying, indexing, cancelled, failed, and completed states.
+- [x] T083 [P] [US1] Create an accessible file-selection view in `lib/features/import_library/presentation/import_page.dart`.
+- [x] T084 [P] [US1] Create progress widgets showing current phase, bytes processed when known, blocks indexed, diagnostics count, and cancellability.
+- [x] T085 [US1] Wire selection, managed copy, indexing, cancellation, and completion through the import controller.
+- [x] T086 [US1] Add clear error states for unsupported file access, insufficient storage, malformed content, cancellation, and database failure. State what data was preserved and what action is available.
+- [x] T087 [US1] Add widget tests for every import-controller state. Do not use a real filesystem in widget tests.
+- [x] T088 [US1] Add an integration test for select fixture, import, cancel, resume, and completion.
 
 **User Story 1 checkpoint**: A user can import a PGN without freezing the app, monitor progress, cancel safely, and resume.
 

@@ -143,7 +143,7 @@ Related implementation tasks: T107 and Phase 10 puzzle UI integration.
 
 ## ASSESS-003 — Game Changer foreword rejected because of -- placeholder
 
-Status: Open.
+Status: Implemented; physical-device acceptance recheck pending.
 Category: Instructional-content compatibility gap.
 Assessment date: 2026-09-30 (America/Managua).
 Source: `Sadler, Matthew & Regan, Natasha - Game Changer - AlphaZero's Groundbreaking Chess Strategies and.pgn`, in the same Android Downloads / Quick Share directory.
@@ -178,6 +178,27 @@ Acceptance criteria:
   accepting arbitrary malformed moves or mixed null-move sequences.
 - Opening it creates no scored attempt and does not rewrite the PGN.
 - Add regression coverage and repeat the foreword opening on the device.
+
+Implementation notes:
+
+- The compatibility policy now accepts only `1. Z0 *` or `1. -- *`, allowing
+  whitespace and comments, for commentary-bearing standard-start pages. It
+  still excludes FEN/setup, authored Puzzle/Demonstration, other null spellings,
+  mixed move sequences, and variations. This extends ASSESS-001's original
+  Z0-only policy; it does not enable playable null moves.
+- Both spellings produce Instruction when classification is inferred, retain
+  the exact placeholder metadata, headers, and comments, and create no moves.
+  Persisted classification overrides remain authoritative. The reader explains
+  the actual placeholder token rather than always displaying Z0.
+- Parser regressions cover the foreword headers/comments and narrow rejection
+  rules. Source-range and reader tests exercise both spellings, unchanged
+  source bytes, and no invocation of the scored puzzle flow. All 21 targeted
+  parser/repository/reader/library-navigation tests pass; `flutter analyze lib
+  test` reports no issues.
+- Physical-device acceptance remains pending: this sandbox has no ADB access
+  to the Samsung or original PGN. Deploy on the host and reopen the original
+  Game Changer foreword to confirm readable commentary and no scored attempt.
+  Publisher heading markup and title fallback remain tracked by ASSESS-004.
 
 Related specification: FR-011–FR-016, FR-018, FR-019.
 Related implementation tasks: T094–T097, T105, T107, T109.

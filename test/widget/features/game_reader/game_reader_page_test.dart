@@ -23,42 +23,50 @@ ChessContent _content(ContentType type) => ChessContent(
 );
 
 void main() {
-  testWidgets(
-    'introduction opens as non-scored content and saves an override',
-    (tester) async {
-      final content = const DartchessContentParser().parse(
-        '[White "1) Introduction"]\n\n{Read this first} 1. Z0 *',
-        contentType: ContentType.demonstration,
-      );
-      ContentType? saved;
-      var puzzleCalls = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: GameReaderPage(
-            content: content,
-            onClassificationOverride: (type) async {
-              saved = type;
-            },
-            puzzleViewBuilder: (_, _) {
-              puzzleCalls++;
-              return const Text('Solver');
-            },
+  for (final token in ['Z0', '--']) {
+    testWidgets(
+      '$token introduction opens as non-scored content and saves an override',
+      (tester) async {
+        final content = const DartchessContentParser().parse(
+          '[White "1) Introduction"]\n\n{Read this first} 1. $token *',
+          contentType: ContentType.demonstration,
+        );
+        ContentType? saved;
+        var puzzleCalls = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GameReaderPage(
+              content: content,
+              onClassificationOverride: (type) async {
+                saved = type;
+              },
+              puzzleViewBuilder: (_, _) {
+                puzzleCalls++;
+                return const Text('Solver');
+              },
+            ),
           ),
-        ),
-      );
-      expect(find.text('Read this first'), findsOneWidget);
-      expect(find.text('Inferred classification: '), findsOneWidget);
-      expect(puzzleCalls, 0);
-      await tester.tap(find.byType(DropdownButton<ContentType>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Demonstration').last);
-      await tester.pumpAndSettle();
-      expect(saved, ContentType.demonstration);
-      expect(find.text('Inferred classification: '), findsNothing);
-      expect(find.text('Read this first'), findsOneWidget);
-      expect(puzzleCalls, 0);
-    },
-  );
+        );
+        expect(find.text('Read this first'), findsOneWidget);
+        expect(find.text('Inferred classification: '), findsOneWidget);
+        expect(puzzleCalls, 0);
+        expect(
+          find.text(
+            '$token is an instructional placeholder. This entry has no playable moves.',
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(find.byType(DropdownButton<ContentType>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Demonstration').last);
+        await tester.pumpAndSettle();
+        expect(saved, ContentType.demonstration);
+        expect(find.text('Inferred classification: '), findsNothing);
+        expect(find.text('Read this first'), findsOneWidget);
+        expect(puzzleCalls, 0);
+      },
+    );
+  }
 
   testWidgets('routes instruction content to InstructionView', (tester) async {
     await tester.pumpWidget(

@@ -61,10 +61,10 @@ final class _InstructionViewState extends State<InstructionView> {
             child: Text('Instruction'),
           ),
           if (widget.content.instructionalPlaceholder != null)
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Text(
-                'Z0 is an instructional placeholder. This entry has no playable moves.',
+                '${widget.content.instructionalPlaceholder} is an instructional placeholder. This entry has no playable moves.',
               ),
             ),
           if (widget.content.headers.isNotEmpty)

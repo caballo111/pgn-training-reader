@@ -13,11 +13,10 @@ import 'package:pgntrainingreader/domain/library/pgn_index_repository.dart';
 import 'package:pgntrainingreader/domain/library/pgn_source_repository.dart';
 
 void main() {
-  test(
-    'loads an inferred Z0 introduction without altering source bytes',
-    () async {
+  for (final token in ['Z0', '--']) {
+    test('loads an inferred $token introduction without altering source bytes', () async {
       final bytes = Uint8List.fromList(
-        '[White "1) Introduction"]\n[PlyCount "1"]\n\n{Read first} 1. Z0 *\n'
+        '[White "1) Introduction"]\n[PlyCount "1"]\n\n{Read first} 1. $token *\n'
             .codeUnits,
       );
       final original = Uint8List.fromList(bytes);
@@ -52,10 +51,11 @@ void main() {
       expect(content.contentType, ContentType.instruction);
       expect(content.comments, ['Read first']);
       expect(content.rootMoves, isEmpty);
+      expect(content.instructionalPlaceholder, token);
       expect(bytes, original);
       expect(file.lastRead, original);
-    },
-  );
+    });
+  }
 
   test(
     'loads exactly the indexed first, middle, and last byte ranges',

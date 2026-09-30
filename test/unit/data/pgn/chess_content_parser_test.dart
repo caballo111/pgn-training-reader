@@ -22,13 +22,16 @@ void main() {
 
   test('placeholder support excludes null moves, mixed trees and puzzles', () {
     for (final moves in [
-      '1. -- *',
       '1. 0000 *',
       '1. @@@@ *',
       '1. Z0 e5 *',
       '1. e4 Z0 *',
       '1. Z0 (1. e4) *',
       '1. Z0 junk *',
+      '1. -- e5 *',
+      '1. e4 -- *',
+      '1. -- (1. e4) *',
+      '1. -- junk *',
       '1. e5 *',
     ]) {
       expect(
@@ -47,6 +50,42 @@ void main() {
       ),
       throwsA(isA<PgnFailure>()),
     );
+  });
+
+  test('foreword -- preserves original headers, comments and placeholder', () {
+    const pgn =
+        '[Event "?"]\n[Black "Foreword by Garry Kasparov"]\n\n'
+        '{Foreword commentary} 1. -- {Closing note} *';
+    final content = const DartchessContentParser().parse(
+      pgn,
+      contentType: ContentType.demonstration,
+    );
+    expect(content.contentType, ContentType.instruction);
+    expect(content.inferredClassification, isTrue);
+    expect(content.instructionalPlaceholder, '--');
+    expect(content.rootMoves, isEmpty);
+    expect(content.headers['Black'], 'Foreword by Garry Kasparov');
+    expect(content.comments, ['Foreword commentary', 'Closing note']);
+  });
+
+  test('both spellings require commentary and exclude setup and authored games', () {
+    for (final token in ['Z0', '--']) {
+      for (final headers in [
+        '[Event "No commentary"]',
+        '[SetUp "1"]\n[FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]',
+        '[X-ContentType "Demonstration"]',
+        '[X-ContentType "Puzzle"]',
+      ]) {
+        expect(
+          () => const DartchessContentParser().parse(
+            '$headers\n\n${headers.contains('No commentary') ? '' : '{Note} '}1. $token *',
+            contentType: ContentType.demonstration,
+          ),
+          throwsA(isA<PgnFailure>()),
+          reason: '$headers / $token',
+        );
+      }
+    }
   });
 
   test('saved reader override is respected for placeholder content', () {

@@ -39,14 +39,17 @@ final class DartchessContentParser {
       final inferred =
           inferredClassification ?? !game.headers.containsKey('X-ContentType');
       // Dartchess normalizes several null-move spellings to `--`. Check the
-      // original movetext as well so only this export's exact Z0 is accepted.
+      // original movetext too: only the observed Z0 and -- instructional
+      // exports qualify, never null moves inside games or variations.
       final movetext = pgn
           .replaceAll(RegExp(r'^\s*\[.*\]\s*$', multiLine: true), '')
           .replaceAll(RegExp(r'\{[^}]*\}', dotAll: true), '')
           .replaceAll(RegExp(r';[^\r\n]*'), '')
           .trim();
+      final placeholderMatch = RegExp(r'^1\.\s*(Z0|--)\s*\*$')
+          .firstMatch(movetext);
       final placeholder =
-          RegExp(r'^1\.\s*Z0\s*\*$').hasMatch(movetext) &&
+          placeholderMatch != null &&
           game.moves.children.length == 1 &&
           game.moves.children.single.data.san == '--' &&
           game.moves.children.single.children.isEmpty &&
@@ -78,7 +81,9 @@ final class DartchessContentParser {
             ? ContentType.instruction
             : contentType,
         inferredClassification: inferred,
-        instructionalPlaceholder: placeholder ? 'Z0' : null,
+        instructionalPlaceholder: placeholder
+            ? placeholderMatch.group(1)
+            : null,
       );
     } on AppFailure {
       rethrow;

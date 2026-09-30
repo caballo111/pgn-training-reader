@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'dependencies.dart';
+import 'library_puzzle_practice.dart';
 import '../core/errors/app_failure.dart';
 import '../domain/chess_content/pgn_block_index.dart';
 import '../features/browse_library/application/library_controller.dart';
@@ -127,6 +128,11 @@ Future<void> _openBlock(
       MaterialPageRoute<void>(
         builder: (_) => GameReaderPage(
           content: content,
+          puzzleViewBuilder: (_, puzzle) => LibraryPuzzlePractice(
+            dependencies: dependencies,
+            blockId: block.id,
+            puzzle: puzzle,
+          ),
           onClassificationOverride: block.authoredContentType == null
               ? (type) => dependencies.pgnIndexRepository
                     .overrideClassification(block.id, type)

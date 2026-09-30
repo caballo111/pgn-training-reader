@@ -73,7 +73,7 @@ Related implementation tasks: T094–T097, T105, T107, T109.
 
 ## ASSESS-002 — Library puzzle opening reaches unavailable placeholder
 
-Status: Open.
+Status: Implemented; physical-device acceptance recheck pending.
 Category: Library-to-puzzle integration defect.
 
 Reproduction:
@@ -108,5 +108,107 @@ Acceptance criteria:
 - Navigation regression coverage exercises the real library opening path.
 - Recheck the flow on the physical device with the original PGN.
 
+Implementation notes:
+
+- Library puzzle opening now displays only the authored starting position and
+  side to move, with an explicit Start or resume practice action. Opening or
+  leaving this preview creates no attempt, session, or training set.
+- Starting practice creates or reuses an active single-puzzle library practice
+  set. This set appears in Training sets and its results use normal training
+  progress reporting. Edited or archived practice sets retain their history;
+  only intact active sets are reused. Completed practice can start a new cycle.
+- Practice uses the existing active-session controller and puzzle solver:
+  authored-line evaluation, durable moves/results, monotonic active timing,
+  lifecycle pause, and interrupted-session recovery follow training semantics.
+  Back navigation pauses an unfinished attempt and closes the session without
+  recording a completed outcome; starting again resumes that same attempt.
+- The preview renders no PGN headers, comments, or solution moves. The solver
+  uses its existing safe presentation projection until a permitted outcome;
+  solution review is available after the attempt ends. Source bytes are never
+  written by this flow.
+- A navigation regression opens the real library route using an indexed PGN
+  fixture, verifies the FEN's black active side, no preview attempt, hidden
+  answer comments, paused/resumed identity, authored three-ply completion,
+  persisted pass, and permitted solution review. This test and the existing
+  active-session widget/session integration tests pass (five tests). Analysis
+  of `lib` and `test` is clean. Full-repository analysis still reports existing
+  issues in `research/prototypes/dartchess_probe`.
+- Physical-device recheck with the original Woodpecker PGN remains pending;
+  the Samsung device and source are outside this sandbox. On the device, open
+  Exercise 1, start practice, leave and resume, complete the authored line,
+  and confirm timing, result persistence, and solution visibility.
+
 Related specification: US3 Scenario 9; FR-017, FR-020–FR-024.
 Related implementation tasks: T107 and Phase 10 puzzle UI integration.
+
+## ASSESS-003 — Game Changer foreword rejected because of -- placeholder
+
+Status: Open.
+Category: Instructional-content compatibility gap.
+Assessment date: 2026-09-30 (America/Managua).
+Source: `Sadler, Matthew & Regan, Natasha - Game Changer - AlphaZero's Groundbreaking Chess Strategies and.pgn`, in the same Android Downloads / Quick Share directory.
+
+Reproduction:
+
+1. Open the imported Game Changer library on the Samsung SM-S931B.
+2. Select `Main Level — Foreword by Garry Kasparov`.
+
+Observed on the physical device through ADB: The entry is listed as
+`demonstration`. Opening it shows `Unable to open PGN` and “The selected PGN
+block contains a move that cannot be read safely.”
+
+Evidence: The original first block has introductory brace commentary, no FEN
+setup, and ends with `1. -- *`. Dartchess recognizes this token in its PGN
+syntax tree, but the application's legal-move conversion rejects it. The
+current instructional-placeholder adapter explicitly requires the original
+movetext to match `1. Z0 *`, so the Woodpecker-specific handling does not cover
+this export. This is a distinct reproduction of ASSESS-001 with another source
+and another placeholder spelling; broad null-move support must not be inferred
+from support for instructional pages.
+
+Expected resolution: Extend the documented instructional-export compatibility
+policy to cover this observed placeholder-only page while preserving source
+bytes and comments. Keep genuine null moves within game/variation sequences
+outside that narrow policy unless separately specified and supported.
+
+Acceptance criteria:
+
+- The original Game Changer foreword opens as readable instructional content.
+- Placeholder-only handling covers both observed export spellings without
+  accepting arbitrary malformed moves or mixed null-move sequences.
+- Opening it creates no scored attempt and does not rewrite the PGN.
+- Add regression coverage and repeat the foreword opening on the device.
+
+Related specification: FR-011–FR-016, FR-018, FR-019.
+Related implementation tasks: T094–T097, T105, T107, T109.
+
+## ASSESS-004 — Game Changer publisher markup has no reader presentation
+
+Status: Open; source/code evidence confirmed, physical-device rendering
+verification blocked by ASSESS-003.
+Category: Rich-comment presentation compatibility gap.
+
+Evidence: The foreword's opening comment embeds a heading between
+`@@HeaderStart@@` and `@@HeaderEnd@@`. Both `InstructionView` and
+`DemonstrationView` render comments with plain `Text(comment)`, with no
+interpretation of these export markers. Thus the current reader would expose
+the raw delimiters rather than present a heading after parsing is unblocked.
+The same entry has `Event "?"`; the reader title currently prefers Event over
+the descriptive `Black` header, losing the useful foreword title.
+
+Expected resolution: Define a presentation-only policy for the observed
+publisher heading markers and a useful title fallback when Event is an
+unknown-value placeholder. Preserve the original comment and headers; unknown
+markup must remain available rather than being silently deleted.
+
+Acceptance criteria:
+
+- The foreword heading is readable without raw recognized delimiters.
+- The page has a descriptive title rather than `?`.
+- Long commentary remains fully reachable by scrolling on the phone.
+- Original comments and headers remain canonical and unchanged.
+- Validate the actual rendered foreword after ASSESS-003 is resolved; assess
+  further publisher markup only when encountered in the source.
+
+Related specification: FR-011, FR-012, FR-019.
+Related implementation tasks: T095, T105–T108.

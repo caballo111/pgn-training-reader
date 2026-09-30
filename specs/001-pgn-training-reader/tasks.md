@@ -291,16 +291,16 @@ For every task:
 
 # Phase 13: Scoring and Progress Reports
 
-- [ ] T154 [US5] Create `lib/domain/training/progress_calculator.dart` as the single implementation of accuracy, total active time, average, median, outcome counts, and cycle comparison.
-- [ ] T155 [US5] Define denominator behavior for abandoned attempts, skips, and timeouts exactly as stated in `spec.md`. If the spec is ambiguous, stop and report it.
-- [ ] T156 [US5] Add fixed-fixture unit tests for zero attempts, one attempt, mixed outcomes, even-count median, odd-count median, retries, and multi-session cycle totals.
-- [ ] T157 [US5] Implement repository queries for cycle summary, session summary, exercise history, theme summary, and difficulty summary.
-- [ ] T158 [P] [US5] Create `progress_report_controller.dart` with cycle selection and comparison state.
-- [ ] T159 [P] [US5] Create a cycle summary view with attempted, passed, failed, accuracy, total active time, average, median, and separate outcome counts.
-- [ ] T160 [P] [US5] Create a daily sessions view listing each session's date, active duration, attempted count, and outcome counts.
-- [ ] T161 [P] [US5] Create a cycle comparison view showing transparent deltas in accuracy and active time. Do not add composite scores.
-- [ ] T162 [US5] Create theme and difficulty summaries only when metadata exists. Show an explicit unavailable state otherwise.
-- [ ] T163 [US5] Add widget tests proving all displayed metrics match the tested calculator output.
+- [x] T154 [US5] Create `lib/domain/training/progress_calculator.dart` as the single implementation of accuracy, total active time, average, median, outcome counts, and cycle comparison.
+- [x] T155 [US5] Define denominator behavior for abandoned attempts, skips, and timeouts exactly as stated in `spec.md`. If the spec is ambiguous, stop and report it.
+- [x] T156 [US5] Add fixed-fixture unit tests for zero attempts, one attempt, mixed outcomes, even-count median, odd-count median, retries, and multi-session cycle totals.
+- [x] T157 [US5] Implement repository queries for cycle summary, session summary, exercise history, theme summary, and difficulty summary.
+- [x] T158 [P] [US5] Create `progress_report_controller.dart` with cycle selection and comparison state.
+- [x] T159 [P] [US5] Create a cycle summary view with attempted, passed, failed, accuracy, total active time, average, median, and separate outcome counts.
+- [x] T160 [P] [US5] Create a daily sessions view listing each session's date, active duration, attempted count, and outcome counts.
+- [x] T161 [P] [US5] Create a cycle comparison view showing transparent deltas in accuracy and active time. Do not add composite scores.
+- [x] T162 [US5] Create theme and difficulty summaries only when metadata exists. Show an explicit unavailable state otherwise.
+- [x] T163 [US5] Add widget tests proving all displayed metrics match the tested calculator output.
 
 **User Story 5 checkpoint**: Users can understand results and improvement without opaque scoring.
 

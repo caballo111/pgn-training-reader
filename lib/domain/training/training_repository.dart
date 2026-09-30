@@ -1,6 +1,7 @@
 import 'attempt_move.dart';
 import 'cycle.dart';
 import 'progress_aggregate.dart';
+import 'progress_report_data.dart';
 import 'puzzle_attempt.dart';
 import 'timing_segment.dart';
 import 'training_session.dart';
@@ -160,6 +161,27 @@ abstract interface class TrainingRepository {
 
   /// Returns the same raw progress inputs restricted to one cycle.
   Future<ProgressAggregate> aggregateForCycle(String cycleId);
+
+  /// Returns raw progress inputs for finalized attempts in one session.
+  Future<ProgressAggregate> aggregateForSession(String sessionId);
+
+  /// Returns a report entry for each session in a cycle, including empty ones.
+  Future<List<SessionProgressAggregate>> sessionAggregatesForCycle(
+    String cycleId,
+  );
+
+  /// Returns append-only attempt history grouped by exercise within a cycle.
+  Future<List<ExerciseProgressHistory>> exerciseHistoryForCycle(String cycleId);
+
+  /// Returns raw progress grouped by non-empty theme metadata in a cycle.
+  Future<List<MetadataProgressAggregate>> themeAggregatesForCycle(
+    String cycleId,
+  );
+
+  /// Returns raw progress grouped by non-empty difficulty metadata in a cycle.
+  Future<List<MetadataProgressAggregate>> difficultyAggregatesForCycle(
+    String cycleId,
+  );
 }
 
 /// Optional transaction boundary for coordinating multiple repository writes.

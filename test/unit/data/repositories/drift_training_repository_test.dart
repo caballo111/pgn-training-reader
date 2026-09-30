@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/core/errors/app_failure.dart';
@@ -339,6 +340,252 @@ void main() {
               .getSingle();
       expect(row.completedAtMicros, firstCompletion.microsecondsSinceEpoch);
     },
+  );
+
+  test(
+    'session aggregates include empty sessions and retain outcome timing',
+    () async {
+      final nextDay = startedAt.add(const Duration(days: 1));
+      await repository.updateSession(
+        TrainingSession(
+          id: 'session',
+          cycleId: 'cycle',
+          status: TrainingSessionStatus.paused,
+          startedAt: startedAt,
+          studyDay: DateTime.utc(
+            startedAt.year,
+            startedAt.month,
+            startedAt.day,
+          ),
+        ),
+      );
+      await repository.createSession(
+        TrainingSession(
+          id: 'empty-session',
+          cycleId: 'cycle',
+          status: TrainingSessionStatus.active,
+          startedAt: nextDay,
+          studyDay: DateTime.utc(nextDay.year, nextDay.month, nextDay.day),
+        ),
+      );
+      await _saveFinalizedAttempt(
+        repository,
+        id: 'session-pass',
+        blockId: 'block',
+        sessionId: 'session',
+        startedAt: startedAt,
+        duration: const Duration(minutes: 2),
+        outcome: PuzzleAttemptOutcome.passed,
+      );
+      await _saveFinalizedAttempt(
+        repository,
+        id: 'session-skip',
+        blockId: 'block',
+        sessionId: 'session',
+        startedAt: startedAt.add(const Duration(minutes: 3)),
+        duration: const Duration(seconds: 45),
+        outcome: PuzzleAttemptOutcome.skipped,
+      );
+
+      final summaries = await repository.sessionAggregatesForCycle('cycle');
+
+      expect(summaries, hasLength(2));
+      expect(summaries[0].session.id, 'session');
+      expect(summaries[0].progress.passedCount, 1);
+      expect(summaries[0].progress.skippedCount, 1);
+      expect(summaries[0].progress.attemptActiveDurations, <Duration>[
+        const Duration(minutes: 2),
+        const Duration(seconds: 45),
+      ]);
+      expect(summaries[1].session.id, 'empty-session');
+      expect(summaries[1].progress.passedCount, 0);
+      expect(summaries[1].progress.skippedCount, 0);
+      expect(summaries[1].progress.attemptActiveDurations, isEmpty);
+
+      final direct = await repository.aggregateForSession('session');
+      expect(direct.passedCount, 1);
+      expect(direct.skippedCount, 1);
+      expect(
+        direct.attemptActiveDurations,
+        summaries[0].progress.attemptActiveDurations,
+      );
+    },
+  );
+
+  test('metadata aggregates include only tagged exercises', () async {
+    await _addBlock(database, id: 'theme-block', ordinal: 1, theme: 'Fork');
+    await _addBlock(
+      database,
+      id: 'difficulty-block',
+      ordinal: 2,
+      difficulty: 'Easy',
+    );
+    await _addBlock(database, id: 'untagged-block', ordinal: 3);
+    await _saveFinalizedAttempt(
+      repository,
+      id: 'theme-pass',
+      blockId: 'theme-block',
+      sessionId: 'session',
+      startedAt: startedAt,
+      duration: const Duration(seconds: 10),
+      outcome: PuzzleAttemptOutcome.passed,
+    );
+    await _saveFinalizedAttempt(
+      repository,
+      id: 'theme-retry',
+      blockId: 'theme-block',
+      sessionId: 'session',
+      startedAt: startedAt.add(const Duration(seconds: 20)),
+      duration: const Duration(seconds: 20),
+      outcome: PuzzleAttemptOutcome.wrongMove,
+    );
+    await _saveFinalizedAttempt(
+      repository,
+      id: 'difficulty-skip',
+      blockId: 'difficulty-block',
+      sessionId: 'session',
+      startedAt: startedAt.add(const Duration(seconds: 40)),
+      duration: const Duration(seconds: 30),
+      outcome: PuzzleAttemptOutcome.skipped,
+    );
+    await _saveFinalizedAttempt(
+      repository,
+      id: 'untagged-pass',
+      blockId: 'untagged-block',
+      sessionId: 'session',
+      startedAt: startedAt.add(const Duration(seconds: 80)),
+      duration: const Duration(seconds: 5),
+      outcome: PuzzleAttemptOutcome.passed,
+    );
+
+    final themes = await repository.themeAggregatesForCycle('cycle');
+    final difficulties = await repository.difficultyAggregatesForCycle('cycle');
+
+    expect(themes.map((entry) => entry.value), <String>['Fork']);
+    expect(themes.single.progress.passedCount, 1);
+    expect(themes.single.progress.wrongMoveOutcomeCount, 1);
+    expect(themes.single.progress.attemptActiveDurations, <Duration>[
+      const Duration(seconds: 10),
+      const Duration(seconds: 20),
+    ]);
+    expect(difficulties.map((entry) => entry.value), <String>['Easy']);
+    expect(difficulties.single.progress.skippedCount, 1);
+    expect(difficulties.single.progress.passedCount, 0);
+  });
+
+  test('exercise history preserves retries as separate attempts', () async {
+    await _addBlock(database, id: 'history-block', ordinal: 1, theme: 'Fork');
+    await _saveFinalizedAttempt(
+      repository,
+      id: 'history-first',
+      blockId: 'history-block',
+      sessionId: 'session',
+      startedAt: startedAt,
+      duration: const Duration(seconds: 12),
+      outcome: PuzzleAttemptOutcome.wrongMove,
+    );
+    await _saveFinalizedAttempt(
+      repository,
+      id: 'history-retry',
+      blockId: 'history-block',
+      sessionId: 'session',
+      startedAt: startedAt.add(const Duration(minutes: 1)),
+      duration: const Duration(seconds: 8),
+      outcome: PuzzleAttemptOutcome.passed,
+    );
+
+    final history = await repository.exerciseHistoryForCycle('cycle');
+    final exercise = history.singleWhere(
+      (entry) => entry.exerciseId == 'history-block',
+    );
+
+    expect(exercise.attempts.map((attempt) => attempt.id), [
+      'history-first',
+      'history-retry',
+    ]);
+    expect(exercise.progress.attemptActiveDurations, <Duration>[
+      const Duration(seconds: 12),
+      const Duration(seconds: 8),
+    ]);
+    expect(exercise.progress.wrongMoveOutcomeCount, 1);
+    expect(exercise.progress.passedCount, 1);
+  });
+}
+
+Future<void> _addBlock(
+  AppDatabase database, {
+  required String id,
+  required int ordinal,
+  String? theme,
+  String? difficulty,
+}) async {
+  await database
+      .into(database.pgnBlocks)
+      .insert(
+        PgnBlocksCompanion.insert(
+          id: id,
+          sourceId: 'source',
+          startOffset: ordinal * 10,
+          endOffset: ordinal * 10 + 9,
+          ordinal: ordinal,
+          contentType: ContentType.puzzle.toDatabaseValue(),
+          parseStatus: 'notParsed',
+          theme: Value(theme),
+          difficulty: Value(difficulty),
+        ),
+      );
+}
+
+Future<void> _saveFinalizedAttempt(
+  DriftTrainingRepository repository, {
+  required String id,
+  required String blockId,
+  required String sessionId,
+  required DateTime startedAt,
+  required Duration duration,
+  required PuzzleAttemptOutcome outcome,
+}) async {
+  await repository.createAttempt(
+    PuzzleAttempt(
+      id: id,
+      blockId: blockId,
+      cycleId: 'cycle',
+      sessionId: sessionId,
+      startedAt: startedAt,
+      activeDuration: duration,
+    ),
+  );
+  await repository.updateUnfinishedAttempt(
+    PuzzleAttempt(
+      id: id,
+      blockId: blockId,
+      cycleId: 'cycle',
+      sessionId: sessionId,
+      status: PuzzleAttemptStatus.paused,
+      startedAt: startedAt,
+      activeDuration: duration,
+    ),
+  );
+  final failureReason = switch (outcome) {
+    PuzzleAttemptOutcome.wrongMove => PuzzleAttemptFailureReason.incorrectMove,
+    PuzzleAttemptOutcome.timedOut =>
+      PuzzleAttemptFailureReason.timeLimitExceeded,
+    PuzzleAttemptOutcome.abandoned => PuzzleAttemptFailureReason.userAbandoned,
+    _ => null,
+  };
+  await repository.finalizeAttempt(
+    attempt: PuzzleAttempt(
+      id: id,
+      blockId: blockId,
+      cycleId: 'cycle',
+      sessionId: sessionId,
+      status: PuzzleAttemptStatus.finalized,
+      startedAt: startedAt,
+      completedAt: startedAt.add(duration),
+      activeDuration: duration,
+      outcome: outcome,
+      failureReason: failureReason,
+    ),
   );
 }
 

@@ -6,6 +6,7 @@ import '../../domain/training/attempt_move.dart';
 import '../../domain/training/cycle.dart';
 import '../../domain/training/lifecycle_status.dart';
 import '../../domain/training/progress_aggregate.dart';
+import '../../domain/training/progress_report_data.dart';
 import '../../domain/training/puzzle_attempt.dart';
 import '../../domain/training/timing_segment.dart';
 import '../../domain/training/training_repository.dart';
@@ -673,6 +674,172 @@ final class DriftTrainingRepository
       return _aggregate(rows, completedNonPuzzleItemCount: completions.length);
     },
   );
+
+  @override
+  Future<ProgressAggregate> aggregateForSession(String sessionId) =>
+      _guard(() async {
+        final rows =
+            await (_database.select(_database.puzzleAttempts)
+                  ..where(
+                    (row) =>
+                        row.sessionId.equals(sessionId) &
+                        row.status.equals(
+                          PuzzleAttemptStatus.finalized.toDatabaseValue(),
+                        ),
+                  )
+                  ..orderBy([
+                    (row) => OrderingTerm.asc(row.startedAtMicros),
+                    (row) => OrderingTerm.asc(row.id),
+                  ]))
+                .get();
+        return _aggregate(rows);
+      });
+
+  @override
+  Future<List<SessionProgressAggregate>> sessionAggregatesForCycle(
+    String cycleId,
+  ) => _guard(() async {
+    final sessions = await listSessions(cycleId);
+    final rows =
+        await (_database.select(_database.puzzleAttempts)
+              ..where(
+                (row) =>
+                    row.cycleId.equals(cycleId) &
+                    row.status.equals(
+                      PuzzleAttemptStatus.finalized.toDatabaseValue(),
+                    ),
+              )
+              ..orderBy([
+                (row) => OrderingTerm.asc(row.startedAtMicros),
+                (row) => OrderingTerm.asc(row.id),
+              ]))
+            .get();
+    final attemptsBySession = <String, List<db.PuzzleAttempt>>{};
+    for (final row in rows) {
+      attemptsBySession.putIfAbsent(row.sessionId, () => []).add(row);
+    }
+    return List.unmodifiable(
+      sessions.map(
+        (session) => SessionProgressAggregate(
+          session: session,
+          progress: _aggregate(attemptsBySession[session.id] ?? const []),
+        ),
+      ),
+    );
+  });
+
+  @override
+  Future<List<ExerciseProgressHistory>> exerciseHistoryForCycle(
+    String cycleId,
+  ) => _guard(() async {
+    final attempts = await _finalizedAttempts(cycleId);
+    if (attempts.isEmpty) return const [];
+    final blocks = await _metadataFor(attempts);
+    final grouped = <String, List<PuzzleAttempt>>{};
+    for (final attempt in attempts) {
+      grouped.putIfAbsent(attempt.blockId, () => []).add(attempt);
+    }
+    return List.unmodifiable(
+      grouped.entries.map((entry) {
+        final block = blocks[entry.key];
+        final exerciseAttempts = entry.value;
+        return ExerciseProgressHistory(
+          exerciseId: entry.key,
+          theme: block?.theme,
+          difficulty: block?.difficulty,
+          attempts: exerciseAttempts,
+          progress: _aggregateAttempts(exerciseAttempts),
+        );
+      }),
+    );
+  });
+
+  @override
+  Future<List<MetadataProgressAggregate>> themeAggregatesForCycle(
+    String cycleId,
+  ) => _metadataAggregates(cycleId, (block) => block?.theme);
+
+  @override
+  Future<List<MetadataProgressAggregate>> difficultyAggregatesForCycle(
+    String cycleId,
+  ) => _metadataAggregates(cycleId, (block) => block?.difficulty);
+
+  Future<List<MetadataProgressAggregate>> _metadataAggregates(
+    String cycleId,
+    String? Function(db.PgnBlock?) selectValue,
+  ) => _guard(() async {
+    final attempts = await _finalizedAttempts(cycleId);
+    if (attempts.isEmpty) return const [];
+    final blocks = await _metadataFor(attempts);
+    final grouped = <String, List<PuzzleAttempt>>{};
+    for (final attempt in attempts) {
+      final value = selectValue(blocks[attempt.blockId]);
+      final normalized = value?.trim();
+      if (normalized == null || normalized.isEmpty) continue;
+      grouped.putIfAbsent(normalized, () => []).add(attempt);
+    }
+    final values = grouped.keys.toList()..sort();
+    return List.unmodifiable(
+      values.map(
+        (value) => MetadataProgressAggregate(
+          value: value,
+          progress: _aggregateAttempts(grouped[value]!),
+        ),
+      ),
+    );
+  });
+
+  Future<List<PuzzleAttempt>> _finalizedAttempts(String cycleId) async {
+    final rows =
+        await (_database.select(_database.puzzleAttempts)
+              ..where(
+                (row) =>
+                    row.cycleId.equals(cycleId) &
+                    row.status.equals(
+                      PuzzleAttemptStatus.finalized.toDatabaseValue(),
+                    ),
+              )
+              ..orderBy([
+                (row) => OrderingTerm.asc(row.startedAtMicros),
+                (row) => OrderingTerm.asc(row.id),
+              ]))
+            .get();
+    return rows.map(_attempt).toList();
+  }
+
+  Future<Map<String, db.PgnBlock>> _metadataFor(
+    List<PuzzleAttempt> attempts,
+  ) async {
+    final ids = attempts.map((attempt) => attempt.blockId).toSet().toList();
+    final rows = await (_database.select(
+      _database.pgnBlocks,
+    )..where((block) => block.id.isIn(ids))).get();
+    return {for (final row in rows) row.id: row};
+  }
+
+  static ProgressAggregate _aggregateAttempts(List<PuzzleAttempt> attempts) {
+    final outcomes = <PuzzleAttemptOutcome, int>{
+      for (final outcome in PuzzleAttemptOutcome.values) outcome: 0,
+    };
+    var wrongMoves = 0;
+    var hints = 0;
+    for (final attempt in attempts) {
+      outcomes[attempt.outcome!] = outcomes[attempt.outcome!]! + 1;
+      wrongMoves += attempt.wrongMoveCount;
+      hints += attempt.hintCount;
+    }
+    return ProgressAggregate(
+      passedCount: outcomes[PuzzleAttemptOutcome.passed]!,
+      wrongMoveOutcomeCount: outcomes[PuzzleAttemptOutcome.wrongMove]!,
+      revealedCount: outcomes[PuzzleAttemptOutcome.revealed]!,
+      skippedCount: outcomes[PuzzleAttemptOutcome.skipped]!,
+      timedOutCount: outcomes[PuzzleAttemptOutcome.timedOut]!,
+      abandonedCount: outcomes[PuzzleAttemptOutcome.abandoned]!,
+      wrongMoveCount: wrongMoves,
+      hintCount: hints,
+      attemptActiveDurations: attempts.map((attempt) => attempt.activeDuration),
+    );
+  }
 
   Future<List<CycleItemCompletion>> listCycleCompletions(
     String cycleId,

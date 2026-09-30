@@ -13,6 +13,8 @@ import 'training_set_editor_page.dart';
 import '../../training_session/application/active_session_controller.dart';
 import '../../training_session/presentation/active_session_page.dart';
 import '../../puzzle_solver/application/puzzle_solver_controller.dart';
+import '../../progress_reports/application/progress_report_controller.dart';
+import '../../progress_reports/presentation/progress_report_page.dart';
 
 final class TrainingSetsPage extends StatefulWidget {
   const TrainingSetsPage({
@@ -110,6 +112,22 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
     if (mounted) _reload();
   }
 
+  Future<void> _report(TrainingSet set) async {
+    final controller = ProgressReportController(
+      trainingSetId: set.id,
+      repository: widget.trainingRepository,
+    );
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ProgressReportPage(
+          controller: controller,
+          trainingSetName: set.name,
+        ),
+      ),
+    );
+    controller.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Training sets')),
@@ -148,31 +166,40 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
                       ? Icons.archive_outlined
                       : Icons.view_list_outlined,
                 ),
-                trailing: set.status == TrainingSetStatus.active
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: 'Start or resume cycle',
-                            onPressed: () => _train(set),
-                            icon: const Icon(Icons.play_arrow),
-                          ),
-                          PopupMenuButton<String>(
-                            onSelected: (action) {
-                              if (action == 'edit') _edit(set);
-                              if (action == 'archive') _archive(set);
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(value: 'edit', child: Text('Edit')),
-                              PopupMenuItem(
-                                value: 'archive',
-                                child: Text('Archive'),
-                              ),
-                            ],
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'View progress report',
+                      onPressed: () => _report(set),
+                      icon: const Icon(Icons.assessment_outlined),
+                    ),
+                    if (set.status == TrainingSetStatus.active) ...[
+                      IconButton(
+                        tooltip: 'Start or resume cycle',
+                        onPressed: () => _train(set),
+                        icon: const Icon(Icons.play_arrow),
+                      ),
+                      PopupMenuButton<String>(
+                        onSelected: (action) {
+                          if (action == 'edit') _edit(set);
+                          if (action == 'archive') _archive(set);
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'edit', child: Text('Edit')),
+                          PopupMenuItem(
+                            value: 'archive',
+                            child: Text('Archive'),
                           ),
                         ],
-                      )
-                    : const Text('Archived'),
+                      ),
+                    ] else
+                      const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Text('Archived'),
+                      ),
+                  ],
+                ),
               ),
           ],
         );

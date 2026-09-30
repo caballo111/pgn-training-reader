@@ -60,7 +60,8 @@ final class LibraryPage extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: () => Navigator.of(context).pushNamed(AppRoutes.trainingSets),
+                onPressed: () =>
+                    Navigator.of(context).pushNamed(AppRoutes.trainingSets),
                 icon: const Icon(Icons.view_list_outlined),
                 label: const Text('Training sets'),
               ),

@@ -37,7 +37,7 @@ void main() {
             startOffset: 0,
             endOffset: bytes.length,
             ordinal: 0,
-            contentType: ContentType.demonstration,
+            contentType: ContentType.text,
             inferredClassification: true,
             parseStatus: PgnBlockParseStatus.notParsed,
           ),
@@ -48,7 +48,7 @@ void main() {
         fileSource: file,
       );
       final content = (await repository.getById('intro'))!;
-      expect(content.contentType, ContentType.instruction);
+      expect(content.contentType, ContentType.text);
       expect(content.comments, ['Read first']);
       expect(content.rootMoves, isEmpty);
       expect(content.instructionalPlaceholder, token);
@@ -79,7 +79,7 @@ void main() {
             startOffset: start,
             endOffset: end,
             ordinal: index,
-            contentType: ContentType.demonstration,
+            contentType: ContentType.text,
             parseStatus: PgnBlockParseStatus.notParsed,
           ),
         );
@@ -127,7 +127,7 @@ void main() {
         startOffset: 0,
         endOffset: bytes.length,
         ordinal: 0,
-        contentType: ContentType.demonstration,
+        contentType: ContentType.text,
         parseStatus: PgnBlockParseStatus.notParsed,
       );
       final rangeSource = _RecordingRangeSource(

@@ -38,9 +38,9 @@ void main() {
   test(
     'classification override persists separately from authored source metadata',
     () async {
-      await repository.overrideClassification('a1', ContentType.instruction);
+      await repository.overrideClassification('a1', ContentType.text);
       final block = await DriftPgnIndexRepository(database).getById('a1');
-      expect(block!.contentType, ContentType.instruction);
+      expect(block!.contentType, ContentType.text);
       expect(block.inferredClassification, isFalse);
       expect(block.white, 'Alice');
       await (database.update(
@@ -49,14 +49,10 @@ void main() {
         const PgnBlocksCompanion(authoredContentType: Value('Puzzle')),
       );
       expect(
-        () =>
-            repository.overrideClassification('a1', ContentType.demonstration),
+        () => repository.overrideClassification('a1', ContentType.text),
         throwsA(isA<ValidationFailure>()),
       );
-      expect(
-        (await repository.getById('a1'))!.contentType,
-        ContentType.instruction,
-      );
+      expect((await repository.getById('a1'))!.contentType, ContentType.text);
     },
   );
 
@@ -194,7 +190,7 @@ Future<void> _seed(AppDatabase database) async {
           event: r'100%_match\',
           white: 'Bob',
           result: '0-1',
-          type: 'Instruction',
+          type: 'Text',
           section: 'Chapter 2',
           theme: 'Pin',
           difficulty: 'Easy',
@@ -207,7 +203,7 @@ Future<void> _seed(AppDatabase database) async {
           event: 'Other',
           white: 'Carl',
           result: '*',
-          type: 'Demonstration',
+          type: 'Text',
           section: null,
           theme: null,
           difficulty: null,

@@ -109,8 +109,8 @@ void main() {
         expect(indexed.ordinal, i);
         final authoredType = switch (i % 4) {
           0 => ContentType.puzzle,
-          1 => ContentType.instruction,
-          2 => ContentType.demonstration,
+          1 => ContentType.text,
+          2 => ContentType.text,
           _ => ContentType.puzzle,
         };
         expect(

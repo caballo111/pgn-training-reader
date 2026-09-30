@@ -56,7 +56,11 @@ final class DartchessContentParser {
           game.headers['SetUp'] != '1' &&
           !game.headers.containsKey('FEN') &&
           (game.headers['X-ContentType'] == null ||
-              game.headers['X-ContentType'] == 'Instruction') &&
+              const {
+                'Text',
+                'Instruction',
+                'Demonstration',
+              }.contains(game.headers['X-ContentType'])) &&
           contentType != ContentType.puzzle &&
           (game.comments.isNotEmpty ||
               (game.moves.children.single.data.comments?.isNotEmpty ?? false) ||
@@ -77,9 +81,7 @@ final class DartchessContentParser {
           if (placeholder) ...?game.moves.children.single.data.comments,
         ],
         result: game.headers['Result'],
-        contentType: placeholder && inferred
-            ? ContentType.instruction
-            : contentType,
+        contentType: placeholder && inferred ? ContentType.text : contentType,
         inferredClassification: inferred,
         instructionalPlaceholder: placeholder
             ? placeholderMatch.group(1)

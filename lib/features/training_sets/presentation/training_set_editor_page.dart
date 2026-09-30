@@ -6,7 +6,7 @@ import '../../../domain/library/pgn_index_repository.dart';
 import '../../../domain/training/training_set_item.dart';
 import '../application/training_set_editor_controller.dart';
 
-/// Editor for an ordered set of indexed Puzzle, Instruction, and Demonstration blocks.
+/// Editor for an ordered set of indexed Puzzle and Text blocks.
 final class TrainingSetEditorPage extends StatefulWidget {
   const TrainingSetEditorPage({
     super.key,
@@ -34,11 +34,7 @@ final class _TrainingSetEditorPageState extends State<TrainingSetEditorPage> {
 
   Future<List<PgnBlockIndex>> _loadCandidates() async {
     final found = <String, PgnBlockIndex>{};
-    for (final type in [
-      ContentType.puzzle,
-      ContentType.instruction,
-      ContentType.demonstration,
-    ]) {
+    for (final type in [ContentType.puzzle, ContentType.text]) {
       var offset = 0;
       while (true) {
         final page = await widget.indexRepository.search(
@@ -187,8 +183,7 @@ final class _TrainingSetEditorPageState extends State<TrainingSetEditorPage> {
         block.diagnosticSummary == 'duplicateExerciseId';
     final label = switch (block.contentType) {
       ContentType.puzzle => 'Puzzle · Scored',
-      ContentType.instruction => 'Instruction · Not scored',
-      ContentType.demonstration => 'Demonstration · Not scored',
+      ContentType.text => 'Text · Not scored',
       ContentType.unsupported => 'Unsupported',
     };
     final event = block.event?.trim();

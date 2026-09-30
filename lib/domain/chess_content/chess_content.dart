@@ -83,7 +83,7 @@ final class ChessContent {
   /// available for diagnostics and display.
   final String? result;
 
-  /// Classification of this block as a puzzle, instruction, demonstration, or
+  /// Classification of this block as a puzzle, text, or
   /// unsupported content.
   final ContentType contentType;
   final bool inferredClassification;

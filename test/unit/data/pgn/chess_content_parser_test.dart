@@ -9,15 +9,29 @@ void main() {
         '[White "1) Introduction"]\n[PlyCount "1"]\n\n{Read this first} 1. Z0 {Closing note} *';
     final content = const DartchessContentParser().parse(
       pgn,
-      contentType: ContentType.demonstration,
+      contentType: ContentType.text,
     );
-    expect(content.contentType, ContentType.instruction);
+    expect(content.contentType, ContentType.text);
     expect(content.inferredClassification, isTrue);
     expect(content.instructionalPlaceholder, 'Z0');
     expect(content.rootMoves, isEmpty);
     expect(content.comments, ['Read this first', 'Closing note']);
     expect(content.headers['PlyCount'], '1');
     expect(pgn, contains('1. Z0'));
+  });
+
+  test('canonical and legacy text tags preserve placeholder commentary', () {
+    for (final tag in ['Text', 'Instruction', 'Demonstration']) {
+      final content = const DartchessContentParser().parse(
+        '[X-ContentType "$tag"]\n\n{Lesson} 1. -- *',
+        contentType: ContentType.text,
+      );
+      expect(content.contentType, ContentType.text);
+      expect(content.headers['X-ContentType'], tag);
+      expect(content.comments, ['Lesson']);
+      expect(content.rootMoves, isEmpty);
+      expect(content.inferredClassification, isFalse);
+    }
   });
 
   test('placeholder support excludes null moves, mixed trees and puzzles', () {
@@ -37,7 +51,7 @@ void main() {
       expect(
         () => const DartchessContentParser().parse(
           '[Event "Invalid"]\n\n{Note} $moves',
-          contentType: ContentType.demonstration,
+          contentType: ContentType.text,
         ),
         throwsA(isA<PgnFailure>()),
         reason: moves,
@@ -58,9 +72,9 @@ void main() {
         '{Foreword commentary} 1. -- {Closing note} *';
     final content = const DartchessContentParser().parse(
       pgn,
-      contentType: ContentType.demonstration,
+      contentType: ContentType.text,
     );
-    expect(content.contentType, ContentType.instruction);
+    expect(content.contentType, ContentType.text);
     expect(content.inferredClassification, isTrue);
     expect(content.instructionalPlaceholder, '--');
     expect(content.rootMoves, isEmpty);
@@ -68,18 +82,17 @@ void main() {
     expect(content.comments, ['Foreword commentary', 'Closing note']);
   });
 
-  test('both spellings require commentary and exclude setup and authored games', () {
+  test('both spellings require commentary and exclude setup and authored puzzles', () {
     for (final token in ['Z0', '--']) {
       for (final headers in [
         '[Event "No commentary"]',
         '[SetUp "1"]\n[FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]',
-        '[X-ContentType "Demonstration"]',
         '[X-ContentType "Puzzle"]',
       ]) {
         expect(
           () => const DartchessContentParser().parse(
             '$headers\n\n${headers.contains('No commentary') ? '' : '{Note} '}1. $token *',
-            contentType: ContentType.demonstration,
+            contentType: ContentType.text,
           ),
           throwsA(isA<PgnFailure>()),
           reason: '$headers / $token',
@@ -91,10 +104,10 @@ void main() {
   test('saved reader override is respected for placeholder content', () {
     final content = const DartchessContentParser().parse(
       '[White "Introduction"]\n\n{Note} 1. Z0 *',
-      contentType: ContentType.demonstration,
+      contentType: ContentType.text,
       inferredClassification: false,
     );
-    expect(content.contentType, ContentType.demonstration);
+    expect(content.contentType, ContentType.text);
     expect(content.inferredClassification, isFalse);
     expect(content.rootMoves, isEmpty);
   });
@@ -145,7 +158,7 @@ void main() {
     expect(
       () => const DartchessContentParser().parse(
         '[Variant "Crazyhouse"]\n1. e4 *',
-        contentType: ContentType.demonstration,
+        contentType: ContentType.text,
       ),
       throwsA(isA<UnsupportedContentFailure>()),
     );
@@ -155,7 +168,7 @@ void main() {
     expect(
       () => const DartchessContentParser().parse(
         '[Event "Broken"]\n\n1. e5 *',
-        contentType: ContentType.demonstration,
+        contentType: ContentType.text,
       ),
       throwsA(isA<PgnFailure>()),
     );

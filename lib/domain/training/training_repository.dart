@@ -127,7 +127,7 @@ abstract interface class TrainingRepository {
     TimingSegment? finalTimingSegment,
   });
 
-  /// Marks an Instruction or Demonstration item complete for one cycle.
+  /// Marks a Text item complete for one cycle.
   ///
   /// Completion is scoped to [cycleId]; it must not change shared set-item
   /// state or create a scored puzzle attempt. Repeating this operation for an
@@ -141,7 +141,7 @@ abstract interface class TrainingRepository {
     required DateTime completedAt,
   });
 
-  /// Returns completed Instruction and Demonstration item IDs for [cycleId].
+  /// Returns completed Text item IDs for [cycleId].
   ///
   /// The returned IDs are stable training-set-item identities, not positions.
   Future<Set<String>> completedNonPuzzleItemIds(String cycleId);

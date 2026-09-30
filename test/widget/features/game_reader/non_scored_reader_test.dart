@@ -31,41 +31,40 @@ ChessContent _content(ContentType type) => ChessContent(
 );
 
 void main() {
-  testWidgets(
-    'reading and navigating instruction or demonstration has no scored side effect',
-    (tester) async {
-      for (final type in [ContentType.instruction, ContentType.demonstration]) {
-        final writer = _RecordingAttemptWriter();
-        final before = writer.aggregate;
-        var puzzleBuilderCalls = 0;
+  testWidgets('reading and navigating text has no scored side effect', (
+    tester,
+  ) async {
+    for (final type in [ContentType.text]) {
+      final writer = _RecordingAttemptWriter();
+      final before = writer.aggregate;
+      var puzzleBuilderCalls = 0;
 
-        await tester.pumpWidget(
-          MaterialApp(
-            home: GameReaderPage(
-              content: _content(type),
-              puzzleViewBuilder: (context, content) {
-                puzzleBuilderCalls++;
-                return _RecordingPuzzleView(writer: writer);
-              },
-            ),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GameReaderPage(
+            content: _content(type),
+            puzzleViewBuilder: (context, content) {
+              puzzleBuilderCalls++;
+              return _RecordingPuzzleView(writer: writer);
+            },
           ),
-        );
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.ensureVisible(find.byTooltip('Next move'));
-        await tester.tap(find.byTooltip('Next move'));
-        await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byTooltip('Next move'));
+      await tester.tap(find.byTooltip('Next move'));
+      await tester.pumpAndSettle();
 
-        expect(puzzleBuilderCalls, 0, reason: '$type must stay in reader mode');
-        expect(writer.writeCalls, 0, reason: '$type must not record attempts');
-        expect(
-          writer.aggregate,
-          before,
-          reason: '$type must not alter score inputs',
-        );
-      }
-    },
-  );
+      expect(puzzleBuilderCalls, 0, reason: '$type must stay in reader mode');
+      expect(writer.writeCalls, 0, reason: '$type must not record attempts');
+      expect(
+        writer.aggregate,
+        before,
+        reason: '$type must not alter score inputs',
+      );
+    }
+  });
 
   testWidgets('recording attempt spy is wired to the injected puzzle view', (
     tester,

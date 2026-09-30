@@ -364,7 +364,7 @@ final class TrainingSessionServiceImpl implements TrainingSessionService {
     if (items.isEmpty || items.single.contentType == ContentType.puzzle) {
       throw ValidationFailure(
         code: 'invalid_training_transition',
-        message: 'A cycle instruction or demonstration is required.',
+        message: 'A cycle text item is required.',
       );
     }
     await _repository.completeNonPuzzleItem(

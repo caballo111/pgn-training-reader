@@ -41,7 +41,7 @@ void main() {
     final schemaVersion = await database
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(schemaVersion.read<int>('user_version'), 5);
+    expect(schemaVersion.read<int>('user_version'), 6);
   });
 
   test('creates every declared query index', () async {

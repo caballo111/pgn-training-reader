@@ -10,7 +10,7 @@ void main() {
   final content = ChessContent(
     headers: const {},
     startingFen: 'starting position',
-    contentType: ContentType.demonstration,
+    contentType: ContentType.text,
     rootMoves: [
       MoveNode(
         san: 'e4',

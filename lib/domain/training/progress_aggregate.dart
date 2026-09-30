@@ -5,9 +5,8 @@ import 'puzzle_attempt.dart';
 /// This value deliberately stores counts and durations without deriving
 /// accuracy, averages, medians, or other report metrics. Finalized puzzle
 /// attempt durations are retained individually so a domain calculator can
-/// apply one consistent inclusion policy. Active time spent on completed
-/// Instruction or Demonstration items is tracked separately from scored
-/// puzzle attempts.
+/// apply one consistent inclusion policy. Time spent on completed Text items
+/// is tracked separately from scored puzzle attempts.
 final class ProgressAggregate {
   factory ProgressAggregate({
     required int passedCount,
@@ -123,8 +122,8 @@ final class ProgressAggregate {
 
   final int completedNonPuzzleItemCount;
 
-  /// Eligible active session time spent on Instruction and Demonstration
-  /// items, separate from puzzle attempt durations.
+  /// Eligible active session time spent on Text items, separate from puzzle
+  /// attempt durations.
   final Duration nonPuzzleActiveDuration;
 
   @override

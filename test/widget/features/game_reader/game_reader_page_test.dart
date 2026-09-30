@@ -70,7 +70,7 @@ void main() {
       (tester) async {
         final content = const DartchessContentParser().parse(
           '[White "1) Introduction"]\n\n{Read this first} 1. $token *',
-          contentType: ContentType.demonstration,
+          contentType: ContentType.text,
         );
         ContentType? saved;
         var puzzleCalls = 0;
@@ -99,9 +99,9 @@ void main() {
         );
         await tester.tap(find.byType(DropdownButton<ContentType>));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Demonstration').last);
+        await tester.tap(find.text('Text').last);
         await tester.pumpAndSettle();
-        expect(saved, ContentType.demonstration);
+        expect(saved, ContentType.text);
         expect(find.text('Inferred classification: '), findsNothing);
         expect(find.text('Read this first'), findsOneWidget);
         expect(puzzleCalls, 0);
@@ -109,25 +109,18 @@ void main() {
     );
   }
 
-  testWidgets('routes instruction content to InstructionView', (tester) async {
+  testWidgets('routes text content to TextView', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: GameReaderPage(content: _content(ContentType.instruction)),
-      ),
+      MaterialApp(home: GameReaderPage(content: _content(ContentType.text))),
     );
 
     expect(find.text('Reader test'), findsNWidgets(2));
-    expect(find.text('Instruction'), findsOneWidget);
     expect(find.text('secret solution'), findsOneWidget);
   });
 
-  testWidgets('routes demonstration content to the board reader', (
-    tester,
-  ) async {
+  testWidgets('routes text with moves to the board reader', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: GameReaderPage(content: _content(ContentType.demonstration)),
-      ),
+      MaterialApp(home: GameReaderPage(content: _content(ContentType.text))),
     );
 
     expect(find.text('White to move'), findsOneWidget);
@@ -192,6 +185,36 @@ void main() {
     expect(find.text('Puzzle practice is not available yet.'), findsOneWidget);
     expect(find.text('secret solution'), findsNothing);
   });
+
+  testWidgets(
+    'unsupported classification can be corrected using only Puzzle or Text',
+    (tester) async {
+      ContentType? saved;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GameReaderPage(
+            content: _content(ContentType.unsupported),
+            onClassificationOverride: (type) async {
+              saved = type;
+            },
+          ),
+        ),
+      );
+      final dropdown = tester.widget<DropdownButton<ContentType>>(
+        find.byType(DropdownButton<ContentType>),
+      );
+      expect(dropdown.items!.map((item) => item.value), [
+        ContentType.puzzle,
+        ContentType.text,
+      ]);
+      await tester.tap(find.byType(DropdownButton<ContentType>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Text').last);
+      await tester.pumpAndSettle();
+      expect(saved, ContentType.text);
+      expect(find.text('secret solution'), findsOneWidget);
+    },
+  );
 
   testWidgets('shows a safe fallback for unsupported content', (tester) async {
     await tester.pumpWidget(

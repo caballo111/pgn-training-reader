@@ -3,13 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
-import 'package:pgntrainingreader/features/game_reader/presentation/demonstration_view.dart';
+import 'package:pgntrainingreader/features/game_reader/presentation/text_view.dart';
 
 void main() {
   final content = ChessContent(
     headers: const {},
     startingFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-    contentType: ContentType.demonstration,
+    contentType: ContentType.text,
     comments: const ['Model game: open with the king pawn.'],
     rootMoves: [
       MoveNode(
@@ -38,6 +38,33 @@ void main() {
     ],
   );
 
+  testWidgets('prose hides board and controls; FEN shows a static board', (
+    tester,
+  ) async {
+    for (final hasPosition in [false, true]) {
+      final text = ChessContent(
+        headers: hasPosition
+            ? {'FEN': content.startingFen, 'X-ContentType': 'Text'}
+            : const {'X-ContentType': 'Text'},
+        startingFen: content.startingFen,
+        contentType: ContentType.text,
+        comments: const ['Read this lesson.'],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: TextView(content: text)),
+        ),
+      );
+      expect(find.text('Read this lesson.'), findsOneWidget);
+      expect(
+        find.text('White to move'),
+        hasPosition ? findsOneWidget : findsNothing,
+      );
+      expect(find.byTooltip('Next move'), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('combines board, annotations, and navigable move tree', (
     tester,
   ) async {
@@ -48,7 +75,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: DemonstrationView(content: content)),
+        home: Scaffold(body: TextView(content: content)),
       ),
     );
 
@@ -68,19 +95,19 @@ void main() {
     expect(find.text('The Sicilian Defense.'), findsOneWidget);
   });
 
-  testWidgets('rejects content that is not a demonstration', (tester) async {
-    final instruction = ChessContent(
+  testWidgets('rejects content that is not text', (tester) async {
+    final puzzle = ChessContent(
       headers: const {},
       startingFen: content.startingFen,
-      contentType: ContentType.instruction,
+      contentType: ContentType.puzzle,
     );
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: DemonstrationView(content: instruction)),
+        home: Scaffold(body: TextView(content: puzzle)),
       ),
     );
-    expect(tester.takeException(), isA<ArgumentError>());
+    expect(find.text('This content is not text material.'), findsOneWidget);
   });
 
   testWidgets('navigation controls and board orientation remain available', (
@@ -93,12 +120,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: DemonstrationView(content: content)),
+        home: Scaffold(body: TextView(content: content)),
       ),
     );
 
     expect(find.text('White to move'), findsOneWidget);
-    expect(find.text('Rotate: Black at bottom'), findsOneWidget);
     await tester.tap(find.text('Rotate: Black at bottom'));
     await tester.pumpAndSettle();
     expect(find.text('Rotate: White at bottom'), findsOneWidget);
@@ -106,6 +132,7 @@ void main() {
     await tester.tap(find.byTooltip('Next move'));
     await tester.pumpAndSettle();
     expect(find.text('Black to move'), findsOneWidget);
+    expect(find.text('Rotate: White at bottom'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Last move on main line'));
     await tester.pumpAndSettle();
@@ -131,7 +158,7 @@ void main() {
     final longCommentContent = ChessContent(
       headers: const {},
       startingFen: content.startingFen,
-      contentType: ContentType.demonstration,
+      contentType: ContentType.text,
       comments: List.generate(8, (index) => 'Introductory note ${index + 1}.'),
       rootMoves: content.rootMoves,
     );
@@ -141,19 +168,21 @@ void main() {
           builder: (context) => MediaQuery(
             data: MediaQuery.of(context)
                 .copyWith(textScaler: const TextScaler.linear(2)),
-            child: Scaffold(
-              body: DemonstrationView(content: longCommentContent),
-            ),
+            child: Scaffold(body: TextView(content: longCommentContent)),
           ),
         ),
       ),
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('White to move'), findsOneWidget);
     expect(find.text('Introductory note 8.'), findsOneWidget);
-    await tester.drag(find.byType(ListView).first, const Offset(0, -1200));
+    await tester.scrollUntilVisible(
+      find.text('e4'),
+      150,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
     expect(find.text('e4'), findsOneWidget);
   });
 }

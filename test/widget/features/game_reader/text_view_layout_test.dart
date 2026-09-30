@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
-import 'package:pgntrainingreader/features/game_reader/presentation/instruction_view.dart';
+import 'package:pgntrainingreader/features/game_reader/presentation/text_view.dart';
 
 void main() {
   final content = ChessContent(
@@ -13,7 +13,7 @@ void main() {
       'X-Section': 'Opening principles',
     },
     startingFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-    contentType: ContentType.instruction,
+    contentType: ContentType.text,
     comments: const [
       'Develop the pieces toward the center before launching an attack.',
       'Keep the king safe and connect the rooks.',
@@ -45,7 +45,7 @@ void main() {
     ],
   );
 
-  testWidgets('scrolls instruction content on a small phone at 2x text', (
+  testWidgets('scrolls text content on a small phone at 2x text', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -57,18 +57,18 @@ void main() {
       MaterialApp(
         home: MediaQuery(
           data: const MediaQueryData(textScaler: TextScaler.linear(2)),
-          child: Scaffold(body: InstructionView(content: content)),
+          child: Scaffold(body: TextView(content: content)),
         ),
       ),
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(SingleChildScrollView), findsOneWidget);
-    expect(find.text('Instruction'), findsOneWidget);
+    expect(find.byType(ListView), findsOneWidget);
 
-    await tester.drag(
-      find.byType(SingleChildScrollView),
-      const Offset(0, -500),
+    await tester.scrollUntilVisible(
+      find.text('e4'),
+      150,
+      scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
 

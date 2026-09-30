@@ -34,20 +34,20 @@ void main() {
           controller: controller,
           indexRepository: _IndexRepository([
             _block('p', ContentType.puzzle),
-            _block('i', ContentType.instruction),
+            _block('i', ContentType.text),
           ]),
         ),
       ),
     );
     await tester.pumpAndSettle();
     controller.add(_block('p', ContentType.puzzle));
-    controller.add(_block('i', ContentType.instruction));
+    controller.add(_block('i', ContentType.text));
     await tester.pump();
     expect(find.text('Scored puzzle'), findsOneWidget);
     expect(find.text('Not scored'), findsOneWidget);
     expect(controller.state.items.map((item) => item.contentType), [
       ContentType.puzzle,
-      ContentType.instruction,
+      ContentType.text,
     ]);
   });
 

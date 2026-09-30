@@ -8,8 +8,9 @@ void main() {
   test('valid authored values are exact and authoritative', () {
     for (final entry in <String, ContentType>{
       'Puzzle': ContentType.puzzle,
-      'Instruction': ContentType.instruction,
-      'Demonstration': ContentType.demonstration,
+      'Text': ContentType.text,
+      'Instruction': ContentType.text,
+      'Demonstration': ContentType.text,
     }.entries) {
       final result = classifier.classify({'X-ContentType': entry.key});
       expect(result.contentType, entry.value);
@@ -32,9 +33,9 @@ void main() {
     expect(result.authoredValue, isNull);
   });
 
-  test('ordinary block fallback is inferred demonstration', () {
+  test('ordinary block fallback is inferred text', () {
     final result = classifier.classify(const {});
-    expect(result.contentType, ContentType.demonstration);
+    expect(result.contentType, ContentType.text);
     expect(result.inferred, isTrue);
     expect(result.authoredValue, isNull);
   });

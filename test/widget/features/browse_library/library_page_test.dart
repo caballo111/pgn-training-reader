@@ -207,7 +207,7 @@ final _item = PgnBlockIndex(
   black: 'Anand',
   event: 'World Championship',
   result: '1-0',
-  contentType: ContentType.demonstration,
+  contentType: ContentType.text,
   parseStatus: PgnBlockParseStatus.notParsed,
 );
 

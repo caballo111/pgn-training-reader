@@ -81,7 +81,7 @@ final class TrainingSet {
   final String name;
   final TrainingSetStatus status;
 
-  /// Ordered Puzzle, Instruction, and Demonstration content.
+  /// Ordered Puzzle and Text content.
   final List<TrainingSetItem> items;
 
   final DateTime createdAt;

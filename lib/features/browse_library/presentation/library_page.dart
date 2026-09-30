@@ -238,8 +238,7 @@ final class _LibraryPageState extends State<LibraryPage> {
 
   IconData _icon(String type) => switch (type) {
     'puzzle' => Icons.extension_outlined,
-    'instruction' => Icons.school_outlined,
-    'demonstration' => Icons.play_lesson_outlined,
+    'text' => Icons.menu_book_outlined,
     _ => Icons.help_outline,
   };
 }

@@ -304,7 +304,7 @@ void main() {
               startOffset: 11,
               endOffset: 20,
               ordinal: 1,
-              contentType: ContentType.instruction.toDatabaseValue(),
+              contentType: ContentType.text.toDatabaseValue(),
               parseStatus: 'notParsed',
             ),
           );
@@ -316,7 +316,7 @@ void main() {
               trainingSetId: 'set',
               blockId: 'instruction-block',
               position: 1,
-              contentType: ContentType.instruction.toDatabaseValue(),
+              contentType: ContentType.text.toDatabaseValue(),
               addedAtMicros: startedAt.microsecondsSinceEpoch,
             ),
           );

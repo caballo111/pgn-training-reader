@@ -33,7 +33,7 @@ void main() {
     headers: const {},
     startingFen: startFen,
     rootMoves: [mainA],
-    contentType: ContentType.demonstration,
+    contentType: ContentType.text,
   );
 
   test('navigates first, previous, next, and last along the main line', () {
@@ -68,7 +68,7 @@ void main() {
       ChessContent(
         headers: const {},
         startingFen: startFen,
-        contentType: ContentType.instruction,
+        contentType: ContentType.text,
       ),
     );
     expect(empty.currentFen, startFen);

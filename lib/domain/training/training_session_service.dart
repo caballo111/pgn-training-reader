@@ -6,7 +6,7 @@ import 'timing_segment.dart';
 import 'training_session.dart';
 import 'training_set_item.dart';
 
-/// Durable completion of an Instruction or Demonstration item in one cycle.
+/// Durable completion of a Text item in one cycle.
 ///
 /// Completion is scoped to a cycle, so repeating the set in a later cycle does
 /// not inherit this progress.
@@ -123,7 +123,7 @@ abstract interface class TrainingSessionService {
   /// in set order for [cycleId].
   ///
   /// Puzzle completion is determined from this cycle's attempt history;
-  /// instruction and demonstration completion is tracked per cycle. Returns
+  /// text completion is tracked per cycle. Returns
   /// `null` when every item is complete. It does not create a puzzle attempt.
   Future<TrainingSetItem?> selectNextItem({required String cycleId});
 
@@ -141,10 +141,10 @@ abstract interface class TrainingSessionService {
     required DateTime startedAt,
   });
 
-  /// Marks an Instruction or Demonstration as traversed in [cycleId].
+  /// Marks a Text item as traversed in [cycleId].
   ///
   /// The item must belong to the cycle's set and have content type
-  /// [ContentType.instruction] or [ContentType.demonstration]. The completion
+  /// [ContentType.text]. The completion
   /// is durably keyed by cycle and set-item identity, and this operation is
   /// idempotent: repeating it returns the existing completion. This is not a
   /// scored puzzle attempt.
@@ -208,7 +208,7 @@ abstract interface class TrainingSessionService {
   /// Completes an active cycle after every required item has been traversed
   /// and each Puzzle has a finalized attempt.
   ///
-  /// Instruction and Demonstration items must have durable cycle-item
+  /// Text items must have durable cycle-item
   /// completions. This creates no new attempt and preserves the cycle record.
   Future<Cycle> completeCycle({
     required String cycleId,

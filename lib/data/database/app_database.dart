@@ -32,7 +32,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => DatabaseMigrator(
@@ -75,6 +75,20 @@ class AppDatabase extends _$AppDatabase {
       ),
       4: DatabaseMigrationStep(
         migrate: (migrator) => _installReindexColumns(migrator.database),
+      ),
+      5: DatabaseMigrationStep(
+        migrate: (migrator) async {
+          // Keep authored_content_type and all training history intact while
+          // canonicalizing the persisted behavior category.
+          await migrator.database.customStatement(
+            "UPDATE pgn_blocks SET content_type = 'Text' "
+            "WHERE content_type IN ('Instruction', 'Demonstration')",
+          );
+          await migrator.database.customStatement(
+            "UPDATE training_set_items SET content_type = 'Text' "
+            "WHERE content_type IN ('Instruction', 'Demonstration')",
+          );
+        },
       ),
     },
   ).strategy;

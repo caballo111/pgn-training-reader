@@ -11,7 +11,7 @@ void main() {
   final content = ChessContent(
     headers: const {'SideToMove': 'black'},
     startingFen: startFen,
-    contentType: ContentType.demonstration,
+    contentType: ContentType.text,
     rootMoves: [
       MoveNode(
         san: 'e4',
@@ -78,7 +78,7 @@ void main() {
     final invalidContent = ChessContent(
       headers: const {},
       startingFen: startFen,
-      contentType: ContentType.demonstration,
+      contentType: ContentType.text,
       rootMoves: [
         MoveNode(
           san: 'e5',

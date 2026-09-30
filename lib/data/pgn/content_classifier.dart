@@ -38,8 +38,7 @@ final class ContentClassifier {
     if (authoredValue != null) {
       final contentType = switch (authoredValue) {
         'Puzzle' => ContentType.puzzle,
-        'Instruction' => ContentType.instruction,
-        'Demonstration' => ContentType.demonstration,
+        'Text' || 'Instruction' || 'Demonstration' => ContentType.text,
         _ => ContentType.unsupported,
       };
       return ContentClassificationResult(
@@ -49,14 +48,12 @@ final class ContentClassifier {
       );
     }
 
-    // Legacy setup positions commonly represent exercises. In the absence of
-    // explicit semantics, ordinary games are safest to present as demos.
+    // Legacy setup positions commonly represent exercises. Without explicit
+    // semantics, ordinary games are treated as readable text material.
     final hasCustomStart =
         headers['SetUp'] == '1' && headers.containsKey('FEN');
     return ContentClassificationResult(
-      contentType: hasCustomStart
-          ? ContentType.puzzle
-          : ContentType.demonstration,
+      contentType: hasCustomStart ? ContentType.puzzle : ContentType.text,
       inferred: true,
       authoredValue: null,
     );

@@ -39,7 +39,7 @@ void main() {
               startOffset: i * 10,
               endOffset: i * 10 + 9,
               ordinal: i,
-              contentType: i == 2 ? 'Instruction' : 'Puzzle',
+              contentType: i == 2 ? 'Text' : 'Puzzle',
               parseStatus: 'notParsed',
             ),
           );
@@ -56,7 +56,7 @@ void main() {
         name: 'Bravo',
         items: <TrainingSetItem>[
           _item('set-b', 'item-1', 'block-1', 0),
-          _item('set-b', 'item-2', 'block-2', 1, ContentType.instruction),
+          _item('set-b', 'item-2', 'block-2', 1, ContentType.text),
         ],
       );
       await repository.createSet(set);
@@ -93,7 +93,7 @@ void main() {
           'set',
           items: <TrainingSetItem>[
             _item('set', 'a', 'block-1', 0),
-            _item('set', 'b', 'block-2', 1, ContentType.instruction),
+            _item('set', 'b', 'block-2', 1, ContentType.text),
             _item('set', 'c', 'block-3', 2),
           ],
         ),
@@ -179,9 +179,7 @@ void main() {
       archivedAt: DateTime.utc(2026, 9, 5),
     );
     await expectLater(
-      repository.addItem(
-        _item('set', 'b', 'block-2', 1, ContentType.instruction),
-      ),
+      repository.addItem(_item('set', 'b', 'block-2', 1, ContentType.text)),
       throwsA(isA<ValidationFailure>()),
     );
   });

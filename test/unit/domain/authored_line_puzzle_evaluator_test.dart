@@ -475,7 +475,7 @@ void main() {
   test('rejects non-puzzle, empty-solution, and finalized initialization', () {
     expect(
       () => evaluator.initialize(
-        puzzle: _puzzle(type: ContentType.demonstration),
+        puzzle: _puzzle(type: ContentType.text),
         attempt: _attempt(),
       ),
       throwsArgumentError,

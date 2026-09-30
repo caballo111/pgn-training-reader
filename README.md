@@ -3,6 +3,17 @@
 An offline-first Flutter app for reading PGN libraries and training with chess
 puzzles.
 
+## Content types
+
+The library and training sets use two content types: **Puzzle** and **Text**.
+Puzzles are solved and scored. Text is study material, including lessons and
+annotated games; it is read and explicitly completed without creating puzzle
+attempts or scores. Text entries may include positions, moves, and variations
+for board navigation.
+
+PGN files that use the legacy `X-ContentType` values `Instruction` or
+`Demonstration` are read as Text. New files should use `X-ContentType "Text"`.
+
 ## Development setup
 
 Install [FVM](https://fvm.app/documentation/getting-started/installation), then

@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/content_type.dart';
-import 'demonstration_view.dart';
-import 'instruction_view.dart';
+import 'text_view.dart';
 
 /// Builds the separately implemented puzzle-solving experience.
 typedef PuzzleViewBuilder = Widget Function(
@@ -55,7 +54,7 @@ final class _GameReaderPageState extends State<GameReaderPage> {
     final title = switch (content.contentType) {
       ContentType.puzzle => 'Puzzle',
       ContentType.unsupported => 'Unsupported content',
-      ContentType.instruction || ContentType.demonstration =>
+      ContentType.text =>
         content.headers['X-Title'] ?? content.headers['Event'] ?? 'PGN Reader',
     };
     return Scaffold(
@@ -90,10 +89,16 @@ final class _GameReaderPageState extends State<GameReaderPage> {
                     ),
                     if (widget.onClassificationOverride != null)
                       DropdownButton<ContentType>(
-                        value: content.contentType,
+                        value: content.contentType == ContentType.unsupported
+                            ? null
+                            : content.contentType,
+                        hint: Text(content.contentType.toDatabaseValue()),
                         onChanged: _saving ? null : _override,
                         items: [
-                          for (final type in ContentType.values)
+                          for (final type in const [
+                            ContentType.puzzle,
+                            ContentType.text,
+                          ])
                             DropdownMenuItem(
                               value: type,
                               child: Text(type.toDatabaseValue()),
@@ -108,8 +113,7 @@ final class _GameReaderPageState extends State<GameReaderPage> {
             : null,
       ),
       body: switch (content.contentType) {
-        ContentType.instruction => InstructionView(content: content),
-        ContentType.demonstration => DemonstrationView(content: content),
+        ContentType.text => TextView(content: content),
         ContentType.puzzle =>
           widget.puzzleViewBuilder?.call(context, content) ??
               const _UnavailableMode(

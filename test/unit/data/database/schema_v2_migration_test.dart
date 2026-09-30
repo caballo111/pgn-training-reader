@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/data/database/app_database.dart';
 
 void main() {
-  test('version 1 rows survive additive version 5 migrations', () async {
+  test('version 1 rows survive additive version 6 migrations', () async {
     final directory = await Directory.systemTemp.createTemp('pgn-migration-');
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}/library.sqlite');
@@ -81,7 +81,7 @@ void main() {
     final version = await migrated
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 5);
+    expect(version.read<int>('user_version'), 6);
     final completionTable = await migrated
         .customSelect(
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cycle_item_completions'",
@@ -165,7 +165,7 @@ void main() {
       final version = await migrated
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(version.read<int>('user_version'), 5);
+      expect(version.read<int>('user_version'), 6);
     },
   );
 }

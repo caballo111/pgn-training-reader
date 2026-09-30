@@ -5,15 +5,13 @@
 /// stored data.
 enum ContentType {
   puzzle,
-  instruction,
-  demonstration,
+  text,
   unsupported;
 
   /// Returns the canonical string stored in the database.
   String toDatabaseValue() => switch (this) {
     ContentType.puzzle => 'Puzzle',
-    ContentType.instruction => 'Instruction',
-    ContentType.demonstration => 'Demonstration',
+    ContentType.text => 'Text',
     ContentType.unsupported => 'Unsupported',
   };
 
@@ -25,8 +23,7 @@ enum ContentType {
   /// the caller.
   static ContentType fromDatabaseValue(String value) => switch (value) {
     'Puzzle' => ContentType.puzzle,
-    'Instruction' => ContentType.instruction,
-    'Demonstration' => ContentType.demonstration,
+    'Text' => ContentType.text,
     'Unsupported' => ContentType.unsupported,
     _ => throw FormatException('Unknown content type database value.', value),
   };

@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'dependencies.dart';
 import '../features/import_library/presentation/import_page.dart';
+import '../features/training_sets/presentation/training_sets_page.dart';
 
 /// Route names used by the application shell.
 abstract final class AppRoutes {
   static const library = '/';
   static const import = '/import';
+  static const trainingSets = '/training-sets';
 }
 
 /// Builds the initial route and provides a safe fallback for unknown routes.
@@ -21,8 +23,19 @@ Route<dynamic> onGenerateAppRoute(
       builder: (_) => ImportPage(controller: dependencies.importController),
     );
   }
+  if (settings.name == AppRoutes.trainingSets) {
+    return MaterialPageRoute<void>(
+      settings: settings,
+      builder: (_) => TrainingSetsPage(
+        repository: dependencies.trainingSetRepository,
+        indexRepository: dependencies.pgnIndexRepository,
+        clock: dependencies.clock,
+        idGenerator: dependencies.idGenerator,
+      ),
+    );
+  }
   return MaterialPageRoute<void>(
     settings: settings,
-    builder: (_) => const LibraryPage(),
+    builder: (_) => LibraryPage(dependencies: dependencies),
   );
 }

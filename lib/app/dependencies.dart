@@ -11,6 +11,9 @@ import '../data/file_access/managed_file_source.dart';
 import '../data/file_access/flutter_file_source_picker.dart';
 import '../data/pgn/pgn_indexer.dart';
 import '../data/repositories/drift_pgn_source_repository.dart';
+import '../data/repositories/drift_pgn_index_repository.dart';
+import '../data/repositories/drift_training_set_repository.dart';
+import '../domain/training/training_set_repository.dart';
 import '../features/import_library/application/import_controller.dart';
 
 /// Application-level composition root for foundational abstractions.
@@ -34,12 +37,18 @@ final class AppDependencies {
   final AppDatabase Function()? databaseFactory;
   AppDatabase? _database;
   ImportController? _importController;
+  TrainingSetRepository? _trainingSetRepository;
   bool _restoreAttempted = false;
 
   /// Opened lazily so creating app dependencies performs no platform I/O.
   AppDatabase get database => _database ??=
       databaseFactory?.call() ??
       AppDatabase(driftDatabase(name: 'pgn_training_reader'));
+
+  TrainingSetRepository get trainingSetRepository =>
+      _trainingSetRepository ??= DriftTrainingSetRepository(database);
+
+  DriftPgnIndexRepository get pgnIndexRepository => DriftPgnIndexRepository(database);
 
   /// A process-scoped controller whose source and index stores survive routes.
   ImportController get importController {

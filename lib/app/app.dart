@@ -25,7 +25,9 @@ final class PgnTrainingReaderApp extends StatelessWidget {
 
 /// The initial library destination while import and browsing features are built.
 final class LibraryPage extends StatelessWidget {
-  const LibraryPage({super.key});
+  const LibraryPage({super.key, required this.dependencies});
+
+  final AppDependencies dependencies;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +57,12 @@ final class LibraryPage extends StatelessWidget {
                     Navigator.of(context).pushNamed(AppRoutes.import),
                 icon: const Icon(Icons.file_open_outlined),
                 label: const Text('Import PGN'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).pushNamed(AppRoutes.trainingSets),
+                icon: const Icon(Icons.view_list_outlined),
+                label: const Text('Training sets'),
               ),
             ],
           ),

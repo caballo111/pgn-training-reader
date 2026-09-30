@@ -226,8 +226,6 @@ class TrainingSetItems extends Table {
   @override
   List<String> get customConstraints => <String>[
     'CHECK (position >= 0)',
-    // A repeated block in one set is left permitted because the product spec
-    // has not yet decided whether repetitions are supported.
   ];
 }
 

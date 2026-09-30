@@ -356,7 +356,8 @@ And the user receives an actionable recovery path rather than silent data loss.
 ### Sets, cycles, sessions, and timing requirements
 
 - **FR-027**: A training set MUST contain an explicitly ordered mixture of
-  Puzzle, Instruction, and Demonstration items.
+  Puzzle, Instruction, and Demonstration items. One indexed block MUST NOT
+  appear more than once in the same set; a block MAY appear in different sets.
 - **FR-028**: A cycle MUST represent one pass through the exercises in a set.
   The MVP MUST allow at most one active cycle per training set.
 - **FR-029**: A cycle MUST span any number of sessions and calendar days, and

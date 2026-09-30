@@ -254,13 +254,13 @@ For every task:
 
 # Phase 11: Training Sets and Ordering
 
-- [ ] T131 [US4] Implement Drift repository methods to create, rename, list, and archive training sets.
-- [ ] T132 [US4] Implement adding indexed blocks to a set with stable exercise identity and explicit order.
-- [ ] T133 [US4] Implement reorder and removal operations transactionally. Removing an item must not delete source content or historical attempts.
-- [ ] T134 [P] [US4] Create `training_set_editor_controller.dart` with add, remove, reorder, save, and validation states.
-- [ ] T135 [P] [US4] Create a set editor page that supports Puzzle, Instruction, and Demonstration items and clearly marks which items are scored.
-- [ ] T136 [US4] Validate that duplicate item behavior follows `spec.md`. If the spec is silent, stop this task and report the missing rule.
-- [ ] T137 [US4] Add repository and widget tests for mixed-content ordering and archive behavior.
+- [x] T131 [US4] Implement Drift repository methods to create, rename, list, and archive training sets.
+- [x] T132 [US4] Implement adding indexed blocks to a set with stable exercise identity and explicit order.
+- [x] T133 [US4] Implement reorder and removal operations transactionally. Removing an item must not delete source content or historical attempts.
+- [x] T134 [P] [US4] Create `training_set_editor_controller.dart` with add, remove, reorder, save, and validation states.
+- [x] T135 [P] [US4] Create a set editor page that supports Puzzle, Instruction, and Demonstration items and clearly marks which items are scored.
+- [x] T136 [US4] Validate that duplicate item behavior follows `spec.md`. If the spec is silent, stop this task and report the missing rule.
+- [x] T137 [US4] Add repository and widget tests for mixed-content ordering and archive behavior.
 
 **User Story 4A checkpoint**: User can create an ordered mixed-content training set without duplicating source PGN data.
 

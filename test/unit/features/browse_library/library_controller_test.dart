@@ -69,6 +69,24 @@ void main() {
     expect(filter.contentType, ContentType.puzzle);
     expect(query.sort, LibrarySort.sourceOrder);
   });
+
+  test('marking a source missing preserves its indexed records', () async {
+    final sources = _Sources([_source()]);
+    final controller = LibraryController(
+      indexRepository: _IndexRepository(),
+      sourceRepository: sources,
+    );
+    await controller.load();
+    final indexedIds = controller.state.items.map((item) => item.id).toList();
+
+    await controller.markSourceMissing('source');
+
+    expect(sources.updated.single.importState, 'sourceMissing');
+    expect(controller.state.sources.single.importState, 'sourceMissing');
+    expect(controller.state.items.map((item) => item.id), indexedIds);
+    expect(controller.state.items, hasLength(2));
+    controller.dispose();
+  });
 }
 
 final class _IndexRepository implements PgnIndexRepository {
@@ -106,15 +124,44 @@ final class _IndexRepository implements PgnIndexRepository {
 }
 
 final class _Sources implements PgnSourceRepository {
+  _Sources([this.values = const []]);
+
+  List<PgnSource> values;
+  final updated = <PgnSource>[];
+
   @override
-  Future<List<PgnSource>> list() async => [];
+  Future<List<PgnSource>> list() async => values;
   @override
-  Future<PgnSource?> getById(String id) async => null;
+  Future<PgnSource?> getById(String id) async =>
+      values.where((source) => source.id == id).firstOrNull;
   @override
-  Future<void> create(PgnSource source) async {}
+  Future<void> create(PgnSource source) async => values = [...values, source];
   @override
-  Future<void> update(PgnSource source) async {}
+  Future<void> update(PgnSource source) async {
+    updated.add(source);
+    values = [
+      for (final current in values)
+        if (current.id == source.id) source else current,
+    ];
+  }
+
+  @override
+  Future<void> updateAfterVerifiedRelink({
+    required PgnSource source,
+    required String expectedFingerprint,
+  }) async => update(source);
 }
+
+PgnSource _source() => PgnSource(
+  id: 'source',
+  displayName: 'Missing PGN',
+  accessMode: PgnSourceAccessMode.managedCopy,
+  managedPath: '0123456789abcdef0123456789abcdef',
+  scannerVersion: 1,
+  importState: 'ready',
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
 
 PgnBlockIndex _item(String id) => PgnBlockIndex(
   id: id,

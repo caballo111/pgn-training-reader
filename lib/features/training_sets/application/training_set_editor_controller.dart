@@ -52,6 +52,16 @@ final class TrainingSetEditorController extends ChangeNotifier {
   }
 
   void add(PgnBlockIndex block) {
+    if (block.diagnosticSummary == 'duplicateExerciseId') {
+      _emit(
+        TrainingSetEditorState(
+          name: _state.name,
+          items: _state.items,
+          validationMessage: 'This item has a duplicate exercise ID and cannot be added until the PGN is corrected.',
+        ),
+      );
+      return;
+    }
     if (block.contentType == ContentType.unsupported) {
       _emit(
         TrainingSetEditorState(

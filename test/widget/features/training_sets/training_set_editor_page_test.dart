@@ -51,6 +51,48 @@ void main() {
     ]);
   });
 
+  testWidgets('duplicate exercise IDs cannot be added to training sets', (
+    tester,
+  ) async {
+    final controller = TrainingSetEditorController(
+      repository: _SetRepository(),
+      clock: FakeAppClock(initialWallTime: DateTime.utc(2026)),
+      idGenerator: FakeIdGenerator(),
+    );
+    final duplicate = PgnBlockIndex(
+      id: 'duplicate',
+      sourceId: 'source',
+      startOffset: 0,
+      endOffset: 1,
+      ordinal: 0,
+      contentType: ContentType.puzzle,
+      parseStatus: PgnBlockParseStatus.valid,
+      diagnosticSummary: 'duplicateExerciseId',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TrainingSetEditorPage(
+          controller: controller,
+          indexRepository: _IndexRepository([duplicate]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Duplicate exercise ID; blocked until corrected'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Add item'), findsNothing);
+    controller.add(duplicate);
+    await tester.pump();
+    expect(controller.state.items, isEmpty);
+    expect(
+      controller.state.validationMessage,
+      contains('duplicate exercise ID'),
+    );
+  });
+
   testWidgets('training set can be archived and remains visible as archived', (
     tester,
   ) async {

@@ -12,6 +12,7 @@ import '../../domain/chess_content/pgn_block_index.dart';
 import '../../domain/library/pgn_import_service.dart';
 import '../database/app_database.dart';
 import '../file_access/file_source.dart';
+import '../file_access/file_source_picker.dart';
 import '../file_access/managed_file_source.dart';
 import '../file_access/source_fingerprint.dart';
 import 'content_classifier.dart';
@@ -51,6 +52,13 @@ final class DriftPgnImportService implements PgnImportService {
   PgnImportOperation start(PgnImportRequest request) {
     final operation = _ImportOperation();
     unawaited(_start(request.sourceId, operation));
+    return operation;
+  }
+
+  @override
+  PgnImportOperation reindex(String sourceId) {
+    final operation = _ImportOperation();
+    unawaited(_start(sourceId, operation, reindex: true));
     return operation;
   }
 
@@ -99,6 +107,7 @@ final class DriftPgnImportService implements PgnImportService {
     String sourceId,
     _ImportOperation operation, {
     ImportJob? resumeJob,
+    bool reindex = false,
   }) async {
     final jobId = resumeJob?.id ?? idGenerator.generateId();
     var indexed = 0;
@@ -112,6 +121,7 @@ final class DriftPgnImportService implements PgnImportService {
     diagnostics = resumeJob?.diagnosticCount ?? 0;
     skipped = resumeJob?.blocksSkipped ?? 0;
     int? totalBytes;
+    var reindexing = reindex;
     if (!_activeSources.add(sourceId)) {
       await operation.fail(
         jobId,
@@ -141,7 +151,56 @@ final class DriftPgnImportService implements PgnImportService {
         );
         return;
       }
-      if (resumeJob == null) {
+      // A new re-index request after an interrupted re-index starts a clean
+      // scan from the original baseline. Resume, in contrast, keeps the
+      // existing staged candidate rows and job ID.
+      if (reindex && resumeJob == null && source.importState == 'reindexing') {
+        await database.transaction(() async {
+          await database.customStatement(
+            "DELETE FROM pgn_blocks WHERE source_id = ? AND reindex_job_id IS NOT NULL "
+            "AND reindex_job_id NOT LIKE 'baseline:%'",
+            [sourceId],
+          );
+          await database.customStatement(
+            "UPDATE pgn_blocks SET is_current = 1, reindex_job_id = NULL "
+            "WHERE source_id = ? AND reindex_job_id LIKE 'baseline:%'",
+            [sourceId],
+          );
+          await (database.update(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).write(
+            PgnSourcesCompanion(
+              importState: const Value('indexed'),
+              updatedAtMicros: Value(_nowMicros()),
+            ),
+          );
+        });
+      } else {
+        reindexing = reindexing || source.importState == 'reindexing';
+      }
+      if (resumeJob != null) {
+        final hasBaseline = await database
+            .customSelect(
+              'SELECT 1 FROM pgn_blocks WHERE source_id = ? AND reindex_job_id = ? LIMIT 1',
+              variables: [
+                Variable.withString(sourceId),
+                Variable.withString('baseline:${resumeJob.id}'),
+              ],
+            )
+            .get();
+        reindexing = reindexing || hasBaseline.isNotEmpty;
+        if (reindexing && source.importState != 'reindexing') {
+          await (database.update(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).write(
+            PgnSourcesCompanion(
+              importState: const Value('reindexing'),
+              updatedAtMicros: Value(_nowMicros()),
+            ),
+          );
+        }
+      }
+      if (resumeJob == null && !reindexing) {
         final active =
             await (database.select(database.importJobs)
                   ..where(
@@ -159,8 +218,50 @@ final class DriftPgnImportService implements PgnImportService {
           );
           return;
         }
+      } else if (resumeJob == null && reindexing) {
+        final activeJobs =
+            await (database.select(database.importJobs)..where(
+                  (row) =>
+                      row.sourceId.equals(sourceId) &
+                      row.status.equals('indexing'),
+                ))
+                .get();
+        for (final activeJob in activeJobs) {
+          await (database.update(
+            database.importJobs,
+          )..where((row) => row.id.equals(activeJob.id))).write(
+            ImportJobsCompanion(
+              status: const Value('failed'),
+              finishedAtMicros: Value(_nowMicros()),
+            ),
+          );
+        }
       }
-      if (source.managedPath == null || source.managedPath!.isEmpty) {
+      final OpaqueSourceReference reference;
+      if (source.accessMode == 'ExternalReference' &&
+          source.externalReference != null) {
+        try {
+          reference = ExternalSourceReference(source.externalReference!);
+        } on ArgumentError {
+          await operation.fail(
+            jobId,
+            PgnImportResumeDisposition.repairSource,
+            'The source reference cannot be opened. Repair the source and retry.',
+          );
+          return;
+        }
+      } else if (source.managedPath != null && source.managedPath!.isNotEmpty) {
+        try {
+          reference = ManagedSourceReference(source.managedPath!);
+        } on ArgumentError {
+          await operation.fail(
+            jobId,
+            PgnImportResumeDisposition.repairSource,
+            'The source reference cannot be opened. Repair the source and retry.',
+          );
+          return;
+        }
+      } else {
         await operation.fail(
           jobId,
           PgnImportResumeDisposition.repairSource,
@@ -168,19 +269,9 @@ final class DriftPgnImportService implements PgnImportService {
         );
         return;
       }
-      final reference = ManagedSourceReference(source.managedPath!);
       totalBytes = await fileSource.length(reference);
-      final fingerprint = SourceFingerprint.compute(
-        await fileSource.fingerprintInput(
-          reference,
-          modifiedAt: source.modifiedAtMicros == null
-              ? null
-              : DateTime.fromMicrosecondsSinceEpoch(
-                  source.modifiedAtMicros!,
-                  isUtc: true,
-                ),
-        ),
-      );
+      final fingerprintInput = await fileSource.fingerprintInput(reference);
+      final fingerprint = SourceFingerprint.compute(fingerprintInput);
       if (resumeJob != null &&
           (resumeJob.scannerVersion == null ||
               resumeJob.sourceFingerprint == null ||
@@ -208,7 +299,9 @@ final class DriftPgnImportService implements PgnImportService {
           message: 'The source revision or scanner version changed.',
         );
       }
-      if (source.fingerprint != null && source.fingerprint != fingerprint) {
+      if (!reindexing &&
+          source.fingerprint != null &&
+          source.fingerprint != fingerprint) {
         await operation.fail(
           jobId,
           PgnImportResumeDisposition.repairSource,
@@ -216,7 +309,64 @@ final class DriftPgnImportService implements PgnImportService {
         );
         return;
       }
-      if (source.fingerprint == null) {
+      if (reindexing && resumeJob == null) {
+        if (totalBytes == null) {
+          throw const FileFailure(
+            code: 'reindex_length_unknown',
+            message:
+                'The source length cannot be verified for safe re-indexing.',
+          );
+        }
+        final maxOrdinalRows = await database
+            .customSelect(
+              'SELECT COALESCE(MAX(ordinal), -1) AS max_ordinal FROM pgn_blocks '
+              "WHERE source_id = ? AND (is_current = 1 OR reindex_job_id LIKE 'baseline:%')",
+              variables: [Variable.withString(sourceId)],
+            )
+            .getSingle();
+        final oldMaxOrdinal = maxOrdinalRows.read<int>('max_ordinal');
+        final ordinalOffset = oldMaxOrdinal + totalBytes + 1;
+        await database.transaction(() async {
+          await database.customStatement(
+            "DELETE FROM pgn_blocks WHERE source_id = ? AND reindex_job_id IS NOT NULL "
+            "AND reindex_job_id NOT LIKE 'baseline:%'",
+            [sourceId],
+          );
+          await database.customStatement(
+            'UPDATE pgn_blocks SET ordinal = ordinal + ?, is_current = 0, '
+            'reindex_job_id = ? WHERE source_id = ? AND is_current = 1',
+            [ordinalOffset, 'baseline:$jobId', sourceId],
+          );
+          await (database.update(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).write(
+            PgnSourcesCompanion(
+              fingerprint: Value(fingerprint),
+              sizeBytes: Value(totalBytes),
+              modifiedAtMicros: Value(
+                fingerprintInput.modifiedAt?.toUtc().microsecondsSinceEpoch,
+              ),
+              scannerVersion: const Value(scannerVersion),
+              importState: const Value('reindexing'),
+              safeCheckpoint: const Value(0),
+              updatedAtMicros: Value(_nowMicros()),
+            ),
+          );
+          await database
+              .into(database.importJobs)
+              .insert(
+                ImportJobsCompanion.insert(
+                  id: jobId,
+                  sourceId: sourceId,
+                  status: 'indexing',
+                  startedAtMicros: _nowMicros(),
+                  sourceFingerprint: Value(fingerprint),
+                  scannerVersion: const Value(scannerVersion),
+                  sourceSizeBytes: Value(totalBytes),
+                ),
+              );
+        });
+      } else if (source.fingerprint == null && !reindexing) {
         await (database.update(
           database.pgnSources,
         )..where((row) => row.id.equals(sourceId))).write(
@@ -227,7 +377,7 @@ final class DriftPgnImportService implements PgnImportService {
           ),
         );
       }
-      if (resumeJob == null) {
+      if (resumeJob == null && !reindexing) {
         final existingCount =
             await (database.selectOnly(database.pgnBlocks)
                   ..addColumns([database.pgnBlocks.id.count()])
@@ -255,7 +405,7 @@ final class DriftPgnImportService implements PgnImportService {
                 sourceSizeBytes: Value(totalBytes),
               ),
             );
-      } else {
+      } else if (resumeJob != null) {
         await (database.update(
           database.importJobs,
         )..where((row) => row.id.equals(jobId))).write(
@@ -278,6 +428,7 @@ final class DriftPgnImportService implements PgnImportService {
           indexed,
           diagnostics,
           skipped: skipped,
+          isReindexing: reindexing,
         );
         operation.cancelled(
           jobId,
@@ -380,23 +531,24 @@ final class DriftPgnImportService implements PgnImportService {
         }
         final headers = read.headers;
         final authoredId = headers['X-ExerciseId'];
+        final authoredIdentity =
+            ExerciseIdentityResolver.isValidAuthoredId(authoredId)
+            ? authoredId
+            : null;
         var duplicate = false;
         PgnBlock? persistedDuplicate;
         _PendingBlock? batchDuplicate;
-        if (authoredId != null) {
+        if (authoredIdentity != null) {
           batchDuplicate = batchBlocks.cast<_PendingBlock?>().firstWhere(
-            (item) => item?.authoredExerciseId == authoredId,
+            (item) => item?.authoredExerciseId == authoredIdentity,
             orElse: () => null,
           );
-          persistedDuplicate =
-              await (database.select(database.pgnBlocks)
-                    ..where(
-                      (row) =>
-                          row.sourceId.equals(sourceId) &
-                          row.exerciseId.equals(authoredId),
-                    )
-                    ..limit(1))
-                  .getSingleOrNull();
+          persistedDuplicate = await _findAuthoredDuplicate(
+            sourceId: sourceId,
+            authoredId: authoredIdentity,
+            reindexing: reindexing,
+            jobId: jobId,
+          );
           duplicate = batchDuplicate != null || persistedDuplicate != null;
         }
         final classification = const ContentClassifier().classify(headers);
@@ -417,6 +569,7 @@ final class DriftPgnImportService implements PgnImportService {
               marked,
               batchDuplicate.exerciseId,
               batchDuplicate.authoredExerciseId,
+              batchDuplicate.fallbackIdentityKey,
             );
             batchDiagnostics.add(
               _duplicateDiagnostic(
@@ -480,7 +633,8 @@ final class DriftPgnImportService implements PgnImportService {
               authoredContentType: classification.authoredValue,
             ),
             identity.exerciseId,
-            authoredId,
+            identity.authoredExerciseId,
+            identity.fallbackIdentityKey,
           ),
         );
         if (classification.contentType == ContentType.unsupported) {
@@ -537,6 +691,18 @@ final class DriftPgnImportService implements PgnImportService {
                     authoredContentType: Value(b.authoredContentType),
                   ),
                 );
+            await database.customStatement(
+              'UPDATE pgn_blocks SET authored_exercise_id = ?, '
+              'fallback_identity_key = ?, is_current = ?, reindex_job_id = ? '
+              'WHERE id = ?',
+              [
+                item.authoredExerciseId,
+                item.fallbackIdentityKey,
+                reindexing ? 0 : 1,
+                reindexing ? jobId : null,
+                b.id,
+              ],
+            );
           }
           for (final priorBlock in batchDuplicateMarks) {
             await (database.update(
@@ -632,6 +798,7 @@ final class DriftPgnImportService implements PgnImportService {
           indexed,
           diagnostics,
           skipped: skipped,
+          isReindexing: reindexing,
         );
         operation.cancelled(
           jobId,
@@ -680,6 +847,7 @@ final class DriftPgnImportService implements PgnImportService {
           indexed,
           diagnostics,
           skipped: skipped,
+          isReindexing: reindexing,
         );
         operation.cancelled(
           jobId,
@@ -704,6 +872,13 @@ final class DriftPgnImportService implements PgnImportService {
         );
       }
       await commit(bytesRead);
+      if (reindexing) {
+        final unresolved = await _finishReindex(sourceId, jobId);
+        if (unresolved != null) {
+          diagnostics++;
+          operation.emitDiagnostic(unresolved);
+        }
+      }
       await (database.update(
         database.importJobs,
       )..where((r) => r.id.equals(jobId))).write(
@@ -800,7 +975,7 @@ final class DriftPgnImportService implements PgnImportService {
               database.pgnSources,
             )..where((r) => r.id.equals(sourceId))).write(
               PgnSourcesCompanion(
-                importState: const Value('failed'),
+                importState: Value(reindexing ? 'reindexing' : 'failed'),
                 safeCheckpoint: Value(committedCheckpoint),
                 updatedAtMicros: Value(_nowMicros()),
               ),
@@ -828,6 +1003,187 @@ final class DriftPgnImportService implements PgnImportService {
 
   int _nowMicros() => clock.utcNow.toUtc().microsecondsSinceEpoch;
 
+  Future<PgnImportDiagnostic?> _finishReindex(
+    String sourceId,
+    String jobId,
+  ) async {
+    final baseline = await database
+        .customSelect(
+          "SELECT id, ordinal, authored_exercise_id, fallback_identity_key, exercise_id, "
+          "diagnostic_summary FROM pgn_blocks WHERE source_id = ? AND reindex_job_id = ?",
+          variables: [
+            Variable.withString(sourceId),
+            Variable.withString('baseline:$jobId'),
+          ],
+        )
+        .get();
+    final candidates = await database
+        .customSelect(
+          'SELECT id, ordinal, authored_exercise_id, fallback_identity_key, exercise_id, '
+          'diagnostic_summary FROM pgn_blocks WHERE source_id = ? AND reindex_job_id = ?',
+          variables: [
+            Variable.withString(sourceId),
+            Variable.withString(jobId),
+          ],
+        )
+        .get();
+    final matched = <(String, String)>[];
+    final usedCandidates = <String>{};
+    final usedBaseline = <String>{};
+
+    Map<String, List<QueryRow>> groups(
+      List<QueryRow> rows,
+      String column, {
+      bool excludeDuplicates = false,
+    }) {
+      final result = <String, List<QueryRow>>{};
+      for (final row in rows) {
+        if (excludeDuplicates &&
+            row.read<String?>('diagnostic_summary') == 'duplicateExerciseId') {
+          continue;
+        }
+        // An authored identity is authoritative. Content fallback keys can
+        // pair generated identities only when both records lack authored IDs.
+        if (column == 'fallback_identity_key' &&
+            row.read<String?>('authored_exercise_id') != null) {
+          continue;
+        }
+        final value = row.read<String?>(column);
+        if (value != null && value.isNotEmpty) (result[value] ??= []).add(row);
+      }
+      return result;
+    }
+
+    void pairUnique(String column, {required bool excludeDuplicates}) {
+      final oldGroups = groups(
+        baseline,
+        column,
+        excludeDuplicates: excludeDuplicates,
+      );
+      final newGroups = groups(
+        candidates,
+        column,
+        excludeDuplicates: excludeDuplicates,
+      );
+      for (final entry in oldGroups.entries) {
+        final oldRows = entry.value;
+        final newRows = newGroups[entry.key];
+        if (oldRows.length != 1 || newRows == null || newRows.length != 1) {
+          continue;
+        }
+        final oldId = oldRows.single.read<String>('id');
+        final newId = newRows.single.read<String>('id');
+        if (usedBaseline.add(oldId) && usedCandidates.add(newId)) {
+          matched.add((oldId, newId));
+        }
+      }
+    }
+
+    // Authored IDs are authoritative only when unique on both sides. Fallback
+    // keys are content-derived and likewise require an unambiguous match.
+    pairUnique('authored_exercise_id', excludeDuplicates: true);
+    pairUnique('fallback_identity_key', excludeDuplicates: true);
+
+    // Any unmatched legacy row without explicit authored provenance has no
+    // safe identity match. This includes a known fallback whose content key
+    // changed, not only older rows with no stored fallback key.
+    final unresolvedLegacyFallback = baseline.any(
+      (row) =>
+          !usedBaseline.contains(row.read<String>('id')) &&
+          row.read<String?>('authored_exercise_id') == null,
+    );
+
+    await database.transaction(() async {
+      for (final pair in matched) {
+        final candidateOrdinal = candidates
+            .firstWhere((row) => row.read<String>('id') == pair.$2)
+            .read<int>('ordinal');
+        await database.customStatement(
+          'UPDATE pgn_blocks SET start_offset = (SELECT start_offset FROM pgn_blocks WHERE id = ?), '
+          'end_offset = (SELECT end_offset FROM pgn_blocks WHERE id = ?), '
+          'event = (SELECT event FROM pgn_blocks WHERE id = ?), site = (SELECT site FROM pgn_blocks WHERE id = ?), '
+          'date = (SELECT date FROM pgn_blocks WHERE id = ?), round = (SELECT round FROM pgn_blocks WHERE id = ?), '
+          'white = (SELECT white FROM pgn_blocks WHERE id = ?), black = (SELECT black FROM pgn_blocks WHERE id = ?), '
+          'result = (SELECT result FROM pgn_blocks WHERE id = ?), content_type = (SELECT content_type FROM pgn_blocks WHERE id = ?), '
+          'exercise_id = (SELECT exercise_id FROM pgn_blocks WHERE id = ?), section = (SELECT section FROM pgn_blocks WHERE id = ?), '
+          'sequence = (SELECT sequence FROM pgn_blocks WHERE id = ?), theme = (SELECT theme FROM pgn_blocks WHERE id = ?), '
+          'difficulty = (SELECT difficulty FROM pgn_blocks WHERE id = ?), parse_status = (SELECT parse_status FROM pgn_blocks WHERE id = ?), '
+          'diagnostic_summary = (SELECT diagnostic_summary FROM pgn_blocks WHERE id = ?), '
+          'inferred_classification = (SELECT inferred_classification FROM pgn_blocks WHERE id = ?), '
+          'authored_content_type = (SELECT authored_content_type FROM pgn_blocks WHERE id = ?), '
+          'authored_exercise_id = (SELECT authored_exercise_id FROM pgn_blocks WHERE id = ?), '
+          'fallback_identity_key = (SELECT fallback_identity_key FROM pgn_blocks WHERE id = ?), '
+          'is_current = 1, reindex_job_id = NULL WHERE id = ?',
+          [...List<String>.filled(21, pair.$2), pair.$1],
+        );
+        await database.customStatement('DELETE FROM pgn_blocks WHERE id = ?', [
+          pair.$2,
+        ]);
+        await database.customStatement(
+          'UPDATE pgn_blocks SET ordinal = ? WHERE id = ?',
+          [candidateOrdinal, pair.$1],
+        );
+      }
+      await database.customStatement(
+        'UPDATE pgn_blocks SET is_current = 1, reindex_job_id = NULL WHERE source_id = ? AND reindex_job_id = ?',
+        [sourceId, jobId],
+      );
+      await database.customStatement(
+        "UPDATE pgn_blocks SET reindex_job_id = NULL WHERE source_id = ? AND reindex_job_id = ?",
+        [sourceId, 'baseline:$jobId'],
+      );
+      if (unresolvedLegacyFallback) {
+        await database
+            .into(database.importDiagnostics)
+            .insert(
+              ImportDiagnosticsCompanion.insert(
+                id: idGenerator.generateId(),
+                importJobId: jobId,
+                severity: 'warning',
+                diagnosticCode: 'unresolvedFallbackIdentity',
+                sanitizedMessage: 'Some legacy fallback identities could not be matched safely.',
+                createdAtMicros: _nowMicros(),
+              ),
+            );
+      }
+    });
+    if (!unresolvedLegacyFallback) return null;
+    return PgnImportDiagnostic(
+      severity: PgnImportDiagnosticSeverity.warning,
+      category: PgnImportDiagnosticCategory.unresolvedFallbackIdentity,
+      sourceId: sourceId,
+      message: 'Some legacy fallback identities could not be matched safely; prior training history remains attached to stale items.',
+    );
+  }
+
+  Future<PgnBlock?> _findAuthoredDuplicate({
+    required String sourceId,
+    required String authoredId,
+    required bool reindexing,
+    required String jobId,
+  }) async {
+    final currentClause = reindexing
+        ? 'reindex_job_id = ?'
+        : 'is_current = 1 AND reindex_job_id IS NULL';
+    final variables = <Variable<Object>>[
+      Variable.withString(sourceId),
+      Variable.withString(authoredId),
+      if (reindexing) Variable.withString(jobId),
+    ];
+    final matches = await database
+        .customSelect(
+          'SELECT id FROM pgn_blocks WHERE source_id = ? '
+          'AND authored_exercise_id = ? AND $currentClause LIMIT 1',
+          variables: variables,
+        )
+        .get();
+    if (matches.isEmpty) return null;
+    final id = matches.first.read<String>('id');
+    return (database.select(
+      database.pgnBlocks,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+  }
+
   Future<void> _terminal(
     String sourceId,
     ImportJob? prior,
@@ -838,6 +1194,7 @@ final class DriftPgnImportService implements PgnImportService {
     int indexed,
     int diagnostics, {
     int skipped = 0,
+    bool isReindexing = false,
   }) async {
     await database.transaction(() async {
       await (database.update(
@@ -859,7 +1216,9 @@ final class DriftPgnImportService implements PgnImportService {
         database.pgnSources,
       )..where((r) => r.id.equals(sourceId))).write(
         PgnSourcesCompanion(
-          importState: Value(status),
+          importState: Value(
+            status == 'cancelled' && isReindexing ? 'reindexing' : status,
+          ),
           safeCheckpoint: Value(checkpoint),
           updatedAtMicros: Value(_nowMicros()),
         ),
@@ -869,10 +1228,16 @@ final class DriftPgnImportService implements PgnImportService {
 }
 
 final class _PendingBlock {
-  const _PendingBlock(this.index, this.exerciseId, this.authoredExerciseId);
+  const _PendingBlock(
+    this.index,
+    this.exerciseId,
+    this.authoredExerciseId,
+    this.fallbackIdentityKey,
+  );
   final PgnBlockIndex index;
   final String exerciseId;
   final String? authoredExerciseId;
+  final String? fallbackIdentityKey;
 }
 
 PgnBlockIndex _withDuplicateSummary(PgnBlockIndex b) => PgnBlockIndex(

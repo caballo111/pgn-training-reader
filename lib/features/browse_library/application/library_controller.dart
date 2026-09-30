@@ -84,6 +84,37 @@ final class LibraryController extends ChangeNotifier {
     await _fetchFirst(generation);
   }
 
+  /// Records that a source's stored content is unavailable while retaining
+  /// its searchable index and all training history linked to that index.
+  Future<void> markSourceMissing(String sourceId) async {
+    final source =
+        _state.sources.where((value) => value.id == sourceId).firstOrNull ??
+        await sourceRepository.getById(sourceId);
+    if (source == null || source.importState == 'sourceMissing') return;
+
+    final missing = PgnSource(
+      id: source.id,
+      displayName: source.displayName,
+      accessMode: source.accessMode,
+      managedPath: source.managedPath,
+      externalReference: source.externalReference,
+      sizeBytes: source.sizeBytes,
+      modifiedAt: source.modifiedAt,
+      fingerprint: source.fingerprint,
+      scannerVersion: source.scannerVersion,
+      importState: 'sourceMissing',
+      safeCheckpoint: source.safeCheckpoint,
+      createdAt: source.createdAt,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    final sources = [
+      for (final current in _state.sources)
+        if (current.id == sourceId) missing else current,
+    ];
+    _set(_state.copyWith(sources: List.unmodifiable(sources)));
+    await sourceRepository.update(missing);
+  }
+
   Future<void> loadNextPage() async {
     final offset = _nextOffset;
     if (offset == null ||

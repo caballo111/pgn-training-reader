@@ -183,6 +183,8 @@ final class _TrainingSetEditorPageState extends State<TrainingSetEditorPage> {
 
   Widget _candidateTile(PgnBlockIndex block, List<TrainingSetItem> items) {
     final alreadyAdded = items.any((item) => item.blockId == block.id);
+    final duplicateExerciseId =
+        block.diagnosticSummary == 'duplicateExerciseId';
     final label = switch (block.contentType) {
       ContentType.puzzle => 'Puzzle · Scored',
       ContentType.instruction => 'Instruction · Not scored',
@@ -196,12 +198,23 @@ final class _TrainingSetEditorPageState extends State<TrainingSetEditorPage> {
     return ListTile(
       key: ValueKey('candidate-${block.id}'),
       title: Text(title),
-      subtitle: Text(label),
-      trailing: IconButton(
-        tooltip: alreadyAdded ? 'Already added' : 'Add item',
-        icon: Icon(alreadyAdded ? Icons.check : Icons.add),
-        onPressed: alreadyAdded ? null : () => widget.controller.add(block),
+      subtitle: Text(
+        duplicateExerciseId
+            ? '$label · Duplicate exercise ID; blocked until corrected'
+            : label,
       ),
+      trailing: duplicateExerciseId
+          ? const Icon(
+              Icons.warning_amber,
+              semanticLabel: 'Duplicate exercise ID; cannot add to training',
+            )
+          : IconButton(
+              tooltip: alreadyAdded ? 'Already added' : 'Add item',
+              icon: Icon(alreadyAdded ? Icons.check : Icons.add),
+              onPressed: alreadyAdded
+                  ? null
+                  : () => widget.controller.add(block),
+            ),
     );
   }
 }

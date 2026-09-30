@@ -25,6 +25,9 @@ enum ImportStatus {
   completed,
 }
 
+/// Result of replacing an unavailable source reference with a selected PGN.
+enum SourceRelinkOutcome { sameRevision, changedRevision }
+
 /// Immutable snapshot of import activity for presentation and accessibility.
 final class ImportState {
   factory ImportState({
@@ -171,6 +174,119 @@ final class ImportController extends ChangeNotifier {
     }
   }
 
+  /// Copies a selected replacement and reconnects it to the existing source
+  /// identity. Existing byte locators are restored only when the stored
+  /// fingerprint matches the selected copy using the old managed mtime.
+  Future<SourceRelinkOutcome?> relinkSource(String sourceId) async {
+    if (_disposed || _state.isBusy) return null;
+    _resetOperationContext();
+    final run = ++_runNumber;
+    SelectedFileSource? selected;
+    _publish(ImportState(status: ImportStatus.selecting));
+    try {
+      final source = await sourceRepository.getById(sourceId);
+      if (!_isCurrent(run)) return null;
+      if (source == null || source.importState != 'sourceMissing') {
+        throw const ValidationFailure(
+          code: 'source_relink_unavailable',
+          message: 'This source is no longer waiting for repair.',
+        );
+      }
+      selected = await fileSourcePicker.pickPgnSource();
+      if (!_isCurrent(run)) return null;
+      if (selected == null) {
+        _publish(ImportState());
+        return null;
+      }
+
+      _publish(
+        ImportState(
+          status: ImportStatus.copying,
+          selectedSource: selected,
+          copyTotalBytes: selected.lengthBytes,
+        ),
+      );
+      _copyCancellation = CopyCancellation();
+      final target = await targetFactory();
+      var bytesWritten = 0;
+      final progressTarget = _ProgressCopyTarget(
+        target,
+        onWrite: (length) {
+          bytesWritten += length;
+          if (_isCurrent(run)) {
+            _publish(
+              _stateWith(
+                status: ImportStatus.copying,
+                selectedSource: selected,
+                copyBytesRead: bytesWritten,
+                copyTotalBytes: selected!.lengthBytes,
+              ),
+            );
+          }
+        },
+      );
+      final copied = await fileSource.copyToManagedStorage(
+        selected.reference,
+        target: progressTarget,
+        cancellation: _copyCancellation!,
+        expectedLength: selected.lengthBytes,
+      );
+      if (!_isCurrent(run)) return null;
+
+      final reference = ManagedSourceReference(copied.reference);
+      final comparisonInput = await fileSource.fingerprintInput(
+        reference,
+        modifiedAt: source.modifiedAt,
+      );
+      if (!_isCurrent(run)) return null;
+      final sameRevision =
+          source.modifiedAt != null &&
+          source.fingerprint != null &&
+          SourceFingerprint.compute(comparisonInput) == source.fingerprint;
+      final liveInput = await fileSource.fingerprintInput(reference);
+      if (!_isCurrent(run)) return null;
+      final now = clock.utcNow;
+      final updated = PgnSource(
+        id: source.id,
+        displayName: selected.displayName,
+        accessMode: PgnSourceAccessMode.managedCopy,
+        managedPath: copied.reference,
+        sizeBytes: copied.length,
+        modifiedAt: liveInput.modifiedAt,
+        fingerprint: SourceFingerprint.compute(liveInput),
+        scannerVersion: source.scannerVersion,
+        importState: sameRevision ? 'indexed' : 'sourceChanged',
+        safeCheckpoint: sameRevision ? source.safeCheckpoint : 0,
+        createdAt: source.createdAt,
+        updatedAt: now,
+      );
+      if (sameRevision) {
+        await sourceRepository.updateAfterVerifiedRelink(
+          source: updated,
+          expectedFingerprint: source.fingerprint!,
+        );
+      } else {
+        await sourceRepository.update(updated);
+      }
+      if (!_isCurrent(run)) return null;
+      _publish(
+        ImportState(status: ImportStatus.completed, selectedSource: selected),
+      );
+      return sameRevision
+          ? SourceRelinkOutcome.sameRevision
+          : SourceRelinkOutcome.changedRevision;
+    } catch (error) {
+      if (_isCurrent(run)) {
+        if (selected == null) {
+          _fail(_asFailure(error));
+        } else {
+          _handleFailure(error, selected);
+        }
+      }
+      return null;
+    }
+  }
+
   /// Resumes indexing from a safe checkpoint, or repeats a cancelled copy.
   Future<void> resume() async {
     final resumableFailure =
@@ -206,6 +322,17 @@ final class ImportController extends ChangeNotifier {
     } else {
       await selectAndImport();
     }
+  }
+
+  /// Rebuilds locators for a changed source while preserving reconciled IDs.
+  Future<bool> reindexSource(String sourceId) async {
+    if (_disposed || _state.isBusy || sourceId.isEmpty) return false;
+    _resetOperationContext();
+    _sourceId = sourceId;
+    final run = ++_runNumber;
+    _cancelRequested = false;
+    await _runIndexing(run, reindex: true);
+    return _isCurrent(run) && _state.status == ImportStatus.completed;
   }
 
   /// Requests safe cancellation. Indexed blocks already committed are kept.
@@ -329,7 +456,6 @@ final class ImportController extends ChangeNotifier {
     final managedReference = ManagedSourceReference(copied.reference);
     final fingerprintInput = await fileSource.fingerprintInput(
       managedReference,
-      modifiedAt: selected.modifiedAt,
     );
     if (!_isCurrent(run)) return;
     final fingerprint = SourceFingerprint.compute(fingerprintInput);
@@ -342,7 +468,7 @@ final class ImportController extends ChangeNotifier {
       accessMode: PgnSourceAccessMode.managedCopy,
       managedPath: copied.reference,
       sizeBytes: copied.length,
-      modifiedAt: selected.modifiedAt,
+      modifiedAt: fingerprintInput.modifiedAt,
       fingerprint: fingerprint,
       scannerVersion: scannerVersion,
       importState: 'pending',
@@ -355,7 +481,11 @@ final class ImportController extends ChangeNotifier {
     await _runIndexing(run);
   }
 
-  Future<void> _runIndexing(int run, {String? resumeJobId}) async {
+  Future<void> _runIndexing(
+    int run, {
+    String? resumeJobId,
+    bool reindex = false,
+  }) async {
     final sourceId = _sourceId;
     if (sourceId == null && resumeJobId == null) {
       _fail(
@@ -380,7 +510,9 @@ final class ImportController extends ChangeNotifier {
     late final PgnImportOperation operation;
     try {
       operation = resumeJobId == null
-          ? importService.start(PgnImportRequest(sourceId: sourceId!))
+          ? reindex
+                ? importService.reindex(sourceId!)
+                : importService.start(PgnImportRequest(sourceId: sourceId!))
           : importService.resume(resumeJobId);
     } catch (error) {
       if (_isCurrent(run)) _fail(_asFailure(error));

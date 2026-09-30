@@ -201,6 +201,74 @@ void main() {
       }
     },
   );
+
+  test('missing source status preserves index and training history', () async {
+    final source = _source(
+      id: 'missing-source',
+      managedPath: '0123456789abcdef0123456789abcdef',
+      fingerprint: 'known-fingerprint',
+      sizeBytes: 100,
+      modifiedAt: DateTime.utc(2026, 9, 1),
+      importState: 'ready',
+      safeCheckpoint: 100,
+    );
+    await repository.create(source);
+    await _seedIndexedHistory(database, suffix: 'missing', source: source);
+
+    await repository.update(
+      _replace(
+        source,
+        importState: 'sourceMissing',
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    );
+
+    final stored = (await repository.getById(source.id))!;
+    expect(stored.importState, 'sourceMissing');
+    expect(stored.safeCheckpoint, 100);
+    expect(
+      await (database.select(
+        database.pgnBlocks,
+      )..where((row) => row.id.equals('block-missing'))).getSingleOrNull(),
+      isNotNull,
+    );
+    expect(
+      await (database.select(
+        database.trainingSetItems,
+      )..where((row) => row.id.equals('item-missing'))).getSingleOrNull(),
+      isNotNull,
+    );
+    expect(
+      await (database.select(
+        database.puzzleAttempts,
+      )..where((row) => row.id.equals('attempt-missing'))).getSingleOrNull(),
+      isNotNull,
+    );
+
+    final relinked = _replace(
+      stored,
+      managedPath: 'fedcba9876543210fedcba9876543210',
+      modifiedAt: DateTime.utc(2026, 9, 4),
+      fingerprint: 'relinked-fingerprint',
+      importState: 'indexed',
+      updatedAt: DateTime.utc(2026, 9, 4),
+    );
+    await repository.updateAfterVerifiedRelink(
+      source: relinked,
+      expectedFingerprint: stored.fingerprint!,
+    );
+    final restored = (await repository.getById(source.id))!;
+    expect(restored.importState, 'indexed');
+    expect(restored.managedPath, relinked.managedPath);
+    expect(restored.fingerprint, 'relinked-fingerprint');
+    expect(restored.safeCheckpoint, source.safeCheckpoint);
+    expect(
+      await (database.select(
+        database.puzzleAttempts,
+      )..where((row) => row.id.equals('attempt-missing'))).getSingleOrNull(),
+      isNotNull,
+    );
+  });
 }
 
 PgnSource _source({

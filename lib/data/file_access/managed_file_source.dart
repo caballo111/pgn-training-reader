@@ -16,6 +16,7 @@ import 'file_source_picker.dart';
 abstract interface class PickedSourceAccess {
   Stream<List<int>> openReadStream(OpaqueSourceReference reference);
   Future<int?> length(OpaqueSourceReference reference);
+  Future<DateTime?> modifiedAt(OpaqueSourceReference reference);
   Future<Uint8List> readRange(
     OpaqueSourceReference reference, {
     required int start,
@@ -187,7 +188,7 @@ final class ManagedFileSource implements FileSource {
         modifiedAt ??
         (reference is ManagedSourceReference
             ? await (await _fileFor(reference)).lastModified()
-            : null);
+            : await pickedSources.modifiedAt(reference));
     if (size == null || size == 0) {
       return FileFingerprintInput(
         length: size,

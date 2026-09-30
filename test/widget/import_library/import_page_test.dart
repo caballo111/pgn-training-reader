@@ -361,6 +361,12 @@ final class _SourceRepository implements PgnSourceRepository {
 
   @override
   Future<void> update(PgnSource source) async {}
+
+  @override
+  Future<void> updateAfterVerifiedRelink({
+    required PgnSource source,
+    required String expectedFingerprint,
+  }) async {}
 }
 
 final class _ImportService implements PgnImportService {
@@ -378,6 +384,9 @@ final class _ImportService implements PgnImportService {
     resumeCount++;
     return _Operation();
   }
+
+  @override
+  PgnImportOperation reindex(String sourceId) => _Operation();
 }
 
 final class _Operation implements PgnImportOperation {

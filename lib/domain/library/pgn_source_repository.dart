@@ -28,4 +28,14 @@ abstract interface class PgnSourceRepository {
   /// revision changes. Implementations must not silently remove dependent
   /// index or training records when metadata changes.
   Future<void> update(PgnSource source);
+
+  /// Replaces a missing source reference after its candidate was verified
+  /// against [expectedFingerprint], without treating the new managed-copy
+  /// modification time as a content revision. Implementations must atomically
+  /// require the stored source fingerprint to still equal [expectedFingerprint]
+  /// and preserve its stable identity and dependents.
+  Future<void> updateAfterVerifiedRelink({
+    required PgnSource source,
+    required String expectedFingerprint,
+  });
 }

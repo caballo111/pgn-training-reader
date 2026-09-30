@@ -13,7 +13,7 @@ void main() {
     await database.close();
   });
 
-  test('creates every version 4 table', () async {
+  test('creates every version 5 table', () async {
     final rows = await database
         .customSelect(
           "SELECT name FROM sqlite_master "
@@ -41,7 +41,7 @@ void main() {
     final schemaVersion = await database
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(schemaVersion.read<int>('user_version'), 4);
+    expect(schemaVersion.read<int>('user_version'), 5);
   });
 
   test('creates every declared query index', () async {
@@ -59,6 +59,9 @@ void main() {
         'pgn_blocks_black',
         'pgn_blocks_event',
         'pgn_blocks_result',
+        'pgn_blocks_current_order',
+        'pgn_blocks_authored_identity',
+        'pgn_blocks_fallback_identity',
         'pgn_blocks_section',
         'pgn_blocks_theme',
         'pgn_blocks_difficulty',
@@ -91,6 +94,21 @@ void main() {
       'pgn_blocks_black': <String>['black'],
       'pgn_blocks_event': <String>['event'],
       'pgn_blocks_result': <String>['result'],
+      'pgn_blocks_current_order': <String>[
+        'source_id',
+        'is_current',
+        'ordinal',
+      ],
+      'pgn_blocks_authored_identity': <String>[
+        'source_id',
+        'authored_exercise_id',
+        'is_current',
+      ],
+      'pgn_blocks_fallback_identity': <String>[
+        'source_id',
+        'fallback_identity_key',
+        'is_current',
+      ],
       'pgn_blocks_section': <String>['section'],
       'pgn_blocks_theme': <String>['theme'],
       'pgn_blocks_difficulty': <String>['difficulty'],

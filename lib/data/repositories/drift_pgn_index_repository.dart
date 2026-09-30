@@ -16,9 +16,13 @@ final class DriftPgnIndexRepository implements PgnIndexRepository {
 
   @override
   Future<PgnBlockIndex?> getById(String id) => _guard(() async {
-    final row = await (_database.select(
-      _database.pgnBlocks,
-    )..where((block) => block.id.equals(id))).getSingleOrNull();
+    final row =
+        await (_database.select(_database.pgnBlocks)..where(
+              (block) =>
+                  block.id.equals(id) &
+                  CustomExpression<bool>('pgn_blocks.is_current = 1'),
+            ))
+            .getSingleOrNull();
     return row == null ? null : _fromRow(row);
   });
 
@@ -27,7 +31,13 @@ final class DriftPgnIndexRepository implements PgnIndexRepository {
     () async =>
         await (_database.selectOnly(_database.pgnBlocks)
               ..addColumns(<Expression<Object>>[_database.pgnBlocks.id.count()])
-              ..where(_database.pgnBlocks.sourceId.equals(sourceId)))
+              ..where(
+                _database.pgnBlocks.sourceId.equals(sourceId) &
+                    CustomExpression<bool>(
+                      "pgn_blocks.is_current = 1 AND pgn_blocks.source_id IN "
+                      "(SELECT id FROM pgn_sources WHERE import_state = 'indexed')",
+                    ),
+              ))
             .map((row) => row.read(_database.pgnBlocks.id.count())!)
             .getSingle(),
   );
@@ -53,7 +63,12 @@ final class DriftPgnIndexRepository implements PgnIndexRepository {
     }
 
     final query = _database.select(_database.pgnBlocks);
-    final clauses = <Expression<bool>>[];
+    final clauses = <Expression<bool>>[
+      CustomExpression<bool>(
+        "pgn_blocks.is_current = 1 AND pgn_blocks.source_id IN "
+        "(SELECT id FROM pgn_sources WHERE import_state = 'indexed')",
+      ),
+    ];
     void substring(TextColumn column, String? value) {
       final needle = value?.trim();
       if (needle == null || needle.isEmpty) return;

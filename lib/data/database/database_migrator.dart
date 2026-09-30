@@ -10,6 +10,7 @@ class DatabaseMigrator {
   DatabaseMigrator({
     required this.schemaVersion,
     Map<int, DatabaseMigrationStep> steps = const {},
+    this.afterCreate,
     this.backupBeforeDestructiveMigration,
     this.beforeOpen,
   }) : steps = Map.unmodifiable(steps) {
@@ -40,6 +41,9 @@ class DatabaseMigrator {
   /// rejected, so a version bump cannot silently skip migration work.
   final Map<int, DatabaseMigrationStep> steps;
 
+  /// Optional additive SQL needed after Drift creates modeled tables.
+  final Future<void> Function(GeneratedDatabase database)? afterCreate;
+
   /// Called before the first destructive step in an upgrade.
   ///
   /// Applications can use this callback to make a recoverable database copy.
@@ -57,7 +61,10 @@ class DatabaseMigrator {
   final Future<void> Function(OpeningDetails details)? beforeOpen;
 
   MigrationStrategy get strategy => MigrationStrategy(
-    onCreate: (migrator) => migrator.createAll(),
+    onCreate: (migrator) async {
+      await migrator.createAll();
+      await afterCreate?.call(migrator.database);
+    },
     onUpgrade: _upgrade,
     beforeOpen: beforeOpen,
   );

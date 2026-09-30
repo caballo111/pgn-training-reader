@@ -35,9 +35,118 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No matching PGN content.'), findsOneWidget);
   });
+
+  testWidgets('missing source disables opening and offers relink', (
+    tester,
+  ) async {
+    final controller = LibraryController(
+      indexRepository: _Index(),
+      sourceRepository: _Sources([_missingSource]),
+    );
+    var opened = 0;
+    var repairs = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LibraryPage(
+          controller: controller,
+          onOpen: (_) => opened++,
+          onRepairSource: (_) => repairs++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Source missing · indexed history preserved'),
+      findsOneWidget,
+    );
+    final tile = tester.widget<ListTile>(
+      find.byKey(const Key('library-item-game-1')),
+    );
+    expect(tile.onTap, isNull);
+    await tester.tap(find.byKey(const Key('library-item-game-1')));
+    expect(opened, 0);
+    await tester.tap(find.text('Relink'));
+    expect(repairs, 1);
+  });
+
+  testWidgets('changed source disables opening and offers re-index', (
+    tester,
+  ) async {
+    final controller = LibraryController(
+      indexRepository: _Index(),
+      sourceRepository: _Sources([_changedSource]),
+    );
+    var opened = 0;
+    var reindexRequests = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LibraryPage(
+          controller: controller,
+          onOpen: (_) => opened++,
+          onReindexSource: (source) {
+            expect(source.id, 'source-1');
+            reindexRequests++;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Source changed · re-index required'),
+      findsOneWidget,
+    );
+    final tile = tester.widget<ListTile>(
+      find.byKey(const Key('library-item-game-1')),
+    );
+    expect(tile.onTap, isNull);
+    await tester.tap(find.byKey(const Key('library-item-game-1')));
+    expect(opened, 0);
+    await tester.tap(find.text('Re-index'));
+    expect(reindexRequests, 1);
+  });
+
+  testWidgets('duplicate exercise ID is preserved, blocked, and recoverable', (
+    tester,
+  ) async {
+    final controller = LibraryController(
+      indexRepository: _Index(_duplicateItem),
+      sourceRepository: _Sources(),
+    );
+    var opened = 0;
+    var imports = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LibraryPage(
+          controller: controller,
+          onOpen: (_) => opened++,
+          onImport: () => imports++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Duplicate exercise ID · preserved but blocked'),
+      findsOneWidget,
+    );
+    final tile = tester.widget<ListTile>(
+      find.byKey(const Key('library-item-game-1')),
+    );
+    expect(tile.onTap, isNull);
+    await tester.tap(find.byKey(const Key('library-item-game-1')));
+    expect(opened, 0);
+    await tester.tap(find.text('Import corrected PGN'));
+    expect(imports, 1);
+  });
 }
 
 final class _Index implements PgnIndexRepository {
+  _Index([PgnBlockIndex? item]) : item = item ?? _item;
+
+  final PgnBlockIndex item;
+
   @override
   Future<PgnIndexPage> search({
     PgnIndexFilter filter = const PgnIndexFilter(),
@@ -48,25 +157,45 @@ final class _Index implements PgnIndexRepository {
     if (filter.query == 'unmatched') {
       return PgnIndexPage(items: [], nextOffset: null);
     }
-    return PgnIndexPage(items: [_item], nextOffset: null);
+    return PgnIndexPage(items: [item], nextOffset: null);
   }
 
   @override
   Future<int> countForSource(String sourceId) async => 1;
   @override
-  Future<PgnBlockIndex?> getById(String id) async => _item;
+  Future<PgnBlockIndex?> getById(String id) async => item;
 }
 
 final class _Sources implements PgnSourceRepository {
+  _Sources([this.values = const []]);
+  final List<PgnSource> values;
+
   @override
-  Future<List<PgnSource>> list() async => [];
+  Future<List<PgnSource>> list() async => values;
   @override
   Future<PgnSource?> getById(String id) async => null;
   @override
   Future<void> create(PgnSource source) async {}
   @override
   Future<void> update(PgnSource source) async {}
+
+  @override
+  Future<void> updateAfterVerifiedRelink({
+    required PgnSource source,
+    required String expectedFingerprint,
+  }) async {}
 }
+
+final _missingSource = PgnSource(
+  id: 'source-1',
+  displayName: 'Missing source',
+  accessMode: PgnSourceAccessMode.managedCopy,
+  managedPath: '0123456789abcdef0123456789abcdef',
+  scannerVersion: 1,
+  importState: 'sourceMissing',
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
 
 final _item = PgnBlockIndex(
   id: 'game-1',
@@ -80,4 +209,31 @@ final _item = PgnBlockIndex(
   result: '1-0',
   contentType: ContentType.demonstration,
   parseStatus: PgnBlockParseStatus.notParsed,
+);
+
+final _changedSource = PgnSource(
+  id: 'source-1',
+  displayName: 'Changed source',
+  accessMode: PgnSourceAccessMode.managedCopy,
+  managedPath: '0123456789abcdef0123456789abcdef',
+  scannerVersion: 1,
+  importState: 'sourceChanged',
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
+
+final _duplicateItem = PgnBlockIndex(
+  id: 'game-1',
+  sourceId: 'source-1',
+  startOffset: 0,
+  endOffset: 42,
+  ordinal: 0,
+  white: 'Carlsen',
+  black: 'Anand',
+  event: 'World Championship',
+  result: '1-0',
+  contentType: ContentType.puzzle,
+  exerciseId: 'duplicate-id',
+  parseStatus: PgnBlockParseStatus.notParsed,
+  diagnosticSummary: 'duplicateExerciseId',
 );

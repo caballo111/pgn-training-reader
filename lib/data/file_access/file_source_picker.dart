@@ -6,6 +6,30 @@
 /// private reference type.
 abstract interface class OpaqueSourceReference {}
 
+/// A durable Android Storage Access Framework URI selected by the user.
+///
+/// Keep it opaque outside the file-access adapter. Only `content:` URIs are
+/// accepted; paths and other URI schemes are never treated as file locations.
+final class ExternalSourceReference implements OpaqueSourceReference {
+  factory ExternalSourceReference(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        uri.scheme != 'content' ||
+        uri.authority.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      throw ArgumentError.value(value, 'value', 'Invalid external source URI.');
+    }
+    return ExternalSourceReference._(uri);
+  }
+
+  const ExternalSourceReference._(this.uri);
+
+  final Uri uri;
+
+  @override
+  String toString() => 'ExternalSourceReference(<opaque>)';
+}
+
 /// A source selected by the user, together with metadata suitable for display
 /// and import planning.
 ///

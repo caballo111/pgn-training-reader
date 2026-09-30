@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/chess_content/pgn_block_index.dart';
+import '../../../domain/chess_content/pgn_source.dart';
 import '../application/library_controller.dart';
 import 'library_filter_controls.dart';
 
@@ -10,11 +11,15 @@ final class LibraryPage extends StatefulWidget {
     super.key,
     required this.controller,
     this.onImport,
+    this.onRepairSource,
+    this.onReindexSource,
     this.onTrainingSets,
     this.onOpen,
   });
   final LibraryController controller;
   final VoidCallback? onImport;
+  final ValueChanged<PgnSource>? onRepairSource;
+  final ValueChanged<PgnSource>? onReindexSource;
   final VoidCallback? onTrainingSets;
   final ValueChanged<PgnBlockIndex>? onOpen;
 
@@ -123,6 +128,14 @@ final class _LibraryPageState extends State<LibraryPage> {
           );
         }
         final item = state.items[index];
+        final source = state.sources
+            .where((source) => source.id == item.sourceId)
+            .firstOrNull;
+        final sourceMissing = source?.importState == 'sourceMissing';
+        final sourceChanged = source?.importState == 'sourceChanged';
+        final duplicateExerciseId =
+            item.diagnosticSummary == 'duplicateExerciseId';
+        final sourceUnavailable = sourceMissing || sourceChanged;
         final players = [
           item.white,
           item.black,
@@ -134,6 +147,10 @@ final class _LibraryPageState extends State<LibraryPage> {
           ),
           subtitle: Text(
             [
+              if (sourceMissing) 'Source missing · indexed history preserved',
+              if (sourceChanged) 'Source changed · re-index required',
+              if (duplicateExerciseId)
+                'Duplicate exercise ID · preserved but blocked',
               item.event,
               item.date,
               item.result,
@@ -146,8 +163,41 @@ final class _LibraryPageState extends State<LibraryPage> {
             _icon(item.contentType.name),
             semanticLabel: item.contentType.name,
           ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: widget.onOpen == null ? null : () => widget.onOpen!(item),
+          trailing: duplicateExerciseId
+              ? widget.onImport == null
+                    ? const Icon(
+                        Icons.warning_amber,
+                        semanticLabel: 'Duplicate exercise ID; item blocked',
+                      )
+                    : TextButton(
+                        onPressed: widget.onImport,
+                        child: const Text('Import corrected PGN'),
+                      )
+              : sourceMissing
+              ? widget.onRepairSource == null
+                    ? const Icon(
+                        Icons.warning_amber,
+                        semanticLabel: 'Source missing',
+                      )
+                    : TextButton(
+                        onPressed: () => widget.onRepairSource!(source!),
+                        child: const Text('Relink'),
+                      )
+              : sourceChanged
+              ? widget.onReindexSource == null
+                    ? const Icon(
+                        Icons.warning_amber,
+                        semanticLabel: 'Source changed; re-index required',
+                      )
+                    : TextButton(
+                        onPressed: () => widget.onReindexSource!(source!),
+                        child: const Text('Re-index'),
+                      )
+              : const Icon(Icons.chevron_right),
+          onTap:
+              sourceUnavailable || duplicateExerciseId || widget.onOpen == null
+              ? null
+              : () => widget.onOpen!(item),
         );
       },
     ),

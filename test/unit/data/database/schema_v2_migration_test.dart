@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/data/database/app_database.dart';
 
 void main() {
-  test('version 1 rows survive additive version 4 migrations', () async {
+  test('version 1 rows survive additive version 5 migrations', () async {
     final directory = await Directory.systemTemp.createTemp('pgn-migration-');
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}/library.sqlite');
@@ -24,9 +24,26 @@ void main() {
       "INSERT INTO import_jobs (id, source_id, status, started_at_micros) "
       "VALUES ('job', 'source', 'cancelled', 1)",
     );
-    // Remove only the five additive columns to reconstruct the shipped v1
+    // Remove additive columns to reconstruct the shipped v1
     // schema, including its unchanged relationships and indexes.
     for (final column in ['inferred_classification', 'authored_content_type']) {
+      await original.customStatement(
+        'ALTER TABLE pgn_blocks DROP COLUMN $column',
+      );
+    }
+    for (final index in [
+      'pgn_blocks_current_order',
+      'pgn_blocks_authored_identity',
+      'pgn_blocks_fallback_identity',
+    ]) {
+      await original.customStatement('DROP INDEX $index');
+    }
+    for (final column in [
+      'authored_exercise_id',
+      'fallback_identity_key',
+      'is_current',
+      'reindex_job_id',
+    ]) {
       await original.customStatement(
         'ALTER TABLE pgn_blocks DROP COLUMN $column',
       );
@@ -64,7 +81,7 @@ void main() {
     final version = await migrated
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 4);
+    expect(version.read<int>('user_version'), 5);
     final completionTable = await migrated
         .customSelect(
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cycle_item_completions'",
@@ -114,6 +131,23 @@ void main() {
       await original.customStatement(
         'ALTER TABLE timing_segments DROP COLUMN session_id',
       );
+      for (final index in [
+        'pgn_blocks_current_order',
+        'pgn_blocks_authored_identity',
+        'pgn_blocks_fallback_identity',
+      ]) {
+        await original.customStatement('DROP INDEX $index');
+      }
+      for (final column in [
+        'authored_exercise_id',
+        'fallback_identity_key',
+        'is_current',
+        'reindex_job_id',
+      ]) {
+        await original.customStatement(
+          'ALTER TABLE pgn_blocks DROP COLUMN $column',
+        );
+      }
       await original.customStatement('PRAGMA user_version = 2');
       await original.close();
 
@@ -131,7 +165,7 @@ void main() {
       final version = await migrated
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(version.read<int>('user_version'), 4);
+      expect(version.read<int>('user_version'), 5);
     },
   );
 }

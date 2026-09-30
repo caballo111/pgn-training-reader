@@ -190,6 +190,9 @@ final class _PickedBytes implements PickedSourceAccess {
 
   @override
   Future<int?> length(OpaqueSourceReference reference) async => bytes.length;
+
+  @override
+  Future<DateTime?> modifiedAt(OpaqueSourceReference reference) async => null;
   @override
   Future<Uint8List> readRange(
     OpaqueSourceReference reference, {

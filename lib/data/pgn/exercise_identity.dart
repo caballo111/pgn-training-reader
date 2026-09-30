@@ -8,6 +8,9 @@ import 'dart:convert';
 final class ExerciseIdentityResolver {
   const ExerciseIdentityResolver();
 
+  static bool isValidAuthoredId(String? value) =>
+      value != null && _isValidIdentity(value);
+
   ExerciseIdentityResult resolve({
     required String sourceId,
     required int startOffset,
@@ -33,6 +36,8 @@ final class ExerciseIdentityResolver {
         exerciseId: authoredId,
         duplicate: duplicateAuthoredId,
         generated: false,
+        authoredExerciseId: authoredId,
+        fallbackIdentityKey: null,
       );
     }
 
@@ -41,6 +46,8 @@ final class ExerciseIdentityResolver {
         exerciseId: importedMapping,
         duplicate: false,
         generated: false,
+        authoredExerciseId: null,
+        fallbackIdentityKey: null,
       );
     }
 
@@ -56,6 +63,13 @@ final class ExerciseIdentityResolver {
       exerciseId: 'generated-${_fnv1a64(fingerprintInput)}',
       duplicate: false,
       generated: true,
+      authoredExerciseId: null,
+      fallbackIdentityKey: _fnv1a64(
+        _frame(<String>[
+          _normalizeWhitespace(headers['FEN'] ?? _standardStartingFen),
+          line,
+        ]),
+      ),
     );
   }
 }
@@ -66,11 +80,15 @@ final class ExerciseIdentityResult {
     required this.exerciseId,
     required this.duplicate,
     required this.generated,
+    required this.authoredExerciseId,
+    required this.fallbackIdentityKey,
   });
 
   final String exerciseId;
   final bool duplicate;
   final bool generated;
+  final String? authoredExerciseId;
+  final String? fallbackIdentityKey;
 }
 
 const _standardStartingFen =

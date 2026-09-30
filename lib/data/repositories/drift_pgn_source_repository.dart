@@ -69,6 +69,43 @@ final class DriftPgnSourceRepository implements PgnSourceRepository {
     });
   });
 
+  @override
+  Future<void> updateAfterVerifiedRelink({
+    required PgnSource source,
+    required String expectedFingerprint,
+  }) => _guard(() async {
+    await _database.transaction(() async {
+      final old = await (_database.select(
+        _database.pgnSources,
+      )..where((row) => row.id.equals(source.id))).getSingleOrNull();
+      if (old == null ||
+          old.fingerprint != expectedFingerprint ||
+          old.importState != 'sourceMissing') {
+        throw const DatabaseFailure(
+          code: 'source_relink_stale',
+          message: 'The source changed while it was being relinked. Retry the repair.',
+        );
+      }
+      if (source.accessMode != PgnSourceAccessMode.managedCopy ||
+          source.managedPath == null ||
+          source.id != old.id ||
+          source.scannerVersion != old.scannerVersion) {
+        throw const DatabaseFailure(
+          code: 'source_relink_invalid',
+          message: 'The selected source could not replace this library source.',
+        );
+      }
+      final restored = source.copyWithSourceState(
+        createdAt: _fromMicros(old.createdAtMicros),
+        importState: 'indexed',
+        safeCheckpoint: old.safeCheckpoint,
+      );
+      await (_database.update(_database.pgnSources)
+            ..where((row) => row.id.equals(source.id)))
+          .write(_toCompanion(restored));
+    });
+  });
+
   static Future<T> _guard<T>(Future<T> Function() operation) async {
     try {
       return await operation();
@@ -158,6 +195,26 @@ extension on PgnSource {
     importState: importState,
     safeCheckpoint: safeCheckpoint,
     createdAt: oldCreatedAt,
+    updatedAt: updatedAt,
+  );
+
+  PgnSource copyWithSourceState({
+    required DateTime createdAt,
+    required String importState,
+    required int safeCheckpoint,
+  }) => PgnSource(
+    id: id,
+    displayName: displayName,
+    accessMode: accessMode,
+    managedPath: managedPath,
+    externalReference: externalReference,
+    sizeBytes: sizeBytes,
+    modifiedAt: modifiedAt,
+    fingerprint: fingerprint,
+    scannerVersion: scannerVersion,
+    importState: importState,
+    safeCheckpoint: safeCheckpoint,
+    createdAt: createdAt,
     updatedAt: updatedAt,
   );
 }

@@ -308,12 +308,12 @@ For every task:
 
 # Phase 14: Source Change Detection and Recovery
 
-- [ ] T164 [US6] Check source fingerprint before opening locators from external or managed sources.
-- [ ] T165 [US6] When a source is missing, preserve its index and history, disable block opening, and expose relink or re-import actions.
-- [ ] T166 [US6] When a source fingerprint changes, block offset reads until re-index completes. Do not silently read stale offsets.
-- [ ] T167 [US6] Implement re-index with stable exercise-ID reconciliation. Preserve attempts linked by unique `X-ExerciseId`; report unresolved fallback-identity changes.
-- [ ] T168 [US6] Add duplicate exercise-ID conflict UI and diagnostics. Do not silently merge two exercises.
-- [ ] T169 [US6] Add integration tests for missing source, changed source, successful relink, stable-ID history preservation, and unresolved identity conflicts.
+- [x] T164 [US6] Check source fingerprint before opening locators from external or managed sources.
+- [x] T165 [US6] When a source is missing, preserve its index and history, disable block opening, and expose relink or re-import actions.
+- [x] T166 [US6] When a source fingerprint changes, block offset reads until re-index completes. Do not silently read stale offsets.
+- [x] T167 [US6] Implement re-index with stable exercise-ID reconciliation. Preserve attempts linked by unique `X-ExerciseId`; report unresolved fallback-identity changes.
+- [x] T168 [US6] Add duplicate exercise-ID conflict UI and diagnostics. Do not silently merge two exercises.
+- [x] T169 [US6] Add integration tests for missing source, changed source, successful relink, stable-ID history preservation, and unresolved identity conflicts.
 
 **User Story 6A checkpoint**: Source problems degrade safely without deleting training history.
 

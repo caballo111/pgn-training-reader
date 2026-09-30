@@ -9,19 +9,58 @@ import 'import_progress.dart';
 /// The controller is supplied by the application so this view can be tested
 /// without opening a platform file picker or touching the real filesystem.
 final class ImportPage extends StatelessWidget {
-  const ImportPage({super.key, required this.controller});
+  const ImportPage({
+    super.key,
+    required this.controller,
+    this.relinkSourceId,
+    this.relinkSourceName,
+    this.reindexSourceId,
+    this.reindexSourceName,
+  });
 
   final ImportController controller;
+  final String? relinkSourceId;
+  final String? relinkSourceName;
+  final String? reindexSourceId;
+  final String? reindexSourceName;
 
   @override
   Widget build(BuildContext context) {
+    Future<void> select() async {
+      final reindexId = reindexSourceId;
+      if (reindexId != null) {
+        final completed = await controller.reindexSource(reindexId);
+        if (context.mounted) Navigator.of(context).pop(completed);
+        return;
+      }
+      final sourceId = relinkSourceId;
+      if (sourceId == null) {
+        await controller.selectAndImport();
+        return;
+      }
+      final outcome = await controller.relinkSource(sourceId);
+      if (outcome != null && context.mounted) {
+        Navigator.of(context).pop(outcome);
+      }
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Import PGN')),
+      appBar: AppBar(
+        title: Text(
+          reindexSourceId != null
+              ? 'Re-index PGN source'
+              : relinkSourceId == null
+              ? 'Import PGN'
+              : 'Relink PGN source',
+        ),
+      ),
       body: AnimatedBuilder(
         animation: controller,
         builder: (context, _) => _ImportContent(
           state: controller.state,
-          onSelect: controller.selectAndImport,
+          onSelect: select,
+          isRelinking: relinkSourceId != null || reindexSourceId != null,
+          relinkSourceName: reindexSourceName ?? relinkSourceName,
           onCancel: controller.cancel,
           onResume: controller.resume,
           onReset: controller.reset,
@@ -35,6 +74,8 @@ final class _ImportContent extends StatelessWidget {
   const _ImportContent({
     required this.state,
     required this.onSelect,
+    required this.isRelinking,
+    required this.relinkSourceName,
     required this.onCancel,
     required this.onResume,
     required this.onReset,
@@ -42,6 +83,8 @@ final class _ImportContent extends StatelessWidget {
 
   final ImportState state;
   final VoidCallback onSelect;
+  final bool isRelinking;
+  final String? relinkSourceName;
   final VoidCallback onCancel;
   final VoidCallback onResume;
   final VoidCallback onReset;
@@ -68,14 +111,18 @@ final class _ImportContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Add a PGN file to your library',
+                  isRelinking
+                      ? 'Relink ${relinkSourceName ?? 'source'}'
+                      : 'Add a PGN file to your library',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Choose a .pgn file. It will be copied into this app and '
-                  'indexed on your device so you can browse it offline.',
+                  isRelinking
+                      ? 'Choose the original PGN. Its content will be checked against the saved index before existing blocks are enabled.'
+                      : 'Choose a .pgn file. It will be copied into this app and '
+                            'indexed on your device so you can browse it offline.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge,
                 ),
@@ -91,7 +138,8 @@ final class _ImportContent extends StatelessWidget {
                     onReset: onReset,
                   ),
                 ],
-                if (state.status == ImportStatus.completed) ...[
+                if (state.status == ImportStatus.completed &&
+                    state.result != null) ...[
                   const SizedBox(height: 16),
                   _CompletedSummary(state: state),
                 ],
@@ -129,7 +177,7 @@ final class _ImportContent extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: onReset,
                     icon: const Icon(Icons.add),
-                    label: const Text('Import another PGN'),
+                    label: Text(isRelinking ? 'Done' : 'Import another PGN'),
                   ),
                 ] else if (state.status == ImportStatus.failed ||
                     state.status == ImportStatus.cancelled) ...[
@@ -138,7 +186,13 @@ final class _ImportContent extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: isBusy ? null : onSelect,
                     icon: const Icon(Icons.folder_open),
-                    label: Text(isBusy ? 'Please wait…' : 'Choose PGN file'),
+                    label: Text(
+                      isBusy
+                          ? 'Please wait…'
+                          : isRelinking
+                          ? 'Choose replacement PGN'
+                          : 'Choose PGN file',
+                    ),
                   ),
                 ],
               ],
@@ -175,7 +229,9 @@ final class _StateMessage extends StatelessWidget {
       ),
       ImportStatus.completed => (
         Icons.check_circle_outline,
-        'PGN indexing is complete.',
+        state.result == null
+            ? 'Source relink is complete.'
+            : 'PGN indexing is complete.',
       ),
     };
 

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/core/errors/app_failure.dart';
 import 'package:pgntrainingreader/data/file_access/file_source.dart';
@@ -12,6 +12,7 @@ import 'package:pgntrainingreader/data/file_access/managed_file_source.dart';
 import 'package:pgntrainingreader/data/file_access/source_fingerprint.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDirectory;
   late _MemoryPickedAccess picked;
   late ManagedFileSource source;
@@ -86,6 +87,66 @@ void main() {
     expect(result.length, 3);
     expect(await source.length(ManagedSourceReference(result.reference)), 3);
   });
+
+  test(
+    'reopens a persisted content URI for sampled fingerprints and ranges',
+    () async {
+      const channel = MethodChannel(
+        'lberrios.pgntrainingreader/external_source',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'length':
+                return 10;
+              case 'modifiedAtMicros':
+                return 1_000_000;
+              case 'readRange':
+                final arguments = call.arguments! as Map<Object?, Object?>;
+                final start = arguments['start']! as int;
+                final end = arguments['endExclusive']! as int;
+                return Uint8List.fromList(
+                  List<int>.generate(end - start, (index) => start + index),
+                );
+              default:
+                throw PlatformException(code: 'not_implemented');
+            }
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      final external = ExternalSourceReference(
+        'content://com.example.documents/document/42',
+      );
+      final adapter = const FlutterFileSource();
+      final externalSource = ManagedFileSource(pickedSources: adapter);
+      final fingerprintInput = await externalSource.fingerprintInput(
+        external,
+        sampleSize: 4,
+      );
+
+      expect(fingerprintInput.length, 10);
+      expect(
+        fingerprintInput.modifiedAt,
+        DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true),
+      );
+      expect(fingerprintInput.samples.map((sample) => sample.offset), [
+        0,
+        3,
+        6,
+      ]);
+      expect(
+        await externalSource.readRange(external, start: 3, endExclusive: 6),
+        [3, 4, 5],
+      );
+      expect(
+        () => ExternalSourceReference('file:///tmp/study.pgn'),
+        throwsArgumentError,
+      );
+    },
+  );
 
   test(
     'cancellation during stream removes temporary and reserved final files',
@@ -330,6 +391,9 @@ final class _MemoryPickedAccess implements PickedSourceAccess {
       unknownLength ? null : (reportedLength ?? bytes.length);
 
   @override
+  Future<DateTime?> modifiedAt(OpaqueSourceReference reference) async => null;
+
+  @override
   Future<Uint8List> readRange(
     OpaqueSourceReference reference, {
     required int start,
@@ -373,6 +437,9 @@ final class _GatedPickedAccess implements PickedSourceAccess {
 
   @override
   Future<int?> length(OpaqueSourceReference reference) async => null;
+
+  @override
+  Future<DateTime?> modifiedAt(OpaqueSourceReference reference) async => null;
 
   @override
   Future<Uint8List> readRange(

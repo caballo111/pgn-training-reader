@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pgntrainingreader/core/errors/app_failure.dart';
 import 'package:pgntrainingreader/data/file_access/file_source.dart';
 import 'package:pgntrainingreader/data/file_access/file_source_picker.dart';
+import 'package:pgntrainingreader/data/file_access/source_fingerprint.dart';
 import 'package:pgntrainingreader/data/repositories/drift_chess_content_repository.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/pgn_block_index.dart';
@@ -39,10 +41,20 @@ void main() {
         );
         offset = end;
       }
-      final rangeSource = _RecordingRangeSource(sourceBytes);
+      final sourceFingerprintInput = FileFingerprintInput(
+        length: sourceBytes.length,
+        modifiedAt: null,
+        samples: [FingerprintSample(offset: 0, bytes: sourceBytes)],
+      );
+      final rangeSource = _RecordingRangeSource(
+        sourceBytes,
+        currentFingerprintInput: sourceFingerprintInput,
+      );
       final repository = DriftChessContentRepository(
         indexRepository: _Blocks(blocks),
-        sourceRepository: _OneSource(),
+        sourceRepository: _OneSource(
+          fingerprint: SourceFingerprint.compute(sourceFingerprintInput),
+        ),
         fileSource: rangeSource,
       );
 
@@ -56,6 +68,57 @@ void main() {
         expect(rangeSource.lastStart, blocks[index].startOffset);
         expect(rangeSource.lastEnd, blocks[index].endOffset);
       }
+    },
+  );
+
+  test(
+    'checks the source fingerprint before reading a stored locator',
+    () async {
+      final bytes = Uint8List.fromList(
+        '[Event "Game"]\n[Result "*"]\n\n1. e4 *\n'.codeUnits,
+      );
+      final block = PgnBlockIndex(
+        id: 'game',
+        sourceId: 'source',
+        startOffset: 0,
+        endOffset: bytes.length,
+        ordinal: 0,
+        contentType: ContentType.demonstration,
+        parseStatus: PgnBlockParseStatus.notParsed,
+      );
+      final rangeSource = _RecordingRangeSource(
+        bytes,
+        currentFingerprintInput: FileFingerprintInput(
+          length: bytes.length,
+          modifiedAt: DateTime.utc(2026),
+          samples: [FingerprintSample(offset: 0, bytes: bytes)],
+        ),
+      );
+      final repository = DriftChessContentRepository(
+        indexRepository: _Blocks([block]),
+        sourceRepository: _OneSource(
+          accessMode: PgnSourceAccessMode.externalReference,
+          externalReference: 'content://com.example.documents/document/42',
+          fingerprint: 'stale-fingerprint',
+        ),
+        fileSource: rangeSource,
+      );
+
+      await expectLater(
+        repository.getById('game'),
+        throwsA(
+          isA<FileFailure>().having(
+            (failure) => failure.code,
+            'code',
+            'source_changed',
+          ),
+        ),
+      );
+      expect(rangeSource.lastRead, isNull);
+      expect(
+        rangeSource.lastFingerprintReference,
+        isA<ExternalSourceReference>(),
+      );
     },
   );
 }
@@ -75,10 +138,12 @@ int _find(Uint8List whole, Uint8List part, int from) {
 }
 
 final class _RecordingRangeSource implements FileSource {
-  _RecordingRangeSource(this.bytes);
+  _RecordingRangeSource(this.bytes, {this.currentFingerprintInput});
 
   final Uint8List bytes;
+  final FileFingerprintInput? currentFingerprintInput;
   Uint8List? lastRead;
+  OpaqueSourceReference? lastFingerprintReference;
   int? lastStart;
   int? lastEnd;
 
@@ -92,6 +157,16 @@ final class _RecordingRangeSource implements FileSource {
     lastEnd = endExclusive;
     lastRead = Uint8List.fromList(bytes.sublist(start, endExclusive));
     return lastRead!;
+  }
+
+  @override
+  Future<FileFingerprintInput> fingerprintInput(
+    OpaqueSourceReference reference, {
+    DateTime? modifiedAt,
+    int sampleSize = 4096,
+  }) async {
+    lastFingerprintReference = reference;
+    return currentFingerprintInput!;
   }
 
   @override
@@ -120,17 +195,35 @@ final class _Blocks implements PgnIndexRepository {
 }
 
 final class _OneSource implements PgnSourceRepository {
+  _OneSource({
+    this.fingerprint,
+    this.accessMode = PgnSourceAccessMode.managedCopy,
+    this.externalReference,
+  });
+
+  final String? fingerprint;
+  final PgnSourceAccessMode accessMode;
+  final String? externalReference;
+
   @override
   Future<PgnSource?> getById(String id) async => PgnSource(
     id: id,
     displayName: 'Library',
-    accessMode: PgnSourceAccessMode.managedCopy,
-    managedPath: '0123456789abcdef0123456789abcdef',
+    accessMode: accessMode,
+    managedPath: accessMode == PgnSourceAccessMode.managedCopy
+        ? '0123456789abcdef0123456789abcdef'
+        : null,
+    externalReference: externalReference,
     scannerVersion: 1,
-    importState: 'ready',
+    importState: 'indexed',
+    fingerprint: fingerprint,
+    modifiedAt: null,
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   );
+
+  @override
+  Future<void> update(PgnSource source) async {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

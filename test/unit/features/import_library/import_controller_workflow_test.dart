@@ -8,6 +8,7 @@ import 'package:pgntrainingreader/core/utilities/id_generator.dart';
 import 'package:pgntrainingreader/data/file_access/file_source.dart';
 import 'package:pgntrainingreader/data/file_access/file_source_picker.dart';
 import 'package:pgntrainingreader/data/file_access/managed_file_source.dart';
+import 'package:pgntrainingreader/data/file_access/source_fingerprint.dart';
 import 'package:pgntrainingreader/domain/chess_content/pgn_source.dart';
 import 'package:pgntrainingreader/domain/library/pgn_import_service.dart';
 import 'package:pgntrainingreader/domain/library/pgn_source_repository.dart';
@@ -186,6 +187,55 @@ void main() {
         'library.pgn',
       );
     });
+
+    test('relinks a matching source under the existing identity', () async {
+      final oldModifiedAt = DateTime.utc(2026, 1, 2);
+      final missing = _source(
+        'old-source',
+        'old.pgn',
+        importState: 'sourceMissing',
+        modifiedAt: oldModifiedAt,
+        fingerprint: _fingerprint(oldModifiedAt, _pgnBytes),
+        safeCheckpoint: _pgnBytes.length,
+      );
+      final repository = _MemorySourceRepository(existing: [missing]);
+      final harness = _Harness(repository: repository);
+
+      final outcome = await harness.controller.relinkSource(missing.id);
+
+      expect(outcome, SourceRelinkOutcome.sameRevision);
+      final linked = (await repository.getById(missing.id))!;
+      expect(linked.id, missing.id);
+      expect(linked.managedPath, isNot(missing.managedPath));
+      expect(linked.importState, 'indexed');
+      expect(linked.safeCheckpoint, missing.safeCheckpoint);
+      expect(repository.sources, hasLength(1));
+    });
+
+    test('relink with changed samples blocks existing locators', () async {
+      final oldModifiedAt = DateTime.utc(2026, 1, 2);
+      final missing = _source(
+        'old-source',
+        'old.pgn',
+        importState: 'sourceMissing',
+        modifiedAt: oldModifiedAt,
+        fingerprint: _fingerprint(oldModifiedAt, _pgnBytes),
+        safeCheckpoint: _pgnBytes.length,
+      );
+      final repository = _MemorySourceRepository(existing: [missing]);
+      final harness = _Harness(repository: repository);
+      harness.fileSource.selectedBytes = Uint8List.fromList(_pgnBytes)
+        ..[0] = _pgnBytes.first ^ 1;
+
+      final outcome = await harness.controller.relinkSource(missing.id);
+
+      expect(outcome, SourceRelinkOutcome.changedRevision);
+      final linked = (await repository.getById(missing.id))!;
+      expect(linked.id, missing.id);
+      expect(linked.importState, 'sourceChanged');
+      expect(linked.safeCheckpoint, 0);
+      expect(linked.managedPath, isNot(missing.managedPath));
+    });
   });
 }
 
@@ -211,14 +261,33 @@ PgnImportResult _result(
   resumeDisposition: disposition,
 );
 
-PgnSource _source(String id, String name) => PgnSource(
+String _fingerprint(DateTime? modifiedAt, Uint8List bytes) =>
+    SourceFingerprint.compute(
+      FileFingerprintInput(
+        length: bytes.length,
+        modifiedAt: modifiedAt,
+        samples: [FingerprintSample(offset: 0, bytes: bytes)],
+      ),
+    );
+
+PgnSource _source(
+  String id,
+  String name, {
+  String importState = 'indexing',
+  DateTime? modifiedAt,
+  String? fingerprint,
+  int safeCheckpoint = 0,
+}) => PgnSource(
   id: id,
   displayName: name,
   accessMode: PgnSourceAccessMode.managedCopy,
   managedPath: 'a' * 32,
   sizeBytes: _pgnBytes.length,
+  modifiedAt: modifiedAt,
+  fingerprint: fingerprint,
   scannerVersion: ImportController.scannerVersion,
-  importState: 'indexing',
+  importState: importState,
+  safeCheckpoint: safeCheckpoint,
   createdAt: DateTime.utc(2026),
   updatedAt: DateTime.utc(2026),
 );
@@ -298,6 +367,7 @@ final class _Ids implements IdGenerator {
 
 final class _MemoryFileSource implements FileSource {
   final Map<String, Uint8List> managedBytes = {};
+  Uint8List selectedBytes = _pgnBytes;
   int copyCalls = 0;
   int _targetNumber = 0;
 
@@ -308,7 +378,7 @@ final class _MemoryFileSource implements FileSource {
     if (reference is ManagedSourceReference) {
       yield managedBytes[reference.token]!;
     } else {
-      yield _pgnBytes;
+      yield selectedBytes;
     }
   }
 
@@ -316,7 +386,7 @@ final class _MemoryFileSource implements FileSource {
   Future<int?> length(OpaqueSourceReference reference) async =>
       reference is ManagedSourceReference
       ? managedBytes[reference.token]!.length
-      : _pgnBytes.length;
+      : selectedBytes.length;
 
   @override
   Future<Uint8List> readRange(
@@ -326,7 +396,7 @@ final class _MemoryFileSource implements FileSource {
   }) async {
     final bytes = reference is ManagedSourceReference
         ? managedBytes[reference.token]!
-        : _pgnBytes;
+        : selectedBytes;
     return Uint8List.fromList(bytes.sublist(start, endExclusive));
   }
 
@@ -338,7 +408,7 @@ final class _MemoryFileSource implements FileSource {
   }) async {
     final bytes = reference is ManagedSourceReference
         ? managedBytes[reference.token]!
-        : _pgnBytes;
+        : selectedBytes;
     return FileFingerprintInput(
       length: bytes.length,
       modifiedAt: modifiedAt,
@@ -357,11 +427,13 @@ final class _MemoryFileSource implements FileSource {
     if (cancellation.isCancelled) {
       throw const FileFailure(code: 'copy_cancelled', message: 'Cancelled.');
     }
+    var written = 0;
     await for (final chunk in openReadStream(reference)) {
       await target.write(chunk);
+      written += chunk.length;
     }
-    final token = await target.promote(bytesWritten: _pgnBytes.length);
-    return ManagedCopyResult(reference: token, length: _pgnBytes.length);
+    final token = await target.promote(bytesWritten: written);
+    return ManagedCopyResult(reference: token, length: written);
   }
 }
 
@@ -388,7 +460,10 @@ final class _Target implements ManagedCopyTarget {
 }
 
 final class _MemorySourceRepository implements PgnSourceRepository {
-  _MemorySourceRepository({this.existing = const [], this.createFailure});
+  _MemorySourceRepository({
+    List<PgnSource> existing = const [],
+    this.createFailure,
+  }) : existing = List.of(existing);
   final List<PgnSource> existing;
   final AppFailure? createFailure;
   final List<PgnSource> sources = [];
@@ -401,11 +476,30 @@ final class _MemorySourceRepository implements PgnSourceRepository {
 
   @override
   Future<PgnSource?> getById(String id) async =>
-      [...existing, ...sources].where((source) => source.id == id).firstOrNull;
+      [...sources, ...existing].where((source) => source.id == id).firstOrNull;
   @override
   Future<List<PgnSource>> list() async => [...existing, ...sources];
   @override
-  Future<void> update(PgnSource source) async {}
+  Future<void> update(PgnSource source) async {
+    sources.removeWhere((current) => current.id == source.id);
+    sources.add(source);
+  }
+
+  @override
+  Future<void> updateAfterVerifiedRelink({
+    required PgnSource source,
+    required String expectedFingerprint,
+  }) async {
+    final old = await getById(source.id);
+    if (old?.fingerprint != expectedFingerprint ||
+        old?.importState != 'sourceMissing') {
+      throw const DatabaseFailure(
+        code: 'source_relink_stale',
+        message: 'Source changed during relink.',
+      );
+    }
+    await update(source);
+  }
 }
 
 final class _ScriptedImportService implements PgnImportService {
@@ -438,6 +532,9 @@ final class _ScriptedImportService implements PgnImportService {
     resumeCalls++;
     return _newOperation();
   }
+
+  @override
+  PgnImportOperation reindex(String sourceId) => _newOperation();
 }
 
 final class _Operation implements PgnImportOperation {

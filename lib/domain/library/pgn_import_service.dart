@@ -24,6 +24,7 @@ enum PgnImportDiagnosticCategory {
   unsupportedContent,
   invalidEncoding,
   duplicateExerciseId,
+  unresolvedFallbackIdentity,
   duplicateSource,
   sourceUnavailable,
   sourceChanged,
@@ -274,6 +275,13 @@ abstract interface class PgnImportService {
   /// imported, the implementation must report that conflict rather than
   /// creating ambiguous concurrent jobs.
   PgnImportOperation start(PgnImportRequest request);
+
+  /// Re-scans a changed source and reconciles its blocks without removing
+  /// existing block identities or their dependent training history.
+  ///
+  /// Existing locators become unavailable until the operation completes.
+  /// Interrupted operations remain blocked and may be retried from the start.
+  PgnImportOperation reindex(String sourceId);
 
   /// Resumes a cancelled or recoverably failed job from its last safe
   /// checkpoint.

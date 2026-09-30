@@ -32,11 +32,12 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => DatabaseMigrator(
     schemaVersion: schemaVersion,
+    afterCreate: _installReindexColumns,
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
@@ -72,8 +73,42 @@ class AppDatabase extends _$AppDatabase {
           );
         },
       ),
+      4: DatabaseMigrationStep(
+        migrate: (migrator) => _installReindexColumns(migrator.database),
+      ),
     },
   ).strategy;
+
+  static Future<void> _installReindexColumns(GeneratedDatabase database) async {
+    await database.customStatement(
+      'ALTER TABLE pgn_blocks ADD COLUMN authored_exercise_id TEXT',
+    );
+    await database.customStatement(
+      'ALTER TABLE pgn_blocks ADD COLUMN fallback_identity_key TEXT',
+    );
+    await database.customStatement(
+      'ALTER TABLE pgn_blocks ADD COLUMN is_current INTEGER NOT NULL DEFAULT 1 '
+      'CHECK (is_current IN (0, 1))',
+    );
+    await database.customStatement(
+      'ALTER TABLE pgn_blocks ADD COLUMN reindex_job_id TEXT',
+    );
+    // Existing exercise_id rows do not record whether their ID was authored
+    // or generated. Leave provenance unknown rather than guessing; re-index
+    // reports unresolved legacy fallback identities when they cannot match.
+    await database.customStatement(
+      'CREATE INDEX IF NOT EXISTS pgn_blocks_current_order '
+      'ON pgn_blocks (source_id, is_current, ordinal)',
+    );
+    await database.customStatement(
+      'CREATE INDEX IF NOT EXISTS pgn_blocks_authored_identity '
+      'ON pgn_blocks (source_id, authored_exercise_id, is_current)',
+    );
+    await database.customStatement(
+      'CREATE INDEX IF NOT EXISTS pgn_blocks_fallback_identity '
+      'ON pgn_blocks (source_id, fallback_identity_key, is_current)',
+    );
+  }
 }
 
 /// A source is retained when unavailable or changed so its index and history

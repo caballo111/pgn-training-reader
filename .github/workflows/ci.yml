@@ -31,6 +31,14 @@ jobs:
       - name: Run unit and widget tests
         run: flutter test --no-pub test
 
+      - name: Upload puzzle golden failure images
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: puzzle-golden-failures
+          path: test/widget/features/puzzle_solver/failures
+          if-no-files-found: ignore
+
       - name: Compile Android integration tests
         shell: bash
         run: |

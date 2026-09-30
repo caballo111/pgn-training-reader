@@ -268,22 +268,22 @@ For every task:
 
 # Phase 12: Cycles, Sessions, Multi-Day Resume, and Timing
 
-- [ ] T138 [US4] Implement `lib/domain/training/active_time_tracker.dart` using `AppClock`. Support start segment, pause, resume, close segment, accumulated duration, and recovery.
-- [ ] T139 [US4] Add tests proving wall-clock jumps do not affect monotonic active duration while the process is running.
-- [ ] T140 [US4] Implement `training_session_service_impl.dart` to start a cycle and open its first session.
-- [ ] T141 [US4] Implement selection of the next pending set item while preserving Instruction and Demonstration items in order and excluding them from scored-attempt counts.
-- [ ] T142 [US4] Implement session pause and close. Closing must transactionally close the active timing segment.
-- [ ] T143 [US4] Implement resume of an incomplete cycle by opening a new session and selecting the unfinished or next item according to the spec.
-- [ ] T144 [US4] Implement explicit multi-day support. Store each session's wall-clock day while aggregating only active durations.
-- [ ] T145 [US4] Implement lifecycle observer integration that pauses active timing when the application becomes inactive/backgrounded and starts a new segment only after explicit or policy-defined resume.
-- [ ] T146 [US4] Implement process-recreation recovery using the last persisted lifecycle boundary. Unknown time after the last safe boundary must not be counted.
-- [ ] T147 [US4] Finalize completed attempts append-only. Retrying creates a new attempt linked to the same cycle and exercise.
-- [ ] T148 [US4] Complete a cycle only when every required scored item has a finalized outcome and all required ordered content has been traversed according to the spec.
-- [ ] T149 [P] [US4] Create `active_session_controller.dart` with loading, active item, paused, completed, and recoverable-failure states.
-- [ ] T150 [P] [US4] Create `active_session_page.dart` showing cycle progress, current session active time, cycle active time, and current content.
-- [ ] T151 [US4] Add integration test: begin on simulated Monday, solve some puzzles, pause, resume on simulated Tuesday, finish, and assert idle overnight time is excluded.
-- [ ] T152 [US4] Add integration test for process termination during an active puzzle and safe recovery without inflated duration.
-- [ ] T153 [US4] Add integration test proving retries create new attempts and do not overwrite the first result.
+- [x] T138 [US4] Implement `lib/domain/training/active_time_tracker.dart` using `AppClock`. Support start segment, pause, resume, close segment, accumulated duration, and recovery.
+- [x] T139 [US4] Add tests proving wall-clock jumps do not affect monotonic active duration while the process is running.
+- [x] T140 [US4] Implement `training_session_service_impl.dart` to start a cycle and open its first session.
+- [x] T141 [US4] Implement selection of the next pending set item while preserving Instruction and Demonstration items in order and excluding them from scored-attempt counts.
+- [x] T142 [US4] Implement session pause and close. Closing must transactionally close the active timing segment.
+- [x] T143 [US4] Implement resume of an incomplete cycle by opening a new session and selecting the unfinished or next item according to the spec.
+- [x] T144 [US4] Implement explicit multi-day support. Store each session's wall-clock day while aggregating only active durations.
+- [x] T145 [US4] Implement lifecycle observer integration that pauses active timing when the application becomes inactive/backgrounded and starts a new segment only after explicit or policy-defined resume.
+- [x] T146 [US4] Implement process-recreation recovery using the last persisted lifecycle boundary. Unknown time after the last safe boundary must not be counted.
+- [x] T147 [US4] Finalize completed attempts append-only. Retrying creates a new attempt linked to the same cycle and exercise.
+- [x] T148 [US4] Complete a cycle only when every required scored item has a finalized outcome and all required ordered content has been traversed according to the spec.
+- [x] T149 [P] [US4] Create `active_session_controller.dart` with loading, active item, paused, completed, and recoverable-failure states.
+- [x] T150 [P] [US4] Create `active_session_page.dart` showing cycle progress, current session active time, cycle active time, and current content.
+- [x] T151 [US4] Add integration test: begin on simulated Monday, solve some puzzles, pause, resume on simulated Tuesday, finish, and assert idle overnight time is excluded.
+- [x] T152 [US4] Add integration test for process termination during an active puzzle and safe recovery without inflated duration.
+- [x] T153 [US4] Add integration test proving retries create new attempts and do not overwrite the first result.
 
 **User Story 4B checkpoint**: One cycle can safely span multiple sessions and days with accurate active time and append-only history.
 

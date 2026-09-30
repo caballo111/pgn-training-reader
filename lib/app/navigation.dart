@@ -4,6 +4,7 @@ import 'app.dart';
 import 'dependencies.dart';
 import '../features/import_library/presentation/import_page.dart';
 import '../features/training_sets/presentation/training_sets_page.dart';
+import '../domain/training/authored_line_puzzle_evaluator.dart';
 
 /// Route names used by the application shell.
 abstract final class AppRoutes {
@@ -29,6 +30,13 @@ Route<dynamic> onGenerateAppRoute(
       builder: (_) => TrainingSetsPage(
         repository: dependencies.trainingSetRepository,
         indexRepository: dependencies.pgnIndexRepository,
+        trainingRepository: dependencies.trainingRepository,
+        sessionService: dependencies.trainingSessionService,
+        contentRepository: dependencies.chessContentRepository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(
+          clock: dependencies.clock,
+          idGenerator: dependencies.idGenerator,
+        ),
         clock: dependencies.clock,
         idGenerator: dependencies.idGenerator,
       ),

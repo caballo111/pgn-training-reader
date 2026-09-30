@@ -13,7 +13,7 @@ void main() {
     await database.close();
   });
 
-  test('creates every version 2 table', () async {
+  test('creates every version 4 table', () async {
     final rows = await database
         .customSelect(
           "SELECT name FROM sqlite_master "
@@ -35,12 +35,13 @@ void main() {
         'puzzle_attempts',
         'attempt_moves',
         'timing_segments',
+        'cycle_item_completions',
       }),
     );
     final schemaVersion = await database
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(schemaVersion.read<int>('user_version'), 2);
+    expect(schemaVersion.read<int>('user_version'), 4);
   });
 
   test('creates every declared query index', () async {
@@ -68,6 +69,9 @@ void main() {
         'training_set_items_block',
         'training_set_items_order',
         'cycles_one_active_per_set',
+        'training_sessions_one_active_per_cycle',
+        'puzzle_attempts_one_unfinished_per_item',
+        'timing_segments_one_open_per_attempt',
         'cycles_set_status',
         'training_sessions_cycle',
         'puzzle_attempts_cycle',
@@ -97,6 +101,12 @@ void main() {
       'training_set_items_block': <String>['block_id'],
       'training_set_items_order': <String>['training_set_id', 'position'],
       'cycles_set_status': <String>['training_set_id', 'status'],
+      'training_sessions_one_active_per_cycle': <String>['cycle_id'],
+      'puzzle_attempts_one_unfinished_per_item': <String>[
+        'cycle_id',
+        'block_id',
+      ],
+      'timing_segments_one_open_per_attempt': <String>['attempt_id'],
       'training_sessions_cycle': <String>['cycle_id', 'started_at_micros'],
       'puzzle_attempts_cycle': <String>['cycle_id', 'started_at_micros'],
       'puzzle_attempts_block': <String>['block_id', 'started_at_micros'],

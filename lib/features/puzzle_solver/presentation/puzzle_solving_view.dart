@@ -18,6 +18,7 @@ final class PuzzleSolvingView extends StatefulWidget {
     required this.orientation,
     required this.onPause,
     this.onReview,
+    this.pauseOwnAttempt = true,
     super.key,
   });
 
@@ -29,6 +30,9 @@ final class PuzzleSolvingView extends StatefulWidget {
 
   /// Receives the finalized safe projection for a separate review surface.
   final ValueChanged<PuzzlePresentationState>? onReview;
+
+  /// Session pages delegate pause persistence to their lifecycle coordinator.
+  final bool pauseOwnAttempt;
 
   @override
   State<PuzzleSolvingView> createState() => _PuzzleSolvingViewState();
@@ -113,15 +117,20 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView> {
                   ],
                   const SizedBox(height: 12),
                   if (isPaused) ...[
-                    Semantics(liveRegion: true, child: Text('Attempt paused')),
-                    const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: _writePending
-                          ? null
-                          : () => _run(widget.controller.resume),
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Resume'),
-                    ),
+                    if (widget.pauseOwnAttempt) ...[
+                      Semantics(
+                        liveRegion: true,
+                        child: Text('Attempt paused'),
+                      ),
+                      const SizedBox(height: 8),
+                      FilledButton.icon(
+                        onPressed: _writePending
+                            ? null
+                            : () => _run(widget.controller.resume),
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Resume'),
+                      ),
+                    ],
                   ] else
                     PuzzleControls(
                       mode: PuzzleControlsMode.active,
@@ -156,9 +165,11 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView> {
       _run(() => widget.controller.submitMove(uci: uci));
 
   Future<void> _pause() async {
-    await _run(widget.controller.pause);
+    if (widget.pauseOwnAttempt) await _run(widget.controller.pause);
     if (mounted &&
-        widget.controller.state?.attemptStatus == PuzzleAttemptStatus.paused) {
+        (!widget.pauseOwnAttempt ||
+            widget.controller.state?.attemptStatus ==
+                PuzzleAttemptStatus.paused)) {
       widget.onPause();
     }
   }

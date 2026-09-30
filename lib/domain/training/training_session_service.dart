@@ -1,4 +1,5 @@
 import '../chess_content/content_type.dart';
+import 'attempt_move.dart';
 import 'cycle.dart';
 import 'puzzle_attempt.dart';
 import 'timing_segment.dart';
@@ -165,6 +166,13 @@ abstract interface class TrainingSessionService {
     required Duration activeSegmentDuration,
   });
 
+  /// Persists one evaluated move; terminal moves close the current segment.
+  Future<PuzzleAttempt> recordSubmittedMove({
+    required AttemptMove move,
+    required PuzzleAttempt updatedAttempt,
+    Duration activeSegmentDuration = Duration.zero,
+  });
+
   /// Resumes an unfinished paused attempt by starting a new timing segment.
   ///
   /// [resumedAt] is the wall-clock audit time; active duration starts from a
@@ -172,6 +180,7 @@ abstract interface class TrainingSessionService {
   /// segment. Throws when the attempt is finalized or is not paused.
   Future<TimingSegment> resumeAttempt({
     required String attemptId,
+    String? sessionId,
     required DateTime resumedAt,
   });
 

@@ -23,6 +23,7 @@ part 'app_database.g.dart';
     PuzzleAttempts,
     AttemptMoves,
     TimingSegments,
+    CycleItemCompletions,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -31,7 +32,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => DatabaseMigrator(
@@ -47,6 +48,28 @@ class AppDatabase extends _$AppDatabase {
           await migrator.addColumn(importJobs, importJobs.sourceFingerprint);
           await migrator.addColumn(importJobs, importJobs.scannerVersion);
           await migrator.addColumn(importJobs, importJobs.sourceSizeBytes);
+        },
+      ),
+      2: DatabaseMigrationStep(
+        migrate: (migrator) async {
+          await migrator.createTable(cycleItemCompletions);
+        },
+      ),
+      3: DatabaseMigrationStep(
+        migrate: (migrator) async {
+          await migrator.addColumn(timingSegments, timingSegments.sessionId);
+          await migrator.database.customStatement(
+            "CREATE UNIQUE INDEX IF NOT EXISTS training_sessions_one_active_per_cycle "
+            "ON training_sessions (cycle_id) WHERE status = 'active'",
+          );
+          await migrator.database.customStatement(
+            "CREATE UNIQUE INDEX IF NOT EXISTS puzzle_attempts_one_unfinished_per_item "
+            "ON puzzle_attempts (cycle_id, block_id) WHERE status != 'finalized'",
+          );
+          await migrator.database.customStatement(
+            'CREATE UNIQUE INDEX IF NOT EXISTS timing_segments_one_open_per_attempt '
+            'ON timing_segments (attempt_id) WHERE ended_at_micros IS NULL',
+          );
         },
       ),
     },
@@ -224,9 +247,7 @@ class TrainingSetItems extends Table {
   ];
 
   @override
-  List<String> get customConstraints => <String>[
-    'CHECK (position >= 0)',
-  ];
+  List<String> get customConstraints => <String>['CHECK (position >= 0)'];
 }
 
 @TableIndex.sql(
@@ -251,6 +272,10 @@ class Cycles extends Table {
   name: 'training_sessions_cycle',
   columns: {#cycleId, #startedAtMicros},
 )
+@TableIndex.sql(
+  'CREATE UNIQUE INDEX training_sessions_one_active_per_cycle '
+  "ON training_sessions (cycle_id) WHERE status = 'active'",
+)
 class TrainingSessions extends Table {
   TextColumn get id => text()();
   TextColumn get cycleId => text().references(Cycles, #id)();
@@ -273,6 +298,10 @@ class TrainingSessions extends Table {
 )
 @TableIndex(name: 'puzzle_attempts_session', columns: {#sessionId})
 @TableIndex(name: 'puzzle_attempts_outcome', columns: {#outcome})
+@TableIndex.sql(
+  'CREATE UNIQUE INDEX puzzle_attempts_one_unfinished_per_item '
+  "ON puzzle_attempts (cycle_id, block_id) WHERE status != 'finalized'",
+)
 class PuzzleAttempts extends Table {
   TextColumn get id => text()();
   TextColumn get blockId => text().references(PgnBlocks, #id)();
@@ -331,9 +360,15 @@ class AttemptMoves extends Table {
   name: 'timing_segments_attempt',
   columns: {#attemptId, #startedAtMicros},
 )
+@TableIndex.sql(
+  'CREATE UNIQUE INDEX timing_segments_one_open_per_attempt '
+  'ON timing_segments (attempt_id) WHERE ended_at_micros IS NULL',
+)
 class TimingSegments extends Table {
   TextColumn get id => text()();
   TextColumn get attemptId => text().references(PuzzleAttempts, #id)();
+  TextColumn get sessionId =>
+      text().nullable().references(TrainingSessions, #id)();
   IntColumn get startedAtMicros => integer()();
   IntColumn get endedAtMicros => integer().nullable()();
   IntColumn get activeMilliseconds => integer().nullable()();
@@ -348,4 +383,18 @@ class TimingSegments extends Table {
     'CHECK ((ended_at_micros IS NULL AND active_milliseconds IS NULL) OR '
         '(ended_at_micros IS NOT NULL AND active_milliseconds IS NOT NULL))',
   ];
+}
+
+/// Durable traversal records for unscored set content within a cycle.
+@TableIndex(name: 'cycle_item_completions_cycle', columns: {#cycleId})
+class CycleItemCompletions extends Table {
+  TextColumn get cycleId => text().references(Cycles, #id)();
+  TextColumn get trainingSetItemId => text()();
+  IntColumn get completedAtMicros => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{
+    cycleId,
+    trainingSetItemId,
+  };
 }

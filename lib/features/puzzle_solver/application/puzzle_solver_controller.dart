@@ -7,18 +7,37 @@ import '../../../domain/training/training_repository.dart';
 import 'puzzle_presentation_state.dart';
 
 typedef PuzzleEvaluatorFactory = PuzzleEvaluator Function();
+typedef PuzzleMoveRecorder = Future<PuzzleAttempt> Function({
+  required AttemptMove move,
+  required PuzzleAttempt updatedAttempt,
+  required Duration activeSegmentDuration,
+});
+typedef PuzzleAttemptFinalizer = Future<PuzzleAttempt> Function({
+  required String attemptId,
+  required PuzzleAttemptOutcome outcome,
+  required DateTime completedAt,
+  required Duration activeSegmentDuration,
+  PuzzleAttemptFailureReason? failureReason,
+  bool revealed,
+});
 
 /// Coordinates puzzle evaluation and durable attempt state. Each transition is
 /// evaluated from the last committed snapshot and published only after storage
 /// succeeds.
 final class PuzzleSolverController {
   PuzzleSolverController({
-    required this._repository,
-    required this._evaluatorFactory,
+    required this.repository,
+    required this.evaluatorFactory,
+    this.moveRecorder,
+    this.attemptFinalizer,
+    this.activeSegmentDurationProvider,
   });
 
-  final TrainingRepository _repository;
-  final PuzzleEvaluatorFactory _evaluatorFactory;
+  final TrainingRepository repository;
+  final PuzzleEvaluatorFactory evaluatorFactory;
+  final PuzzleMoveRecorder? moveRecorder;
+  final PuzzleAttemptFinalizer? attemptFinalizer;
+  final Duration Function(String attemptId)? activeSegmentDurationProvider;
 
   ChessContent? _puzzle;
   PuzzleAttempt? _attempt;
@@ -39,9 +58,9 @@ final class PuzzleSolverController {
     required ChessContent puzzle,
     required String attemptId,
   }) => _exclusive(() async {
-    final attempt = await _repository.getAttempt(attemptId);
+    final attempt = await repository.getAttempt(attemptId);
     if (attempt == null) throw StateError('Attempt $attemptId was not found.');
-    final moves = await _repository.listAttemptMoves(attemptId);
+    final moves = await repository.listAttemptMoves(attemptId);
 
     if (attempt.outcome != null) {
       final evaluation = _restoreFinalized(puzzle, attempt, moves);
@@ -53,7 +72,7 @@ final class PuzzleSolverController {
       return _publish(evaluation);
     }
 
-    final evaluator = _evaluatorFactory();
+    final evaluator = evaluatorFactory();
     final evaluation = evaluator.initialize(
       puzzle: puzzle,
       attempt: attempt,
@@ -89,12 +108,32 @@ final class PuzzleSolverController {
     final evaluation = evaluator.submitMove(uci: uci);
     final move = evaluation.moves.last;
     final terminal = evaluation.isFinalized;
-    await _repository.recordSubmittedMove(
-      move: move,
-      updatedAttempt: evaluation.attempt,
-      closingTimingSegment: terminal ? closingTimingSegment : null,
-    );
-    return _commit(evaluator, evaluation);
+    final persisted = moveRecorder == null
+        ? null
+        : await moveRecorder!(
+            move: move,
+            updatedAttempt: evaluation.attempt,
+            activeSegmentDuration: terminal
+                ? activeSegmentDurationProvider?.call(evaluation.attempt.id) ??
+                      Duration.zero
+                : Duration.zero,
+          );
+    if (moveRecorder == null) {
+      await repository.recordSubmittedMove(
+        move: move,
+        updatedAttempt: evaluation.attempt,
+        closingTimingSegment: terminal ? closingTimingSegment : null,
+      );
+    }
+    final committed = persisted == null
+        ? evaluation
+        : PuzzleEvaluationState(
+            attempt: persisted,
+            currentFen: evaluation.currentFen,
+            sideToMove: evaluation.sideToMove,
+            moves: evaluation.moves,
+          );
+    return _commit(evaluator, committed);
   });
 
   Future<PuzzlePresentationState> reveal({
@@ -121,7 +160,7 @@ final class PuzzleSolverController {
       throw StateError('Only an active attempt can be paused.');
     }
     final updated = _copyAttempt(attempt, status: PuzzleAttemptStatus.paused);
-    await _repository.updateUnfinishedAttempt(updated);
+    await repository.updateUnfinishedAttempt(updated);
     return _commitLifecycle(updated);
   });
 
@@ -134,7 +173,7 @@ final class PuzzleSolverController {
       throw StateError('Only a paused attempt can be resumed.');
     }
     final updated = _copyAttempt(attempt, status: PuzzleAttemptStatus.active);
-    await _repository.updateUnfinishedAttempt(updated);
+    await repository.updateUnfinishedAttempt(updated);
     return _commitLifecycle(updated);
   });
 
@@ -149,11 +188,33 @@ final class PuzzleSolverController {
     if (current.isFinalized) return _presentation!;
     final evaluator = _candidateEvaluator();
     final evaluation = action(evaluator);
-    await _repository.finalizeAttempt(
-      attempt: evaluation.attempt,
-      finalTimingSegment: closingTimingSegment,
-    );
-    return _commit(evaluator, evaluation);
+    final persisted = attemptFinalizer == null
+        ? null
+        : await attemptFinalizer!(
+            attemptId: evaluation.attempt.id,
+            outcome: evaluation.attempt.outcome!,
+            completedAt: evaluation.attempt.completedAt!,
+            activeSegmentDuration:
+                activeSegmentDurationProvider?.call(evaluation.attempt.id) ??
+                Duration.zero,
+            failureReason: evaluation.attempt.failureReason,
+            revealed: evaluation.attempt.revealed,
+          );
+    if (attemptFinalizer == null) {
+      await repository.finalizeAttempt(
+        attempt: evaluation.attempt,
+        finalTimingSegment: closingTimingSegment,
+      );
+    }
+    final committed = persisted == null
+        ? evaluation
+        : PuzzleEvaluationState(
+            attempt: persisted,
+            currentFen: evaluation.currentFen,
+            sideToMove: evaluation.sideToMove,
+            moves: evaluation.moves,
+          );
+    return _commit(evaluator, committed);
   });
 
   Future<T> _exclusive<T>(Future<T> Function() action) async {
@@ -180,7 +241,7 @@ final class PuzzleSolverController {
     if (attempt.outcome != null) {
       throw StateError('A finalized attempt cannot change.');
     }
-    final evaluator = _evaluatorFactory();
+    final evaluator = evaluatorFactory();
     evaluator.initialize(
       puzzle: puzzle,
       attempt: attempt,
@@ -247,7 +308,7 @@ final class PuzzleSolverController {
     final accepted = moves
         .where((move) => move.legal && move.accepted)
         .toList(growable: false);
-    final evaluator = _evaluatorFactory();
+    final evaluator = evaluatorFactory();
     final reachesTerminal = attempt.outcome == PuzzleAttemptOutcome.passed;
     final prefix = reachesTerminal && accepted.isNotEmpty
         ? accepted.sublist(0, accepted.length - 1)

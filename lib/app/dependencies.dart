@@ -14,6 +14,13 @@ import '../data/repositories/drift_pgn_source_repository.dart';
 import '../data/repositories/drift_pgn_index_repository.dart';
 import '../data/repositories/drift_training_set_repository.dart';
 import '../domain/training/training_set_repository.dart';
+import '../data/repositories/drift_training_repository.dart';
+import '../data/repositories/drift_chess_content_repository.dart';
+import '../domain/chess_content/chess_content_repository.dart';
+import '../domain/library/pgn_source_repository.dart';
+import '../domain/training/training_repository.dart';
+import '../domain/training/training_session_service.dart';
+import '../domain/training/training_session_service_impl.dart';
 import '../features/import_library/application/import_controller.dart';
 
 /// Application-level composition root for foundational abstractions.
@@ -38,6 +45,10 @@ final class AppDependencies {
   AppDatabase? _database;
   ImportController? _importController;
   TrainingSetRepository? _trainingSetRepository;
+  TrainingRepository? _trainingRepository;
+  TrainingSessionService? _trainingSessionService;
+  ChessContentRepository? _chessContentRepository;
+  PgnSourceRepository? _pgnSourceRepository;
   bool _restoreAttempted = false;
 
   /// Opened lazily so creating app dependencies performs no platform I/O.
@@ -48,7 +59,31 @@ final class AppDependencies {
   TrainingSetRepository get trainingSetRepository =>
       _trainingSetRepository ??= DriftTrainingSetRepository(database);
 
-  DriftPgnIndexRepository get pgnIndexRepository => DriftPgnIndexRepository(database);
+  TrainingRepository get trainingRepository =>
+      _trainingRepository ??= DriftTrainingRepository(database);
+
+  TrainingSessionService get trainingSessionService =>
+      _trainingSessionService ??= TrainingSessionServiceImpl(
+        repository: trainingRepository,
+        clock: clock,
+        idGenerator: idGenerator,
+      );
+
+  DriftPgnIndexRepository get pgnIndexRepository =>
+      DriftPgnIndexRepository(database);
+
+  PgnSourceRepository get pgnSourceRepository =>
+      _pgnSourceRepository ??= DriftPgnSourceRepository(database);
+
+  ChessContentRepository get chessContentRepository =>
+      _chessContentRepository ??= DriftChessContentRepository(
+        indexRepository: pgnIndexRepository,
+        sourceRepository: pgnSourceRepository,
+        fileSource: _fileSource,
+      );
+
+  ManagedFileSource get _fileSource =>
+      ManagedFileSource(pickedSources: const FlutterFileSource());
 
   /// A process-scoped controller whose source and index stores survive routes.
   ImportController get importController {
@@ -61,15 +96,13 @@ final class AppDependencies {
   }
 
   ImportController _makeImportController() {
-    final fileSource = ManagedFileSource(
-      pickedSources: const FlutterFileSource(),
-    );
+    final fileSource = _fileSource;
     final db = database;
     return ImportController(
       fileSourcePicker: const FlutterFileSourcePicker(),
       fileSource: fileSource,
       targetFactory: fileSource.createTarget,
-      sourceRepository: DriftPgnSourceRepository(db),
+      sourceRepository: pgnSourceRepository,
       importService: DriftPgnImportService(
         database: db,
         fileSource: fileSource,

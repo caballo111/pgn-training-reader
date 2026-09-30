@@ -6710,6 +6710,20 @@ class $TimingSegmentsTable extends TimingSegments
       'REFERENCES puzzle_attempts (id)',
     ),
   );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES training_sessions (id)',
+    ),
+  );
   static const VerificationMeta _startedAtMicrosMeta = const VerificationMeta(
     'startedAtMicros',
   );
@@ -6746,6 +6760,7 @@ class $TimingSegmentsTable extends TimingSegments
   List<GeneratedColumn> get $columns => [
     id,
     attemptId,
+    sessionId,
     startedAtMicros,
     endedAtMicros,
     activeMilliseconds,
@@ -6774,6 +6789,12 @@ class $TimingSegmentsTable extends TimingSegments
       );
     } else if (isInserting) {
       context.missing(_attemptIdMeta);
+    }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
     }
     if (data.containsKey('started_at_micros')) {
       context.handle(
@@ -6821,6 +6842,10 @@ class $TimingSegmentsTable extends TimingSegments
         DriftSqlType.string,
         data['${effectivePrefix}attempt_id'],
       )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      ),
       startedAtMicros: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}started_at_micros'],
@@ -6845,12 +6870,14 @@ class $TimingSegmentsTable extends TimingSegments
 class TimingSegment extends DataClass implements Insertable<TimingSegment> {
   final String id;
   final String attemptId;
+  final String? sessionId;
   final int startedAtMicros;
   final int? endedAtMicros;
   final int? activeMilliseconds;
   const TimingSegment({
     required this.id,
     required this.attemptId,
+    this.sessionId,
     required this.startedAtMicros,
     this.endedAtMicros,
     this.activeMilliseconds,
@@ -6860,6 +6887,9 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['attempt_id'] = Variable<String>(attemptId);
+    if (!nullToAbsent || sessionId != null) {
+      map['session_id'] = Variable<String>(sessionId);
+    }
     map['started_at_micros'] = Variable<int>(startedAtMicros);
     if (!nullToAbsent || endedAtMicros != null) {
       map['ended_at_micros'] = Variable<int>(endedAtMicros);
@@ -6874,6 +6904,9 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
     return TimingSegmentsCompanion(
       id: Value(id),
       attemptId: Value(attemptId),
+      sessionId: sessionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sessionId),
       startedAtMicros: Value(startedAtMicros),
       endedAtMicros: endedAtMicros == null && nullToAbsent
           ? const Value.absent()
@@ -6892,6 +6925,7 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
     return TimingSegment(
       id: serializer.fromJson<String>(json['id']),
       attemptId: serializer.fromJson<String>(json['attemptId']),
+      sessionId: serializer.fromJson<String?>(json['sessionId']),
       startedAtMicros: serializer.fromJson<int>(json['startedAtMicros']),
       endedAtMicros: serializer.fromJson<int?>(json['endedAtMicros']),
       activeMilliseconds: serializer.fromJson<int?>(json['activeMilliseconds']),
@@ -6903,6 +6937,7 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'attemptId': serializer.toJson<String>(attemptId),
+      'sessionId': serializer.toJson<String?>(sessionId),
       'startedAtMicros': serializer.toJson<int>(startedAtMicros),
       'endedAtMicros': serializer.toJson<int?>(endedAtMicros),
       'activeMilliseconds': serializer.toJson<int?>(activeMilliseconds),
@@ -6912,12 +6947,14 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
   TimingSegment copyWith({
     String? id,
     String? attemptId,
+    Value<String?> sessionId = const Value.absent(),
     int? startedAtMicros,
     Value<int?> endedAtMicros = const Value.absent(),
     Value<int?> activeMilliseconds = const Value.absent(),
   }) => TimingSegment(
     id: id ?? this.id,
     attemptId: attemptId ?? this.attemptId,
+    sessionId: sessionId.present ? sessionId.value : this.sessionId,
     startedAtMicros: startedAtMicros ?? this.startedAtMicros,
     endedAtMicros: endedAtMicros.present
         ? endedAtMicros.value
@@ -6930,6 +6967,7 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
     return TimingSegment(
       id: data.id.present ? data.id.value : this.id,
       attemptId: data.attemptId.present ? data.attemptId.value : this.attemptId,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
       startedAtMicros: data.startedAtMicros.present
           ? data.startedAtMicros.value
           : this.startedAtMicros,
@@ -6947,6 +6985,7 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
     return (StringBuffer('TimingSegment(')
           ..write('id: $id, ')
           ..write('attemptId: $attemptId, ')
+          ..write('sessionId: $sessionId, ')
           ..write('startedAtMicros: $startedAtMicros, ')
           ..write('endedAtMicros: $endedAtMicros, ')
           ..write('activeMilliseconds: $activeMilliseconds')
@@ -6958,6 +6997,7 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
   int get hashCode => Object.hash(
     id,
     attemptId,
+    sessionId,
     startedAtMicros,
     endedAtMicros,
     activeMilliseconds,
@@ -6968,6 +7008,7 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
       (other is TimingSegment &&
           other.id == this.id &&
           other.attemptId == this.attemptId &&
+          other.sessionId == this.sessionId &&
           other.startedAtMicros == this.startedAtMicros &&
           other.endedAtMicros == this.endedAtMicros &&
           other.activeMilliseconds == this.activeMilliseconds);
@@ -6976,6 +7017,7 @@ class TimingSegment extends DataClass implements Insertable<TimingSegment> {
 class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
   final Value<String> id;
   final Value<String> attemptId;
+  final Value<String?> sessionId;
   final Value<int> startedAtMicros;
   final Value<int?> endedAtMicros;
   final Value<int?> activeMilliseconds;
@@ -6983,6 +7025,7 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
   const TimingSegmentsCompanion({
     this.id = const Value.absent(),
     this.attemptId = const Value.absent(),
+    this.sessionId = const Value.absent(),
     this.startedAtMicros = const Value.absent(),
     this.endedAtMicros = const Value.absent(),
     this.activeMilliseconds = const Value.absent(),
@@ -6991,6 +7034,7 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
   TimingSegmentsCompanion.insert({
     required String id,
     required String attemptId,
+    this.sessionId = const Value.absent(),
     required int startedAtMicros,
     this.endedAtMicros = const Value.absent(),
     this.activeMilliseconds = const Value.absent(),
@@ -7001,6 +7045,7 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
   static Insertable<TimingSegment> custom({
     Expression<String>? id,
     Expression<String>? attemptId,
+    Expression<String>? sessionId,
     Expression<int>? startedAtMicros,
     Expression<int>? endedAtMicros,
     Expression<int>? activeMilliseconds,
@@ -7009,6 +7054,7 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (attemptId != null) 'attempt_id': attemptId,
+      if (sessionId != null) 'session_id': sessionId,
       if (startedAtMicros != null) 'started_at_micros': startedAtMicros,
       if (endedAtMicros != null) 'ended_at_micros': endedAtMicros,
       if (activeMilliseconds != null) 'active_milliseconds': activeMilliseconds,
@@ -7019,6 +7065,7 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
   TimingSegmentsCompanion copyWith({
     Value<String>? id,
     Value<String>? attemptId,
+    Value<String?>? sessionId,
     Value<int>? startedAtMicros,
     Value<int?>? endedAtMicros,
     Value<int?>? activeMilliseconds,
@@ -7027,6 +7074,7 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
     return TimingSegmentsCompanion(
       id: id ?? this.id,
       attemptId: attemptId ?? this.attemptId,
+      sessionId: sessionId ?? this.sessionId,
       startedAtMicros: startedAtMicros ?? this.startedAtMicros,
       endedAtMicros: endedAtMicros ?? this.endedAtMicros,
       activeMilliseconds: activeMilliseconds ?? this.activeMilliseconds,
@@ -7042,6 +7090,9 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
     }
     if (attemptId.present) {
       map['attempt_id'] = Variable<String>(attemptId.value);
+    }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
     }
     if (startedAtMicros.present) {
       map['started_at_micros'] = Variable<int>(startedAtMicros.value);
@@ -7063,9 +7114,300 @@ class TimingSegmentsCompanion extends UpdateCompanion<TimingSegment> {
     return (StringBuffer('TimingSegmentsCompanion(')
           ..write('id: $id, ')
           ..write('attemptId: $attemptId, ')
+          ..write('sessionId: $sessionId, ')
           ..write('startedAtMicros: $startedAtMicros, ')
           ..write('endedAtMicros: $endedAtMicros, ')
           ..write('activeMilliseconds: $activeMilliseconds, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $CycleItemCompletionsTable extends CycleItemCompletions
+    with TableInfo<$CycleItemCompletionsTable, CycleItemCompletion> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CycleItemCompletionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _cycleIdMeta = const VerificationMeta(
+    'cycleId',
+  );
+  @override
+  late final GeneratedColumn<String> cycleId = GeneratedColumn<String>(
+    'cycle_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES cycles (id)',
+    ),
+  );
+  static const VerificationMeta _trainingSetItemIdMeta = const VerificationMeta(
+    'trainingSetItemId',
+  );
+  @override
+  late final GeneratedColumn<String> trainingSetItemId =
+      GeneratedColumn<String>(
+        'training_set_item_id',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _completedAtMicrosMeta = const VerificationMeta(
+    'completedAtMicros',
+  );
+  @override
+  late final GeneratedColumn<int> completedAtMicros = GeneratedColumn<int>(
+    'completed_at_micros',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    cycleId,
+    trainingSetItemId,
+    completedAtMicros,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cycle_item_completions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<CycleItemCompletion> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('cycle_id')) {
+      context.handle(
+        _cycleIdMeta,
+        cycleId.isAcceptableOrUnknown(data['cycle_id']!, _cycleIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cycleIdMeta);
+    }
+    if (data.containsKey('training_set_item_id')) {
+      context.handle(
+        _trainingSetItemIdMeta,
+        trainingSetItemId.isAcceptableOrUnknown(
+          data['training_set_item_id']!,
+          _trainingSetItemIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_trainingSetItemIdMeta);
+    }
+    if (data.containsKey('completed_at_micros')) {
+      context.handle(
+        _completedAtMicrosMeta,
+        completedAtMicros.isAcceptableOrUnknown(
+          data['completed_at_micros']!,
+          _completedAtMicrosMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_completedAtMicrosMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {cycleId, trainingSetItemId};
+  @override
+  CycleItemCompletion map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CycleItemCompletion(
+      cycleId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cycle_id'],
+      )!,
+      trainingSetItemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}training_set_item_id'],
+      )!,
+      completedAtMicros: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}completed_at_micros'],
+      )!,
+    );
+  }
+
+  @override
+  $CycleItemCompletionsTable createAlias(String alias) {
+    return $CycleItemCompletionsTable(attachedDatabase, alias);
+  }
+}
+
+class CycleItemCompletion extends DataClass
+    implements Insertable<CycleItemCompletion> {
+  final String cycleId;
+  final String trainingSetItemId;
+  final int completedAtMicros;
+  const CycleItemCompletion({
+    required this.cycleId,
+    required this.trainingSetItemId,
+    required this.completedAtMicros,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['cycle_id'] = Variable<String>(cycleId);
+    map['training_set_item_id'] = Variable<String>(trainingSetItemId);
+    map['completed_at_micros'] = Variable<int>(completedAtMicros);
+    return map;
+  }
+
+  CycleItemCompletionsCompanion toCompanion(bool nullToAbsent) {
+    return CycleItemCompletionsCompanion(
+      cycleId: Value(cycleId),
+      trainingSetItemId: Value(trainingSetItemId),
+      completedAtMicros: Value(completedAtMicros),
+    );
+  }
+
+  factory CycleItemCompletion.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CycleItemCompletion(
+      cycleId: serializer.fromJson<String>(json['cycleId']),
+      trainingSetItemId: serializer.fromJson<String>(json['trainingSetItemId']),
+      completedAtMicros: serializer.fromJson<int>(json['completedAtMicros']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'cycleId': serializer.toJson<String>(cycleId),
+      'trainingSetItemId': serializer.toJson<String>(trainingSetItemId),
+      'completedAtMicros': serializer.toJson<int>(completedAtMicros),
+    };
+  }
+
+  CycleItemCompletion copyWith({
+    String? cycleId,
+    String? trainingSetItemId,
+    int? completedAtMicros,
+  }) => CycleItemCompletion(
+    cycleId: cycleId ?? this.cycleId,
+    trainingSetItemId: trainingSetItemId ?? this.trainingSetItemId,
+    completedAtMicros: completedAtMicros ?? this.completedAtMicros,
+  );
+  CycleItemCompletion copyWithCompanion(CycleItemCompletionsCompanion data) {
+    return CycleItemCompletion(
+      cycleId: data.cycleId.present ? data.cycleId.value : this.cycleId,
+      trainingSetItemId: data.trainingSetItemId.present
+          ? data.trainingSetItemId.value
+          : this.trainingSetItemId,
+      completedAtMicros: data.completedAtMicros.present
+          ? data.completedAtMicros.value
+          : this.completedAtMicros,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CycleItemCompletion(')
+          ..write('cycleId: $cycleId, ')
+          ..write('trainingSetItemId: $trainingSetItemId, ')
+          ..write('completedAtMicros: $completedAtMicros')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(cycleId, trainingSetItemId, completedAtMicros);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CycleItemCompletion &&
+          other.cycleId == this.cycleId &&
+          other.trainingSetItemId == this.trainingSetItemId &&
+          other.completedAtMicros == this.completedAtMicros);
+}
+
+class CycleItemCompletionsCompanion
+    extends UpdateCompanion<CycleItemCompletion> {
+  final Value<String> cycleId;
+  final Value<String> trainingSetItemId;
+  final Value<int> completedAtMicros;
+  final Value<int> rowid;
+  const CycleItemCompletionsCompanion({
+    this.cycleId = const Value.absent(),
+    this.trainingSetItemId = const Value.absent(),
+    this.completedAtMicros = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CycleItemCompletionsCompanion.insert({
+    required String cycleId,
+    required String trainingSetItemId,
+    required int completedAtMicros,
+    this.rowid = const Value.absent(),
+  }) : cycleId = Value(cycleId),
+       trainingSetItemId = Value(trainingSetItemId),
+       completedAtMicros = Value(completedAtMicros);
+  static Insertable<CycleItemCompletion> custom({
+    Expression<String>? cycleId,
+    Expression<String>? trainingSetItemId,
+    Expression<int>? completedAtMicros,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (cycleId != null) 'cycle_id': cycleId,
+      if (trainingSetItemId != null) 'training_set_item_id': trainingSetItemId,
+      if (completedAtMicros != null) 'completed_at_micros': completedAtMicros,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CycleItemCompletionsCompanion copyWith({
+    Value<String>? cycleId,
+    Value<String>? trainingSetItemId,
+    Value<int>? completedAtMicros,
+    Value<int>? rowid,
+  }) {
+    return CycleItemCompletionsCompanion(
+      cycleId: cycleId ?? this.cycleId,
+      trainingSetItemId: trainingSetItemId ?? this.trainingSetItemId,
+      completedAtMicros: completedAtMicros ?? this.completedAtMicros,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (cycleId.present) {
+      map['cycle_id'] = Variable<String>(cycleId.value);
+    }
+    if (trainingSetItemId.present) {
+      map['training_set_item_id'] = Variable<String>(trainingSetItemId.value);
+    }
+    if (completedAtMicros.present) {
+      map['completed_at_micros'] = Variable<int>(completedAtMicros.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CycleItemCompletionsCompanion(')
+          ..write('cycleId: $cycleId, ')
+          ..write('trainingSetItemId: $trainingSetItemId, ')
+          ..write('completedAtMicros: $completedAtMicros, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7091,6 +7433,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PuzzleAttemptsTable puzzleAttempts = $PuzzleAttemptsTable(this);
   late final $AttemptMovesTable attemptMoves = $AttemptMovesTable(this);
   late final $TimingSegmentsTable timingSegments = $TimingSegmentsTable(this);
+  late final $CycleItemCompletionsTable cycleItemCompletions =
+      $CycleItemCompletionsTable(this);
   late final Index pgnBlocksSourceOrder = Index(
     'pgn_blocks_source_order',
     'CREATE INDEX pgn_blocks_source_order ON pgn_blocks (source_id, ordinal)',
@@ -7167,6 +7511,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'training_sessions_cycle',
     'CREATE INDEX training_sessions_cycle ON training_sessions (cycle_id, started_at_micros)',
   );
+  late final Index trainingSessionsOneActivePerCycle = Index(
+    'training_sessions_one_active_per_cycle',
+    'CREATE UNIQUE INDEX training_sessions_one_active_per_cycle ON training_sessions (cycle_id) WHERE status = \'active\'',
+  );
   late final Index puzzleAttemptsCycle = Index(
     'puzzle_attempts_cycle',
     'CREATE INDEX puzzle_attempts_cycle ON puzzle_attempts (cycle_id, started_at_micros)',
@@ -7183,6 +7531,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'puzzle_attempts_outcome',
     'CREATE INDEX puzzle_attempts_outcome ON puzzle_attempts (outcome)',
   );
+  late final Index puzzleAttemptsOneUnfinishedPerItem = Index(
+    'puzzle_attempts_one_unfinished_per_item',
+    'CREATE UNIQUE INDEX puzzle_attempts_one_unfinished_per_item ON puzzle_attempts (cycle_id, block_id) WHERE status != \'finalized\'',
+  );
   late final Index attemptMovesAttemptOrder = Index(
     'attempt_moves_attempt_order',
     'CREATE INDEX attempt_moves_attempt_order ON attempt_moves (attempt_id, ordinal)',
@@ -7190,6 +7542,14 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final Index timingSegmentsAttempt = Index(
     'timing_segments_attempt',
     'CREATE INDEX timing_segments_attempt ON timing_segments (attempt_id, started_at_micros)',
+  );
+  late final Index timingSegmentsOneOpenPerAttempt = Index(
+    'timing_segments_one_open_per_attempt',
+    'CREATE UNIQUE INDEX timing_segments_one_open_per_attempt ON timing_segments (attempt_id) WHERE ended_at_micros IS NULL',
+  );
+  late final Index cycleItemCompletionsCycle = Index(
+    'cycle_item_completions_cycle',
+    'CREATE INDEX cycle_item_completions_cycle ON cycle_item_completions (cycle_id)',
   );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
@@ -7207,6 +7567,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     puzzleAttempts,
     attemptMoves,
     timingSegments,
+    cycleItemCompletions,
     pgnBlocksSourceOrder,
     pgnBlocksExerciseId,
     pgnBlocksContentType,
@@ -7226,12 +7587,16 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     cyclesOneActivePerSet,
     cyclesSetStatus,
     trainingSessionsCycle,
+    trainingSessionsOneActivePerCycle,
     puzzleAttemptsCycle,
     puzzleAttemptsBlock,
     puzzleAttemptsSession,
     puzzleAttemptsOutcome,
+    puzzleAttemptsOneUnfinishedPerItem,
     attemptMovesAttemptOrder,
     timingSegmentsAttempt,
+    timingSegmentsOneOpenPerAttempt,
+    cycleItemCompletionsCycle,
   ];
 }
 
@@ -10643,6 +11008,31 @@ final class $$CyclesTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<
+    $CycleItemCompletionsTable,
+    List<CycleItemCompletion>
+  >
+  _cycleItemCompletionsRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.cycleItemCompletions,
+        aliasName: 'cycles__id__cycle_item_completions__cycle_id',
+      );
+
+  $$CycleItemCompletionsTableProcessedTableManager
+  get cycleItemCompletionsRefs {
+    final manager = $$CycleItemCompletionsTableTableManager(
+      $_db,
+      $_db.cycleItemCompletions,
+    ).filter((f) => f.cycleId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _cycleItemCompletionsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$CyclesTableFilterComposer
@@ -10748,6 +11138,31 @@ class $$CyclesTableFilterComposer
           }) => $$PuzzleAttemptsTableFilterComposer(
             $db: $db,
             $table: $db.puzzleAttempts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> cycleItemCompletionsRefs(
+    Expression<bool> Function($$CycleItemCompletionsTableFilterComposer f) f,
+  ) {
+    final $$CycleItemCompletionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.cycleItemCompletions,
+      getReferencedColumn: (t) => t.cycleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CycleItemCompletionsTableFilterComposer(
+            $db: $db,
+            $table: $db.cycleItemCompletions,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -10928,6 +11343,32 @@ class $$CyclesTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> cycleItemCompletionsRefs<T extends Object>(
+    Expression<T> Function($$CycleItemCompletionsTableAnnotationComposer a) f,
+  ) {
+    final $$CycleItemCompletionsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.cycleItemCompletions,
+          getReferencedColumn: (t) => t.cycleId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$CycleItemCompletionsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.cycleItemCompletions,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$CyclesTableTableManager
@@ -10947,6 +11388,7 @@ class $$CyclesTableTableManager
             bool trainingSetId,
             bool trainingSessionsRefs,
             bool puzzleAttemptsRefs,
+            bool cycleItemCompletionsRefs,
           })
         > {
   $$CyclesTableTableManager(_$AppDatabase db, $CyclesTable table)
@@ -11013,12 +11455,14 @@ class $$CyclesTableTableManager
                 trainingSetId = false,
                 trainingSessionsRefs = false,
                 puzzleAttemptsRefs = false,
+                cycleItemCompletionsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
                   explicitlyWatchedTables: [
                     if (trainingSessionsRefs) db.trainingSessions,
                     if (puzzleAttemptsRefs) db.puzzleAttempts,
+                    if (cycleItemCompletionsRefs) db.cycleItemCompletions,
                   ],
                   addJoins:
                       <
@@ -11094,6 +11538,27 @@ class $$CyclesTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (cycleItemCompletionsRefs)
+                        await $_getPrefetchedData<
+                          Cycle,
+                          $CyclesTable,
+                          CycleItemCompletion
+                        >(
+                          currentTable: table,
+                          referencedTable: $$CyclesTableReferences
+                              ._cycleItemCompletionsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$CyclesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).cycleItemCompletionsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.cycleId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -11118,6 +11583,7 @@ typedef $$CyclesTableProcessedTableManager =
         bool trainingSetId,
         bool trainingSessionsRefs,
         bool puzzleAttemptsRefs,
+        bool cycleItemCompletionsRefs,
       })
     >;
 typedef $$TrainingSessionsTableCreateCompanionBuilder =
@@ -11180,6 +11646,24 @@ final class $$TrainingSessionsTableReferences
     ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_puzzleAttemptsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$TimingSegmentsTable, List<TimingSegment>>
+  _timingSegmentsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.timingSegments,
+    aliasName: 'training_sessions__id__timing_segments__session_id',
+  );
+
+  $$TimingSegmentsTableProcessedTableManager get timingSegmentsRefs {
+    final manager = $$TimingSegmentsTableTableManager(
+      $_db,
+      $_db.timingSegments,
+    ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_timingSegmentsRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -11259,6 +11743,31 @@ class $$TrainingSessionsTableFilterComposer
           }) => $$PuzzleAttemptsTableFilterComposer(
             $db: $db,
             $table: $db.puzzleAttempts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> timingSegmentsRefs(
+    Expression<bool> Function($$TimingSegmentsTableFilterComposer f) f,
+  ) {
+    final $$TimingSegmentsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.timingSegments,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TimingSegmentsTableFilterComposer(
+            $db: $db,
+            $table: $db.timingSegments,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -11404,6 +11913,31 @@ class $$TrainingSessionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> timingSegmentsRefs<T extends Object>(
+    Expression<T> Function($$TimingSegmentsTableAnnotationComposer a) f,
+  ) {
+    final $$TimingSegmentsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.timingSegments,
+      getReferencedColumn: (t) => t.sessionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TimingSegmentsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.timingSegments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$TrainingSessionsTableTableManager
@@ -11419,7 +11953,11 @@ class $$TrainingSessionsTableTableManager
           $$TrainingSessionsTableUpdateCompanionBuilder,
           (TrainingSession, $$TrainingSessionsTableReferences),
           TrainingSession,
-          PrefetchHooks Function({bool cycleId, bool puzzleAttemptsRefs})
+          PrefetchHooks Function({
+            bool cycleId,
+            bool puzzleAttemptsRefs,
+            bool timingSegmentsRefs,
+          })
         > {
   $$TrainingSessionsTableTableManager(
     _$AppDatabase db,
@@ -11479,11 +12017,16 @@ class $$TrainingSessionsTableTableManager
               )
               .toList(),
           prefetchHooksCallback:
-              ({cycleId = false, puzzleAttemptsRefs = false}) {
+              ({
+                cycleId = false,
+                puzzleAttemptsRefs = false,
+                timingSegmentsRefs = false,
+              }) {
                 return PrefetchHooks(
                   db: db,
                   explicitlyWatchedTables: [
                     if (puzzleAttemptsRefs) db.puzzleAttempts,
+                    if (timingSegmentsRefs) db.timingSegments,
                   ],
                   addJoins:
                       <
@@ -11538,6 +12081,27 @@ class $$TrainingSessionsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (timingSegmentsRefs)
+                        await $_getPrefetchedData<
+                          TrainingSession,
+                          $TrainingSessionsTable,
+                          TimingSegment
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TrainingSessionsTableReferences
+                              ._timingSegmentsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$TrainingSessionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).timingSegmentsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.sessionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -11558,7 +12122,11 @@ typedef $$TrainingSessionsTableProcessedTableManager =
       $$TrainingSessionsTableUpdateCompanionBuilder,
       (TrainingSession, $$TrainingSessionsTableReferences),
       TrainingSession,
-      PrefetchHooks Function({bool cycleId, bool puzzleAttemptsRefs})
+      PrefetchHooks Function({
+        bool cycleId,
+        bool puzzleAttemptsRefs,
+        bool timingSegmentsRefs,
+      })
     >;
 typedef $$PuzzleAttemptsTableCreateCompanionBuilder =
     PuzzleAttemptsCompanion Function({
@@ -12773,6 +13341,7 @@ typedef $$TimingSegmentsTableCreateCompanionBuilder =
     TimingSegmentsCompanion Function({
       required String id,
       required String attemptId,
+      Value<String?> sessionId,
       required int startedAtMicros,
       Value<int?> endedAtMicros,
       Value<int?> activeMilliseconds,
@@ -12782,6 +13351,7 @@ typedef $$TimingSegmentsTableUpdateCompanionBuilder =
     TimingSegmentsCompanion Function({
       Value<String> id,
       Value<String> attemptId,
+      Value<String?> sessionId,
       Value<int> startedAtMicros,
       Value<int?> endedAtMicros,
       Value<int?> activeMilliseconds,
@@ -12808,6 +13378,24 @@ final class $$TimingSegmentsTableReferences
       $_db.puzzleAttempts,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_attemptIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $TrainingSessionsTable _sessionIdTable(_$AppDatabase db) => db
+      .trainingSessions
+      .createAlias('timing_segments__session_id__training_sessions__id');
+
+  $$TrainingSessionsTableProcessedTableManager? get sessionId {
+    final $_column = $_itemColumn<String>('session_id');
+    if ($_column == null) return null;
+    final manager = $$TrainingSessionsTableTableManager(
+      $_db,
+      $_db.trainingSessions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_sessionIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -12858,6 +13446,29 @@ class $$TimingSegmentsTableFilterComposer
           }) => $$PuzzleAttemptsTableFilterComposer(
             $db: $db,
             $table: $db.puzzleAttempts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TrainingSessionsTableFilterComposer get sessionId {
+    final $$TrainingSessionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.trainingSessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TrainingSessionsTableFilterComposer(
+            $db: $db,
+            $table: $db.trainingSessions,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -12919,6 +13530,29 @@ class $$TimingSegmentsTableOrderingComposer
     );
     return composer;
   }
+
+  $$TrainingSessionsTableOrderingComposer get sessionId {
+    final $$TrainingSessionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.trainingSessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TrainingSessionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.trainingSessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$TimingSegmentsTableAnnotationComposer
@@ -12970,6 +13604,29 @@ class $$TimingSegmentsTableAnnotationComposer
     );
     return composer;
   }
+
+  $$TrainingSessionsTableAnnotationComposer get sessionId {
+    final $$TrainingSessionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sessionId,
+      referencedTable: $db.trainingSessions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TrainingSessionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.trainingSessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$TimingSegmentsTableTableManager
@@ -12985,7 +13642,7 @@ class $$TimingSegmentsTableTableManager
           $$TimingSegmentsTableUpdateCompanionBuilder,
           (TimingSegment, $$TimingSegmentsTableReferences),
           TimingSegment,
-          PrefetchHooks Function({bool attemptId})
+          PrefetchHooks Function({bool attemptId, bool sessionId})
         > {
   $$TimingSegmentsTableTableManager(
     _$AppDatabase db,
@@ -13004,6 +13661,7 @@ class $$TimingSegmentsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> attemptId = const Value.absent(),
+                Value<String?> sessionId = const Value.absent(),
                 Value<int> startedAtMicros = const Value.absent(),
                 Value<int?> endedAtMicros = const Value.absent(),
                 Value<int?> activeMilliseconds = const Value.absent(),
@@ -13011,6 +13669,7 @@ class $$TimingSegmentsTableTableManager
               }) => TimingSegmentsCompanion(
                 id: id,
                 attemptId: attemptId,
+                sessionId: sessionId,
                 startedAtMicros: startedAtMicros,
                 endedAtMicros: endedAtMicros,
                 activeMilliseconds: activeMilliseconds,
@@ -13020,6 +13679,7 @@ class $$TimingSegmentsTableTableManager
               ({
                 required String id,
                 required String attemptId,
+                Value<String?> sessionId = const Value.absent(),
                 required int startedAtMicros,
                 Value<int?> endedAtMicros = const Value.absent(),
                 Value<int?> activeMilliseconds = const Value.absent(),
@@ -13027,6 +13687,7 @@ class $$TimingSegmentsTableTableManager
               }) => TimingSegmentsCompanion.insert(
                 id: id,
                 attemptId: attemptId,
+                sessionId: sessionId,
                 startedAtMicros: startedAtMicros,
                 endedAtMicros: endedAtMicros,
                 activeMilliseconds: activeMilliseconds,
@@ -13040,7 +13701,7 @@ class $$TimingSegmentsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({attemptId = false}) {
+          prefetchHooksCallback: ({attemptId = false, sessionId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -13071,6 +13732,17 @@ class $$TimingSegmentsTableTableManager
                             .id,
                       ) as T;
                     }
+                    if (sessionId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.sessionId,
+                        referencedTable: $$TimingSegmentsTableReferences
+                            ._sessionIdTable(db),
+                        referencedColumn: $$TimingSegmentsTableReferences
+                            ._sessionIdTable(db)
+                            .id,
+                      ) as T;
+                    }
 
                     return state;
                   },
@@ -13095,7 +13767,307 @@ typedef $$TimingSegmentsTableProcessedTableManager =
       $$TimingSegmentsTableUpdateCompanionBuilder,
       (TimingSegment, $$TimingSegmentsTableReferences),
       TimingSegment,
-      PrefetchHooks Function({bool attemptId})
+      PrefetchHooks Function({bool attemptId, bool sessionId})
+    >;
+typedef $$CycleItemCompletionsTableCreateCompanionBuilder =
+    CycleItemCompletionsCompanion Function({
+      required String cycleId,
+      required String trainingSetItemId,
+      required int completedAtMicros,
+      Value<int> rowid,
+    });
+typedef $$CycleItemCompletionsTableUpdateCompanionBuilder =
+    CycleItemCompletionsCompanion Function({
+      Value<String> cycleId,
+      Value<String> trainingSetItemId,
+      Value<int> completedAtMicros,
+      Value<int> rowid,
+    });
+
+final class $$CycleItemCompletionsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $CycleItemCompletionsTable,
+          CycleItemCompletion
+        > {
+  $$CycleItemCompletionsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $CyclesTable _cycleIdTable(_$AppDatabase db) =>
+      db.cycles.createAlias('cycle_item_completions__cycle_id__cycles__id');
+
+  $$CyclesTableProcessedTableManager get cycleId {
+    final $_column = $_itemColumn<String>('cycle_id')!;
+
+    final manager = $$CyclesTableTableManager(
+      $_db,
+      $_db.cycles,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_cycleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$CycleItemCompletionsTableFilterComposer
+    extends Composer<_$AppDatabase, $CycleItemCompletionsTable> {
+  $$CycleItemCompletionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trainingSetItemId => $composableBuilder(
+    column: $table.trainingSetItemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get completedAtMicros => $composableBuilder(
+    column: $table.completedAtMicros,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$CyclesTableFilterComposer get cycleId {
+    final $$CyclesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.cycleId,
+      referencedTable: $db.cycles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CyclesTableFilterComposer(
+            $db: $db,
+            $table: $db.cycles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$CycleItemCompletionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $CycleItemCompletionsTable> {
+  $$CycleItemCompletionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trainingSetItemId => $composableBuilder(
+    column: $table.trainingSetItemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get completedAtMicros => $composableBuilder(
+    column: $table.completedAtMicros,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$CyclesTableOrderingComposer get cycleId {
+    final $$CyclesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.cycleId,
+      referencedTable: $db.cycles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CyclesTableOrderingComposer(
+            $db: $db,
+            $table: $db.cycles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$CycleItemCompletionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CycleItemCompletionsTable> {
+  $$CycleItemCompletionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trainingSetItemId => $composableBuilder(
+    column: $table.trainingSetItemId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get completedAtMicros => $composableBuilder(
+    column: $table.completedAtMicros,
+    builder: (column) => column,
+  );
+
+  $$CyclesTableAnnotationComposer get cycleId {
+    final $$CyclesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.cycleId,
+      referencedTable: $db.cycles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CyclesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.cycles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$CycleItemCompletionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $CycleItemCompletionsTable,
+          CycleItemCompletion,
+          $$CycleItemCompletionsTableFilterComposer,
+          $$CycleItemCompletionsTableOrderingComposer,
+          $$CycleItemCompletionsTableAnnotationComposer,
+          $$CycleItemCompletionsTableCreateCompanionBuilder,
+          $$CycleItemCompletionsTableUpdateCompanionBuilder,
+          (CycleItemCompletion, $$CycleItemCompletionsTableReferences),
+          CycleItemCompletion,
+          PrefetchHooks Function({bool cycleId})
+        > {
+  $$CycleItemCompletionsTableTableManager(
+    _$AppDatabase db,
+    $CycleItemCompletionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CycleItemCompletionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CycleItemCompletionsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$CycleItemCompletionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> cycleId = const Value.absent(),
+                Value<String> trainingSetItemId = const Value.absent(),
+                Value<int> completedAtMicros = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CycleItemCompletionsCompanion(
+                cycleId: cycleId,
+                trainingSetItemId: trainingSetItemId,
+                completedAtMicros: completedAtMicros,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String cycleId,
+                required String trainingSetItemId,
+                required int completedAtMicros,
+                Value<int> rowid = const Value.absent(),
+              }) => CycleItemCompletionsCompanion.insert(
+                cycleId: cycleId,
+                trainingSetItemId: trainingSetItemId,
+                completedAtMicros: completedAtMicros,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$CycleItemCompletionsTable, CycleItemCompletion>(
+                    table,
+                  ),
+                  $$CycleItemCompletionsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({cycleId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (cycleId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.cycleId,
+                        referencedTable: $$CycleItemCompletionsTableReferences
+                            ._cycleIdTable(db),
+                        referencedColumn: $$CycleItemCompletionsTableReferences
+                            ._cycleIdTable(db)
+                            .id,
+                      ) as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$CycleItemCompletionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $CycleItemCompletionsTable,
+      CycleItemCompletion,
+      $$CycleItemCompletionsTableFilterComposer,
+      $$CycleItemCompletionsTableOrderingComposer,
+      $$CycleItemCompletionsTableAnnotationComposer,
+      $$CycleItemCompletionsTableCreateCompanionBuilder,
+      $$CycleItemCompletionsTableUpdateCompanionBuilder,
+      (CycleItemCompletion, $$CycleItemCompletionsTableReferences),
+      CycleItemCompletion,
+      PrefetchHooks Function({bool cycleId})
     >;
 
 class $AppDatabaseManager {
@@ -13123,4 +14095,6 @@ class $AppDatabaseManager {
       $$AttemptMovesTableTableManager(_db, _db.attemptMoves);
   $$TimingSegmentsTableTableManager get timingSegments =>
       $$TimingSegmentsTableTableManager(_db, _db.timingSegments);
+  $$CycleItemCompletionsTableTableManager get cycleItemCompletions =>
+      $$CycleItemCompletionsTableTableManager(_db, _db.cycleItemCompletions);
 }

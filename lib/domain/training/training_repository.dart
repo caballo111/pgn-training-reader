@@ -137,12 +137,19 @@ abstract interface class TrainingRepository {
   Future<void> completeNonPuzzleItem({
     required String cycleId,
     required String trainingSetItemId,
+    required DateTime completedAt,
   });
 
   /// Returns completed Instruction and Demonstration item IDs for [cycleId].
   ///
   /// The returned IDs are stable training-set-item identities, not positions.
   Future<Set<String>> completedNonPuzzleItemIds(String cycleId);
+
+  /// Returns the retained completion timestamp for one cycle item, if any.
+  Future<DateTime?> nonPuzzleItemCompletedAt({
+    required String cycleId,
+    required String trainingSetItemId,
+  });
 
   /// Returns raw progress inputs for all finalized puzzle attempts in a set.
   ///
@@ -153,4 +160,12 @@ abstract interface class TrainingRepository {
 
   /// Returns the same raw progress inputs restricted to one cycle.
   Future<ProgressAggregate> aggregateForCycle(String cycleId);
+}
+
+/// Optional transaction boundary for coordinating multiple repository writes.
+///
+/// Lifecycle services use this when available so a cycle/session/attempt
+/// transition either commits all records or leaves the prior state untouched.
+abstract interface class AtomicTrainingRepository {
+  Future<T> transaction<T>(Future<T> Function() action);
 }

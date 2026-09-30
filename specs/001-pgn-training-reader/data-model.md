@@ -20,7 +20,7 @@ Timestamps are wall-clock instants for history; `studyDay` is the calendar day u
 
 ### `PgnBlockIndex`
 
-**Identity/fields:** generated `id`, `sourceId`, inclusive `startOffset`, exclusive `endOffset`, nonnegative source-order `ordinal`; optional standard search headers `event`, `site`, `date`, `round`, `white`, `black`, `result`; explicit `contentType`; optional `exerciseId`, `section`, `sequence`, `theme`, `difficulty`; `parseStatus`; sanitized optional `diagnosticSummary`.
+**Identity/fields:** generated `id`, `sourceId`, inclusive `startOffset`, exclusive `endOffset`, nonnegative source-order `ordinal`; optional standard search headers `event`, `site`, `date`, `round`, `white`, `black`, `result`; explicit `contentType`, `inferredClassification`, nullable original `authoredContentType`; optional `exerciseId`, `section`, `sequence`, `theme`, `difficulty`; `parseStatus`; sanitized optional `diagnosticSummary`.
 
 **Invariants/relationships:** source exists; offsets are nonnegative and `endOffset >= startOffset`; `(sourceId, ordinal)` is unique. Locator is valid only for its source revision. Sets and attempts refer to this stable block row; `exerciseId` is a separately resolved identity hint. Metadata never rewrites source PGN.
 
@@ -28,7 +28,7 @@ Timestamps are wall-clock instants for history; `studyDay` is the calendar day u
 
 ### `ContentClassification` / `ContentType`
 
-Current implementation uses `ContentType`: `Puzzle`, `Instruction`, `Demonstration`, `Unsupported`, serialized with those exact values. Valid `X-ContentType` is authoritative. Unknown values remain `Unsupported`, not guessed. The spec additionally requires authored/inferred provenance and an optional local user override without altering unrelated PGN. T040's enum and current block/database fields do not model provenance/override separately; that is a known gap to resolve before depending on it. Preserve the original tag. A set item snapshots its selected type so a later reclassification cannot silently change historical training semantics.
+Current implementation uses `ContentType`: `Puzzle`, `Instruction`, `Demonstration`, `Unsupported`, serialized with those exact values. Valid `X-ContentType` is authoritative. Unknown values remain `Unsupported`, not guessed. Schema version 2 persists `inferredClassification` and the original `authoredContentType` value on each indexed block. Legacy fallback classifies `SetUp=1` plus `FEN` as Puzzle and other blocks as Demonstration; these classifications are marked inferred. A nonstandard variant is Unsupported. A local user override remains part of the later editing workflow. A set item snapshots its selected type so a later reclassification cannot silently change historical training semantics.
 
 ### `ChessContent`
 
@@ -46,7 +46,7 @@ Current implementation uses `ContentType`: `Puzzle`, `Instruction`, `Demonstrati
 
 ### `ImportJob`
 
-**Identity/fields:** `id`, `sourceId`, `status`, nonnegative `bytesProcessed`, `blocksScanned`, `blocksIndexed`, `blocksSkipped`, `diagnosticCount`, safe byte checkpoint, `cancellationRequested`, `startedAt`, optional `finishedAt`. Counters default to zero. Source revision/scanner version are currently obtained through the associated `PgnSource`, not snapshotted on the job.
+**Identity/fields:** `id`, `sourceId`, `status`, nonnegative `bytesProcessed`, `blocksScanned`, `blocksIndexed`, `blocksSkipped`, `diagnosticCount`, safe byte checkpoint, `cancellationRequested`, `startedAt`, optional `finishedAt`. Counters default to zero. Schema version 2 snapshots `sourceFingerprint`, `scannerVersion`, and `sourceSizeBytes` on the job. Legacy version 1 jobs lack these snapshots and require a safe restart instead of guessing a revision.
 
 **Invariants/relationships:** belongs to one source. Advance checkpoint only at a safe boundary and atomically with its committed index batch. Counts describe this job; cancellation retains committed batches. Plan lifecycle vocabulary: `selecting`, `preparing`, `indexing`, `completed`, `cancelled`, `failed`; selection may be transient before a source/job exists. Terminal states have finish time; running states do not.
 
@@ -148,3 +148,7 @@ PgnSource 1 ── * PgnBlockIndex 1 ── * TrainingSetItem * ── 1 Trainin
 - Classification provenance/override, per-cycle non-puzzle completion, an `ImportJob` source-revision snapshot and status enum, aggregate scope, and active non-puzzle session timing are not fully represented in T040–T048 models/current schema. Define persistence/contracts before relying on them.
 - DB/domain checks do not yet enforce every cross-record condition: one active session per cycle, one open segment per attempt, outcome/reason combinations, or consistency between source locator and current revision. Enforce transactionally or add constraints/indexes.
 - Set status defaults to `active`; set-item state defaults to `pending`. Strict enum decoding must not silently convert unknown data.
+
+## Schema version 2 migration
+
+Phase 5 adds classification provenance and import revision snapshots through an additive migration from version 1. Existing source, index, and training rows remain intact. Existing blocks default to `inferredClassification=false`; their authored type is unknown until re-indexed. Legacy jobs cannot resume without revision snapshots.

@@ -68,6 +68,8 @@ final class PgnBlockIndex {
     String? difficulty,
     required PgnBlockParseStatus parseStatus,
     String? diagnosticSummary,
+    bool inferredClassification = false,
+    String? authoredContentType,
   }) {
     if (id.isEmpty) {
       throw ArgumentError.value(id, 'id', 'Must not be empty.');
@@ -114,6 +116,8 @@ final class PgnBlockIndex {
       difficulty: difficulty,
       parseStatus: parseStatus,
       diagnosticSummary: diagnosticSummary,
+      inferredClassification: inferredClassification,
+      authoredContentType: authoredContentType,
     );
   }
 
@@ -138,6 +142,8 @@ final class PgnBlockIndex {
     required this.difficulty,
     required this.parseStatus,
     required this.diagnosticSummary,
+    required this.inferredClassification,
+    required this.authoredContentType,
   });
 
   final String id;
@@ -160,6 +166,8 @@ final class PgnBlockIndex {
   final String? difficulty;
   final PgnBlockParseStatus parseStatus;
   final String? diagnosticSummary;
+  final bool inferredClassification;
+  final String? authoredContentType;
 
   @override
   bool operator ==(Object other) =>
@@ -184,10 +192,12 @@ final class PgnBlockIndex {
           other.theme == theme &&
           other.difficulty == difficulty &&
           other.parseStatus == parseStatus &&
-          other.diagnosticSummary == diagnosticSummary;
+          other.diagnosticSummary == diagnosticSummary &&
+          other.inferredClassification == inferredClassification &&
+          other.authoredContentType == authoredContentType;
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll(<Object?>[
     id,
     sourceId,
     startOffset,
@@ -208,5 +218,7 @@ final class PgnBlockIndex {
     difficulty,
     parseStatus,
     diagnosticSummary,
-  );
+    inferredClassification,
+    authoredContentType,
+  ]);
 }

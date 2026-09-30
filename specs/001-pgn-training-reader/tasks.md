@@ -147,22 +147,22 @@ For every task:
 
 # Phase 5: Incremental PGN Scanner and Indexer
 
-- [ ] T066 Create `lib/data/pgn/scanner/pgn_scanner_state.dart` with explicit state for tag strings, brace comments, semicolon comments, variation depth, line boundaries, and candidate block boundaries.
-- [ ] T067 Implement `lib/data/pgn/scanner/pgn_boundary_scanner.dart` as a chunk-consumer that emits complete byte ranges and preserves state between chunks.
-- [ ] T068 [P] Add scanner fixture `test/fixtures/pgn/simple_games.pgn` containing two conventional games.
-- [ ] T069 [P] Add scanner fixture `test/fixtures/pgn/chunk_boundaries.pgn` containing tags, escaped quotes, brace comments, semicolon comments, and nested variations positioned at tested chunk boundaries.
-- [ ] T070 [P] Add scanner fixture `test/fixtures/pgn/malformed_neighbors.pgn` with a malformed block between two valid blocks.
-- [ ] T071 Add scanner tests using chunk sizes 1, 2, 7, 64, and 4096 bytes. Assert identical emitted block ranges for every size.
-- [ ] T072 Add scanner tests for cancellation and safe checkpoint emission. A checkpoint must never point inside an unresolved candidate block.
-- [ ] T073 Create `lib/data/pgn/pgn_header_reader.dart` that extracts tag pairs from one block without parsing the full move tree.
-- [ ] T074 Create `lib/data/pgn/content_classifier.dart`. Use valid `X-ContentType` as authoritative, preserve unknown values as Unsupported, and return an explicit inferred flag when fallback rules are used.
-- [ ] T075 Create `lib/data/pgn/exercise_identity.dart` implementing the identity priority from the plan. Detect duplicates; never silently merge.
-- [ ] T076 Implement `lib/data/pgn/pgn_indexer.dart` to stream a managed source, emit ranges, read headers, classify blocks, batch database writes, emit progress, and persist safe checkpoints.
-- [ ] T077 Implement cancellation and resume in the indexer. Resuming must not duplicate committed source-plus-ordinal rows.
-- [ ] T078 Implement malformed-block diagnostics and safe continuation when the scanner can establish the next boundary.
-- [ ] T079 Create `lib/data/repositories/drift_pgn_index_repository.dart` with paginated queries and indexed filters for player, event, result, content type, section, theme, and difficulty.
-- [ ] T080 Add an integration test importing at least 100 fixture blocks and asserting exact count, stable order, correct locators, classifications, and no duplicates after resume.
-- [ ] T081 Add a memory benchmark test or executable showing that scanner memory does not grow proportionally with total file size. Document how to run it in `quickstart.md`.
+- [x] T066 Create `lib/data/pgn/scanner/pgn_scanner_state.dart` with explicit state for tag strings, brace comments, semicolon comments, variation depth, line boundaries, and candidate block boundaries.
+- [x] T067 Implement `lib/data/pgn/scanner/pgn_boundary_scanner.dart` as a chunk-consumer that emits complete byte ranges and preserves state between chunks.
+- [x] T068 [P] Add scanner fixture `test/fixtures/pgn/simple_games.pgn` containing two conventional games.
+- [x] T069 [P] Add scanner fixture `test/fixtures/pgn/chunk_boundaries.pgn` containing tags, escaped quotes, brace comments, semicolon comments, and nested variations positioned at tested chunk boundaries.
+- [x] T070 [P] Add scanner fixture `test/fixtures/pgn/malformed_neighbors.pgn` with a malformed block between two valid blocks.
+- [x] T071 Add scanner tests using chunk sizes 1, 2, 7, 64, and 4096 bytes. Assert identical emitted block ranges for every size.
+- [x] T072 Add scanner tests for cancellation and safe checkpoint emission. A checkpoint must never point inside an unresolved candidate block.
+- [x] T073 Create `lib/data/pgn/pgn_header_reader.dart` that extracts tag pairs from one block without parsing the full move tree.
+- [x] T074 Create `lib/data/pgn/content_classifier.dart`. Use valid `X-ContentType` as authoritative, preserve unknown values as Unsupported, and return an explicit inferred flag when fallback rules are used.
+- [x] T075 Create `lib/data/pgn/exercise_identity.dart` implementing the identity priority from the plan. Detect duplicates; never silently merge.
+- [x] T076 Implement `lib/data/pgn/pgn_indexer.dart` to stream a managed source, emit ranges, read headers, classify blocks, batch database writes, emit progress, and persist safe checkpoints.
+- [x] T077 Implement cancellation and resume in the indexer. Resuming must not duplicate committed source-plus-ordinal rows.
+- [x] T078 Implement malformed-block diagnostics and safe continuation when the scanner can establish the next boundary.
+- [x] T079 Create `lib/data/repositories/drift_pgn_index_repository.dart` with paginated queries and indexed filters for player, event, result, content type, section, theme, and difficulty.
+- [x] T080 Add an integration test importing at least 100 fixture blocks and asserting exact count, stable order, correct locators, classifications, and no duplicates after resume.
+- [x] T081 Add a memory benchmark test or executable showing that scanner memory does not grow proportionally with total file size. Document how to run it in `quickstart.md`.
 
 **Phase 5 checkpoint**: Large PGNs can be indexed incrementally with progress, cancellation, diagnostics, and safe resume.
 

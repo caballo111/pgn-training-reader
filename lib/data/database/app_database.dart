@@ -31,13 +31,24 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => DatabaseMigrator(
     schemaVersion: schemaVersion,
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');
+    },
+    steps: <int, DatabaseMigrationStep>{
+      1: DatabaseMigrationStep(
+        migrate: (migrator) async {
+          await migrator.addColumn(pgnBlocks, pgnBlocks.inferredClassification);
+          await migrator.addColumn(pgnBlocks, pgnBlocks.authoredContentType);
+          await migrator.addColumn(importJobs, importJobs.sourceFingerprint);
+          await migrator.addColumn(importJobs, importJobs.scannerVersion);
+          await migrator.addColumn(importJobs, importJobs.sourceSizeBytes);
+        },
+      ),
     },
   ).strategy;
 }
@@ -105,6 +116,9 @@ class PgnBlocks extends Table {
   TextColumn get difficulty => text().nullable()();
   TextColumn get parseStatus => text()();
   TextColumn get diagnosticSummary => text().nullable()();
+  BoolColumn get inferredClassification =>
+      boolean().withDefault(const Constant(false))();
+  TextColumn get authoredContentType => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{id};
@@ -135,6 +149,9 @@ class ImportJobs extends Table {
   IntColumn get blocksSkipped => integer().withDefault(const Constant(0))();
   IntColumn get diagnosticCount => integer().withDefault(const Constant(0))();
   IntColumn get safeCheckpoint => integer().withDefault(const Constant(0))();
+  TextColumn get sourceFingerprint => text().nullable()();
+  IntColumn get scannerVersion => integer().nullable()();
+  IntColumn get sourceSizeBytes => integer().nullable()();
   BoolColumn get cancellationRequested =>
       boolean().withDefault(const Constant(false))();
   IntColumn get startedAtMicros => integer()();

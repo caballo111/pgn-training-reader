@@ -13,7 +13,7 @@ void main() {
     await database.close();
   });
 
-  test('creates every version 1 table', () async {
+  test('creates every version 2 table', () async {
     final rows = await database
         .customSelect(
           "SELECT name FROM sqlite_master "
@@ -40,7 +40,7 @@ void main() {
     final schemaVersion = await database
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(schemaVersion.read<int>('user_version'), 1);
+    expect(schemaVersion.read<int>('user_version'), 2);
   });
 
   test('creates every declared query index', () async {

@@ -1029,6 +1029,32 @@ class $PgnBlocksTable extends PgnBlocks
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _inferredClassificationMeta =
+      const VerificationMeta('inferredClassification');
+  @override
+  late final GeneratedColumn<bool> inferredClassification =
+      GeneratedColumn<bool>(
+        'inferred_classification',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("inferred_classification" IN (0, 1))',
+        ),
+        defaultValue: const Constant(false),
+      );
+  static const VerificationMeta _authoredContentTypeMeta =
+      const VerificationMeta('authoredContentType');
+  @override
+  late final GeneratedColumn<String> authoredContentType =
+      GeneratedColumn<String>(
+        'authored_content_type',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1051,6 +1077,8 @@ class $PgnBlocksTable extends PgnBlocks
     difficulty,
     parseStatus,
     diagnosticSummary,
+    inferredClassification,
+    authoredContentType,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1207,6 +1235,24 @@ class $PgnBlocksTable extends PgnBlocks
         ),
       );
     }
+    if (data.containsKey('inferred_classification')) {
+      context.handle(
+        _inferredClassificationMeta,
+        inferredClassification.isAcceptableOrUnknown(
+          data['inferred_classification']!,
+          _inferredClassificationMeta,
+        ),
+      );
+    }
+    if (data.containsKey('authored_content_type')) {
+      context.handle(
+        _authoredContentTypeMeta,
+        authoredContentType.isAcceptableOrUnknown(
+          data['authored_content_type']!,
+          _authoredContentTypeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1300,6 +1346,14 @@ class $PgnBlocksTable extends PgnBlocks
         DriftSqlType.string,
         data['${effectivePrefix}diagnostic_summary'],
       ),
+      inferredClassification: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}inferred_classification'],
+      )!,
+      authoredContentType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}authored_content_type'],
+      ),
     );
   }
 
@@ -1330,6 +1384,8 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
   final String? difficulty;
   final String parseStatus;
   final String? diagnosticSummary;
+  final bool inferredClassification;
+  final String? authoredContentType;
   const PgnBlock({
     required this.id,
     required this.sourceId,
@@ -1351,6 +1407,8 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
     this.difficulty,
     required this.parseStatus,
     this.diagnosticSummary,
+    required this.inferredClassification,
+    this.authoredContentType,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1401,6 +1459,10 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
     if (!nullToAbsent || diagnosticSummary != null) {
       map['diagnostic_summary'] = Variable<String>(diagnosticSummary);
     }
+    map['inferred_classification'] = Variable<bool>(inferredClassification);
+    if (!nullToAbsent || authoredContentType != null) {
+      map['authored_content_type'] = Variable<String>(authoredContentType);
+    }
     return map;
   }
 
@@ -1448,6 +1510,10 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
       diagnosticSummary: diagnosticSummary == null && nullToAbsent
           ? const Value.absent()
           : Value(diagnosticSummary),
+      inferredClassification: Value(inferredClassification),
+      authoredContentType: authoredContentType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(authoredContentType),
     );
   }
 
@@ -1479,6 +1545,12 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
       diagnosticSummary: serializer.fromJson<String?>(
         json['diagnosticSummary'],
       ),
+      inferredClassification: serializer.fromJson<bool>(
+        json['inferredClassification'],
+      ),
+      authoredContentType: serializer.fromJson<String?>(
+        json['authoredContentType'],
+      ),
     );
   }
   @override
@@ -1505,6 +1577,8 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
       'difficulty': serializer.toJson<String?>(difficulty),
       'parseStatus': serializer.toJson<String>(parseStatus),
       'diagnosticSummary': serializer.toJson<String?>(diagnosticSummary),
+      'inferredClassification': serializer.toJson<bool>(inferredClassification),
+      'authoredContentType': serializer.toJson<String?>(authoredContentType),
     };
   }
 
@@ -1529,6 +1603,8 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
     Value<String?> difficulty = const Value.absent(),
     String? parseStatus,
     Value<String?> diagnosticSummary = const Value.absent(),
+    bool? inferredClassification,
+    Value<String?> authoredContentType = const Value.absent(),
   }) => PgnBlock(
     id: id ?? this.id,
     sourceId: sourceId ?? this.sourceId,
@@ -1552,6 +1628,11 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
     diagnosticSummary: diagnosticSummary.present
         ? diagnosticSummary.value
         : this.diagnosticSummary,
+    inferredClassification:
+        inferredClassification ?? this.inferredClassification,
+    authoredContentType: authoredContentType.present
+        ? authoredContentType.value
+        : this.authoredContentType,
   );
   PgnBlock copyWithCompanion(PgnBlocksCompanion data) {
     return PgnBlock(
@@ -1587,6 +1668,12 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
       diagnosticSummary: data.diagnosticSummary.present
           ? data.diagnosticSummary.value
           : this.diagnosticSummary,
+      inferredClassification: data.inferredClassification.present
+          ? data.inferredClassification.value
+          : this.inferredClassification,
+      authoredContentType: data.authoredContentType.present
+          ? data.authoredContentType.value
+          : this.authoredContentType,
     );
   }
 
@@ -1612,13 +1699,15 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
           ..write('theme: $theme, ')
           ..write('difficulty: $difficulty, ')
           ..write('parseStatus: $parseStatus, ')
-          ..write('diagnosticSummary: $diagnosticSummary')
+          ..write('diagnosticSummary: $diagnosticSummary, ')
+          ..write('inferredClassification: $inferredClassification, ')
+          ..write('authoredContentType: $authoredContentType')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     sourceId,
     startOffset,
@@ -1639,7 +1728,9 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
     difficulty,
     parseStatus,
     diagnosticSummary,
-  );
+    inferredClassification,
+    authoredContentType,
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1663,7 +1754,9 @@ class PgnBlock extends DataClass implements Insertable<PgnBlock> {
           other.theme == this.theme &&
           other.difficulty == this.difficulty &&
           other.parseStatus == this.parseStatus &&
-          other.diagnosticSummary == this.diagnosticSummary);
+          other.diagnosticSummary == this.diagnosticSummary &&
+          other.inferredClassification == this.inferredClassification &&
+          other.authoredContentType == this.authoredContentType);
 }
 
 class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
@@ -1687,6 +1780,8 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
   final Value<String?> difficulty;
   final Value<String> parseStatus;
   final Value<String?> diagnosticSummary;
+  final Value<bool> inferredClassification;
+  final Value<String?> authoredContentType;
   final Value<int> rowid;
   const PgnBlocksCompanion({
     this.id = const Value.absent(),
@@ -1709,6 +1804,8 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
     this.difficulty = const Value.absent(),
     this.parseStatus = const Value.absent(),
     this.diagnosticSummary = const Value.absent(),
+    this.inferredClassification = const Value.absent(),
+    this.authoredContentType = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PgnBlocksCompanion.insert({
@@ -1732,6 +1829,8 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
     this.difficulty = const Value.absent(),
     required String parseStatus,
     this.diagnosticSummary = const Value.absent(),
+    this.inferredClassification = const Value.absent(),
+    this.authoredContentType = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sourceId = Value(sourceId),
@@ -1761,6 +1860,8 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
     Expression<String>? difficulty,
     Expression<String>? parseStatus,
     Expression<String>? diagnosticSummary,
+    Expression<bool>? inferredClassification,
+    Expression<String>? authoredContentType,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1784,6 +1885,10 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
       if (difficulty != null) 'difficulty': difficulty,
       if (parseStatus != null) 'parse_status': parseStatus,
       if (diagnosticSummary != null) 'diagnostic_summary': diagnosticSummary,
+      if (inferredClassification != null)
+        'inferred_classification': inferredClassification,
+      if (authoredContentType != null)
+        'authored_content_type': authoredContentType,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1809,6 +1914,8 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
     Value<String?>? difficulty,
     Value<String>? parseStatus,
     Value<String?>? diagnosticSummary,
+    Value<bool>? inferredClassification,
+    Value<String?>? authoredContentType,
     Value<int>? rowid,
   }) {
     return PgnBlocksCompanion(
@@ -1832,6 +1939,9 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
       difficulty: difficulty ?? this.difficulty,
       parseStatus: parseStatus ?? this.parseStatus,
       diagnosticSummary: diagnosticSummary ?? this.diagnosticSummary,
+      inferredClassification:
+          inferredClassification ?? this.inferredClassification,
+      authoredContentType: authoredContentType ?? this.authoredContentType,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1899,6 +2009,16 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
     if (diagnosticSummary.present) {
       map['diagnostic_summary'] = Variable<String>(diagnosticSummary.value);
     }
+    if (inferredClassification.present) {
+      map['inferred_classification'] = Variable<bool>(
+        inferredClassification.value,
+      );
+    }
+    if (authoredContentType.present) {
+      map['authored_content_type'] = Variable<String>(
+        authoredContentType.value,
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1928,6 +2048,8 @@ class PgnBlocksCompanion extends UpdateCompanion<PgnBlock> {
           ..write('difficulty: $difficulty, ')
           ..write('parseStatus: $parseStatus, ')
           ..write('diagnosticSummary: $diagnosticSummary, ')
+          ..write('inferredClassification: $inferredClassification, ')
+          ..write('authoredContentType: $authoredContentType, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2044,6 +2166,40 @@ class $ImportJobsTable extends ImportJobs
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _sourceFingerprintMeta = const VerificationMeta(
+    'sourceFingerprint',
+  );
+  @override
+  late final GeneratedColumn<String> sourceFingerprint =
+      GeneratedColumn<String>(
+        'source_fingerprint',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _scannerVersionMeta = const VerificationMeta(
+    'scannerVersion',
+  );
+  @override
+  late final GeneratedColumn<int> scannerVersion = GeneratedColumn<int>(
+    'scanner_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceSizeBytesMeta = const VerificationMeta(
+    'sourceSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> sourceSizeBytes = GeneratedColumn<int>(
+    'source_size_bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _cancellationRequestedMeta =
       const VerificationMeta('cancellationRequested');
   @override
@@ -2092,6 +2248,9 @@ class $ImportJobsTable extends ImportJobs
     blocksSkipped,
     diagnosticCount,
     safeCheckpoint,
+    sourceFingerprint,
+    scannerVersion,
+    sourceSizeBytes,
     cancellationRequested,
     startedAtMicros,
     finishedAtMicros,
@@ -2183,6 +2342,33 @@ class $ImportJobsTable extends ImportJobs
         ),
       );
     }
+    if (data.containsKey('source_fingerprint')) {
+      context.handle(
+        _sourceFingerprintMeta,
+        sourceFingerprint.isAcceptableOrUnknown(
+          data['source_fingerprint']!,
+          _sourceFingerprintMeta,
+        ),
+      );
+    }
+    if (data.containsKey('scanner_version')) {
+      context.handle(
+        _scannerVersionMeta,
+        scannerVersion.isAcceptableOrUnknown(
+          data['scanner_version']!,
+          _scannerVersionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('source_size_bytes')) {
+      context.handle(
+        _sourceSizeBytesMeta,
+        sourceSizeBytes.isAcceptableOrUnknown(
+          data['source_size_bytes']!,
+          _sourceSizeBytesMeta,
+        ),
+      );
+    }
     if (data.containsKey('cancellation_requested')) {
       context.handle(
         _cancellationRequestedMeta,
@@ -2257,6 +2443,18 @@ class $ImportJobsTable extends ImportJobs
         DriftSqlType.int,
         data['${effectivePrefix}safe_checkpoint'],
       )!,
+      sourceFingerprint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_fingerprint'],
+      ),
+      scannerVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}scanner_version'],
+      ),
+      sourceSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}source_size_bytes'],
+      ),
       cancellationRequested: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}cancellation_requested'],
@@ -2288,6 +2486,9 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
   final int blocksSkipped;
   final int diagnosticCount;
   final int safeCheckpoint;
+  final String? sourceFingerprint;
+  final int? scannerVersion;
+  final int? sourceSizeBytes;
   final bool cancellationRequested;
   final int startedAtMicros;
   final int? finishedAtMicros;
@@ -2301,6 +2502,9 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
     required this.blocksSkipped,
     required this.diagnosticCount,
     required this.safeCheckpoint,
+    this.sourceFingerprint,
+    this.scannerVersion,
+    this.sourceSizeBytes,
     required this.cancellationRequested,
     required this.startedAtMicros,
     this.finishedAtMicros,
@@ -2317,6 +2521,15 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
     map['blocks_skipped'] = Variable<int>(blocksSkipped);
     map['diagnostic_count'] = Variable<int>(diagnosticCount);
     map['safe_checkpoint'] = Variable<int>(safeCheckpoint);
+    if (!nullToAbsent || sourceFingerprint != null) {
+      map['source_fingerprint'] = Variable<String>(sourceFingerprint);
+    }
+    if (!nullToAbsent || scannerVersion != null) {
+      map['scanner_version'] = Variable<int>(scannerVersion);
+    }
+    if (!nullToAbsent || sourceSizeBytes != null) {
+      map['source_size_bytes'] = Variable<int>(sourceSizeBytes);
+    }
     map['cancellation_requested'] = Variable<bool>(cancellationRequested);
     map['started_at_micros'] = Variable<int>(startedAtMicros);
     if (!nullToAbsent || finishedAtMicros != null) {
@@ -2336,6 +2549,15 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
       blocksSkipped: Value(blocksSkipped),
       diagnosticCount: Value(diagnosticCount),
       safeCheckpoint: Value(safeCheckpoint),
+      sourceFingerprint: sourceFingerprint == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceFingerprint),
+      scannerVersion: scannerVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(scannerVersion),
+      sourceSizeBytes: sourceSizeBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceSizeBytes),
       cancellationRequested: Value(cancellationRequested),
       startedAtMicros: Value(startedAtMicros),
       finishedAtMicros: finishedAtMicros == null && nullToAbsent
@@ -2359,6 +2581,11 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
       blocksSkipped: serializer.fromJson<int>(json['blocksSkipped']),
       diagnosticCount: serializer.fromJson<int>(json['diagnosticCount']),
       safeCheckpoint: serializer.fromJson<int>(json['safeCheckpoint']),
+      sourceFingerprint: serializer.fromJson<String?>(
+        json['sourceFingerprint'],
+      ),
+      scannerVersion: serializer.fromJson<int?>(json['scannerVersion']),
+      sourceSizeBytes: serializer.fromJson<int?>(json['sourceSizeBytes']),
       cancellationRequested: serializer.fromJson<bool>(
         json['cancellationRequested'],
       ),
@@ -2379,6 +2606,9 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
       'blocksSkipped': serializer.toJson<int>(blocksSkipped),
       'diagnosticCount': serializer.toJson<int>(diagnosticCount),
       'safeCheckpoint': serializer.toJson<int>(safeCheckpoint),
+      'sourceFingerprint': serializer.toJson<String?>(sourceFingerprint),
+      'scannerVersion': serializer.toJson<int?>(scannerVersion),
+      'sourceSizeBytes': serializer.toJson<int?>(sourceSizeBytes),
       'cancellationRequested': serializer.toJson<bool>(cancellationRequested),
       'startedAtMicros': serializer.toJson<int>(startedAtMicros),
       'finishedAtMicros': serializer.toJson<int?>(finishedAtMicros),
@@ -2395,6 +2625,9 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
     int? blocksSkipped,
     int? diagnosticCount,
     int? safeCheckpoint,
+    Value<String?> sourceFingerprint = const Value.absent(),
+    Value<int?> scannerVersion = const Value.absent(),
+    Value<int?> sourceSizeBytes = const Value.absent(),
     bool? cancellationRequested,
     int? startedAtMicros,
     Value<int?> finishedAtMicros = const Value.absent(),
@@ -2408,6 +2641,15 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
     blocksSkipped: blocksSkipped ?? this.blocksSkipped,
     diagnosticCount: diagnosticCount ?? this.diagnosticCount,
     safeCheckpoint: safeCheckpoint ?? this.safeCheckpoint,
+    sourceFingerprint: sourceFingerprint.present
+        ? sourceFingerprint.value
+        : this.sourceFingerprint,
+    scannerVersion: scannerVersion.present
+        ? scannerVersion.value
+        : this.scannerVersion,
+    sourceSizeBytes: sourceSizeBytes.present
+        ? sourceSizeBytes.value
+        : this.sourceSizeBytes,
     cancellationRequested: cancellationRequested ?? this.cancellationRequested,
     startedAtMicros: startedAtMicros ?? this.startedAtMicros,
     finishedAtMicros: finishedAtMicros.present
@@ -2437,6 +2679,15 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
       safeCheckpoint: data.safeCheckpoint.present
           ? data.safeCheckpoint.value
           : this.safeCheckpoint,
+      sourceFingerprint: data.sourceFingerprint.present
+          ? data.sourceFingerprint.value
+          : this.sourceFingerprint,
+      scannerVersion: data.scannerVersion.present
+          ? data.scannerVersion.value
+          : this.scannerVersion,
+      sourceSizeBytes: data.sourceSizeBytes.present
+          ? data.sourceSizeBytes.value
+          : this.sourceSizeBytes,
       cancellationRequested: data.cancellationRequested.present
           ? data.cancellationRequested.value
           : this.cancellationRequested,
@@ -2461,6 +2712,9 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
           ..write('blocksSkipped: $blocksSkipped, ')
           ..write('diagnosticCount: $diagnosticCount, ')
           ..write('safeCheckpoint: $safeCheckpoint, ')
+          ..write('sourceFingerprint: $sourceFingerprint, ')
+          ..write('scannerVersion: $scannerVersion, ')
+          ..write('sourceSizeBytes: $sourceSizeBytes, ')
           ..write('cancellationRequested: $cancellationRequested, ')
           ..write('startedAtMicros: $startedAtMicros, ')
           ..write('finishedAtMicros: $finishedAtMicros')
@@ -2479,6 +2733,9 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
     blocksSkipped,
     diagnosticCount,
     safeCheckpoint,
+    sourceFingerprint,
+    scannerVersion,
+    sourceSizeBytes,
     cancellationRequested,
     startedAtMicros,
     finishedAtMicros,
@@ -2496,6 +2753,9 @@ class ImportJob extends DataClass implements Insertable<ImportJob> {
           other.blocksSkipped == this.blocksSkipped &&
           other.diagnosticCount == this.diagnosticCount &&
           other.safeCheckpoint == this.safeCheckpoint &&
+          other.sourceFingerprint == this.sourceFingerprint &&
+          other.scannerVersion == this.scannerVersion &&
+          other.sourceSizeBytes == this.sourceSizeBytes &&
           other.cancellationRequested == this.cancellationRequested &&
           other.startedAtMicros == this.startedAtMicros &&
           other.finishedAtMicros == this.finishedAtMicros);
@@ -2511,6 +2771,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
   final Value<int> blocksSkipped;
   final Value<int> diagnosticCount;
   final Value<int> safeCheckpoint;
+  final Value<String?> sourceFingerprint;
+  final Value<int?> scannerVersion;
+  final Value<int?> sourceSizeBytes;
   final Value<bool> cancellationRequested;
   final Value<int> startedAtMicros;
   final Value<int?> finishedAtMicros;
@@ -2525,6 +2788,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
     this.blocksSkipped = const Value.absent(),
     this.diagnosticCount = const Value.absent(),
     this.safeCheckpoint = const Value.absent(),
+    this.sourceFingerprint = const Value.absent(),
+    this.scannerVersion = const Value.absent(),
+    this.sourceSizeBytes = const Value.absent(),
     this.cancellationRequested = const Value.absent(),
     this.startedAtMicros = const Value.absent(),
     this.finishedAtMicros = const Value.absent(),
@@ -2540,6 +2806,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
     this.blocksSkipped = const Value.absent(),
     this.diagnosticCount = const Value.absent(),
     this.safeCheckpoint = const Value.absent(),
+    this.sourceFingerprint = const Value.absent(),
+    this.scannerVersion = const Value.absent(),
+    this.sourceSizeBytes = const Value.absent(),
     this.cancellationRequested = const Value.absent(),
     required int startedAtMicros,
     this.finishedAtMicros = const Value.absent(),
@@ -2558,6 +2827,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
     Expression<int>? blocksSkipped,
     Expression<int>? diagnosticCount,
     Expression<int>? safeCheckpoint,
+    Expression<String>? sourceFingerprint,
+    Expression<int>? scannerVersion,
+    Expression<int>? sourceSizeBytes,
     Expression<bool>? cancellationRequested,
     Expression<int>? startedAtMicros,
     Expression<int>? finishedAtMicros,
@@ -2573,6 +2845,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
       if (blocksSkipped != null) 'blocks_skipped': blocksSkipped,
       if (diagnosticCount != null) 'diagnostic_count': diagnosticCount,
       if (safeCheckpoint != null) 'safe_checkpoint': safeCheckpoint,
+      if (sourceFingerprint != null) 'source_fingerprint': sourceFingerprint,
+      if (scannerVersion != null) 'scanner_version': scannerVersion,
+      if (sourceSizeBytes != null) 'source_size_bytes': sourceSizeBytes,
       if (cancellationRequested != null)
         'cancellation_requested': cancellationRequested,
       if (startedAtMicros != null) 'started_at_micros': startedAtMicros,
@@ -2591,6 +2866,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
     Value<int>? blocksSkipped,
     Value<int>? diagnosticCount,
     Value<int>? safeCheckpoint,
+    Value<String?>? sourceFingerprint,
+    Value<int?>? scannerVersion,
+    Value<int?>? sourceSizeBytes,
     Value<bool>? cancellationRequested,
     Value<int>? startedAtMicros,
     Value<int?>? finishedAtMicros,
@@ -2606,6 +2884,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
       blocksSkipped: blocksSkipped ?? this.blocksSkipped,
       diagnosticCount: diagnosticCount ?? this.diagnosticCount,
       safeCheckpoint: safeCheckpoint ?? this.safeCheckpoint,
+      sourceFingerprint: sourceFingerprint ?? this.sourceFingerprint,
+      scannerVersion: scannerVersion ?? this.scannerVersion,
+      sourceSizeBytes: sourceSizeBytes ?? this.sourceSizeBytes,
       cancellationRequested:
           cancellationRequested ?? this.cancellationRequested,
       startedAtMicros: startedAtMicros ?? this.startedAtMicros,
@@ -2644,6 +2925,15 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
     if (safeCheckpoint.present) {
       map['safe_checkpoint'] = Variable<int>(safeCheckpoint.value);
     }
+    if (sourceFingerprint.present) {
+      map['source_fingerprint'] = Variable<String>(sourceFingerprint.value);
+    }
+    if (scannerVersion.present) {
+      map['scanner_version'] = Variable<int>(scannerVersion.value);
+    }
+    if (sourceSizeBytes.present) {
+      map['source_size_bytes'] = Variable<int>(sourceSizeBytes.value);
+    }
     if (cancellationRequested.present) {
       map['cancellation_requested'] = Variable<bool>(
         cancellationRequested.value,
@@ -2673,6 +2963,9 @@ class ImportJobsCompanion extends UpdateCompanion<ImportJob> {
           ..write('blocksSkipped: $blocksSkipped, ')
           ..write('diagnosticCount: $diagnosticCount, ')
           ..write('safeCheckpoint: $safeCheckpoint, ')
+          ..write('sourceFingerprint: $sourceFingerprint, ')
+          ..write('scannerVersion: $scannerVersion, ')
+          ..write('sourceSizeBytes: $sourceSizeBytes, ')
           ..write('cancellationRequested: $cancellationRequested, ')
           ..write('startedAtMicros: $startedAtMicros, ')
           ..write('finishedAtMicros: $finishedAtMicros, ')
@@ -7531,6 +7824,8 @@ typedef $$PgnBlocksTableCreateCompanionBuilder = PgnBlocksCompanion Function({
   Value<String?> difficulty,
   required String parseStatus,
   Value<String?> diagnosticSummary,
+  Value<bool> inferredClassification,
+  Value<String?> authoredContentType,
   Value<int> rowid,
 });
 typedef $$PgnBlocksTableUpdateCompanionBuilder = PgnBlocksCompanion Function({
@@ -7554,6 +7849,8 @@ typedef $$PgnBlocksTableUpdateCompanionBuilder = PgnBlocksCompanion Function({
   Value<String?> difficulty,
   Value<String> parseStatus,
   Value<String?> diagnosticSummary,
+  Value<bool> inferredClassification,
+  Value<String?> authoredContentType,
   Value<int> rowid,
 });
 
@@ -7718,6 +8015,16 @@ class $$PgnBlocksTableFilterComposer
 
   ColumnFilters<String> get diagnosticSummary => $composableBuilder(
     column: $table.diagnosticSummary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get inferredClassification => $composableBuilder(
+    column: $table.inferredClassification,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authoredContentType => $composableBuilder(
+    column: $table.authoredContentType,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7899,6 +8206,16 @@ class $$PgnBlocksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get inferredClassification => $composableBuilder(
+    column: $table.inferredClassification,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authoredContentType => $composableBuilder(
+    column: $table.authoredContentType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$PgnSourcesTableOrderingComposer get sourceId {
     final $$PgnSourcesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -7998,6 +8315,16 @@ class $$PgnBlocksTableAnnotationComposer
 
   GeneratedColumn<String> get diagnosticSummary => $composableBuilder(
     column: $table.diagnosticSummary,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get inferredClassification => $composableBuilder(
+    column: $table.inferredClassification,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get authoredContentType => $composableBuilder(
+    column: $table.authoredContentType,
     builder: (column) => column,
   );
 
@@ -8127,6 +8454,8 @@ class $$PgnBlocksTableTableManager
                 Value<String?> difficulty = const Value.absent(),
                 Value<String> parseStatus = const Value.absent(),
                 Value<String?> diagnosticSummary = const Value.absent(),
+                Value<bool> inferredClassification = const Value.absent(),
+                Value<String?> authoredContentType = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PgnBlocksCompanion(
                 id: id,
@@ -8149,6 +8478,8 @@ class $$PgnBlocksTableTableManager
                 difficulty: difficulty,
                 parseStatus: parseStatus,
                 diagnosticSummary: diagnosticSummary,
+                inferredClassification: inferredClassification,
+                authoredContentType: authoredContentType,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8173,6 +8504,8 @@ class $$PgnBlocksTableTableManager
                 Value<String?> difficulty = const Value.absent(),
                 required String parseStatus,
                 Value<String?> diagnosticSummary = const Value.absent(),
+                Value<bool> inferredClassification = const Value.absent(),
+                Value<String?> authoredContentType = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PgnBlocksCompanion.insert(
                 id: id,
@@ -8195,6 +8528,8 @@ class $$PgnBlocksTableTableManager
                 difficulty: difficulty,
                 parseStatus: parseStatus,
                 diagnosticSummary: diagnosticSummary,
+                inferredClassification: inferredClassification,
+                authoredContentType: authoredContentType,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -8327,6 +8662,9 @@ typedef $$ImportJobsTableCreateCompanionBuilder = ImportJobsCompanion Function({
   Value<int> blocksSkipped,
   Value<int> diagnosticCount,
   Value<int> safeCheckpoint,
+  Value<String?> sourceFingerprint,
+  Value<int?> scannerVersion,
+  Value<int?> sourceSizeBytes,
   Value<bool> cancellationRequested,
   required int startedAtMicros,
   Value<int?> finishedAtMicros,
@@ -8342,6 +8680,9 @@ typedef $$ImportJobsTableUpdateCompanionBuilder = ImportJobsCompanion Function({
   Value<int> blocksSkipped,
   Value<int> diagnosticCount,
   Value<int> safeCheckpoint,
+  Value<String?> sourceFingerprint,
+  Value<int?> scannerVersion,
+  Value<int?> sourceSizeBytes,
   Value<bool> cancellationRequested,
   Value<int> startedAtMicros,
   Value<int?> finishedAtMicros,
@@ -8437,6 +8778,21 @@ class $$ImportJobsTableFilterComposer
 
   ColumnFilters<int> get safeCheckpoint => $composableBuilder(
     column: $table.safeCheckpoint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceFingerprint => $composableBuilder(
+    column: $table.sourceFingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get scannerVersion => $composableBuilder(
+    column: $table.scannerVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sourceSizeBytes => $composableBuilder(
+    column: $table.sourceSizeBytes,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8553,6 +8909,21 @@ class $$ImportJobsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get sourceFingerprint => $composableBuilder(
+    column: $table.sourceFingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get scannerVersion => $composableBuilder(
+    column: $table.scannerVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sourceSizeBytes => $composableBuilder(
+    column: $table.sourceSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get cancellationRequested => $composableBuilder(
     column: $table.cancellationRequested,
     builder: (column) => ColumnOrderings(column),
@@ -8634,6 +9005,21 @@ class $$ImportJobsTableAnnotationComposer
 
   GeneratedColumn<int> get safeCheckpoint => $composableBuilder(
     column: $table.safeCheckpoint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceFingerprint => $composableBuilder(
+    column: $table.sourceFingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get scannerVersion => $composableBuilder(
+    column: $table.scannerVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sourceSizeBytes => $composableBuilder(
+    column: $table.sourceSizeBytes,
     builder: (column) => column,
   );
 
@@ -8739,6 +9125,9 @@ class $$ImportJobsTableTableManager
                 Value<int> blocksSkipped = const Value.absent(),
                 Value<int> diagnosticCount = const Value.absent(),
                 Value<int> safeCheckpoint = const Value.absent(),
+                Value<String?> sourceFingerprint = const Value.absent(),
+                Value<int?> scannerVersion = const Value.absent(),
+                Value<int?> sourceSizeBytes = const Value.absent(),
                 Value<bool> cancellationRequested = const Value.absent(),
                 Value<int> startedAtMicros = const Value.absent(),
                 Value<int?> finishedAtMicros = const Value.absent(),
@@ -8753,6 +9142,9 @@ class $$ImportJobsTableTableManager
                 blocksSkipped: blocksSkipped,
                 diagnosticCount: diagnosticCount,
                 safeCheckpoint: safeCheckpoint,
+                sourceFingerprint: sourceFingerprint,
+                scannerVersion: scannerVersion,
+                sourceSizeBytes: sourceSizeBytes,
                 cancellationRequested: cancellationRequested,
                 startedAtMicros: startedAtMicros,
                 finishedAtMicros: finishedAtMicros,
@@ -8769,6 +9161,9 @@ class $$ImportJobsTableTableManager
                 Value<int> blocksSkipped = const Value.absent(),
                 Value<int> diagnosticCount = const Value.absent(),
                 Value<int> safeCheckpoint = const Value.absent(),
+                Value<String?> sourceFingerprint = const Value.absent(),
+                Value<int?> scannerVersion = const Value.absent(),
+                Value<int?> sourceSizeBytes = const Value.absent(),
                 Value<bool> cancellationRequested = const Value.absent(),
                 required int startedAtMicros,
                 Value<int?> finishedAtMicros = const Value.absent(),
@@ -8783,6 +9178,9 @@ class $$ImportJobsTableTableManager
                 blocksSkipped: blocksSkipped,
                 diagnosticCount: diagnosticCount,
                 safeCheckpoint: safeCheckpoint,
+                sourceFingerprint: sourceFingerprint,
+                scannerVersion: scannerVersion,
+                sourceSizeBytes: sourceSizeBytes,
                 cancellationRequested: cancellationRequested,
                 startedAtMicros: startedAtMicros,
                 finishedAtMicros: finishedAtMicros,

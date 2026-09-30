@@ -236,17 +236,17 @@ For every task:
 
 # Phase 10: Puzzle Presentation and Solution Hiding
 
-- [ ] T120 [US3] Create `lib/features/puzzle_solver/application/puzzle_presentation_state.dart`. It must not expose future moves, future positions, solution comments, solution NAGs, or hidden variation labels while active.
-- [ ] T121 [US3] Create `puzzle_solver_controller.dart` that maps user board moves to the evaluator and persists attempt state through the training repository.
-- [ ] T122 [P] [US3] Create `puzzle_header.dart` showing exercise progress and an accessible “White to move” or “Black to move” label derived from the active position.
-- [ ] T123 [P] [US3] Create `puzzle_board.dart` with legal interactions only, orientation preference, and no future-move navigation.
-- [ ] T124 [P] [US3] Create puzzle controls for Pause, Show solution, Skip, and permitted retry/review actions. Destructive result changes must be clear.
-- [ ] T125 [US3] Create the solving view without a visible solution move list. Display only user-played accepted moves while the attempt is active.
-- [ ] T126 [US3] Create review mode that reveals the authored solution tree, comments, and navigation only after pass, fail, skip, timeout, abandon, or explicit reveal.
-- [ ] T127 [US3] Ensure player names, titles, comments, and metadata identified by the spec as potential hints are hidden or configurable in puzzle mode.
-- [ ] T128 [US3] Add widget tests that search visible text and the Flutter semantics tree for hidden SAN, UCI, comments, and variation labels before reveal.
-- [ ] T129 [US3] Add tests proving review mode reveals the solution after each final outcome.
-- [ ] T130 [US3] Add golden tests for phone puzzle layout with White to move, Black to move, large text scale, and failed-review mode.
+- [x] T120 [US3] Create `lib/features/puzzle_solver/application/puzzle_presentation_state.dart`. It must not expose future moves, future positions, solution comments, solution NAGs, or hidden variation labels while active.
+- [x] T121 [US3] Create `puzzle_solver_controller.dart` that maps user board moves to the evaluator and persists attempt state through the training repository.
+- [x] T122 [P] [US3] Create `puzzle_header.dart` showing exercise progress and an accessible “White to move” or “Black to move” label derived from the active position.
+- [x] T123 [P] [US3] Create `puzzle_board.dart` with legal interactions only, orientation preference, and no future-move navigation.
+- [x] T124 [P] [US3] Create puzzle controls for Pause, Show solution, Skip, and permitted retry/review actions. Destructive result changes must be clear.
+- [x] T125 [US3] Create the solving view without a visible solution move list. Display only user-played accepted moves while the attempt is active.
+- [x] T126 [US3] Create review mode that reveals the authored solution tree, comments, and navigation only after pass, fail, skip, timeout, abandon, or explicit reveal.
+- [x] T127 [US3] Ensure player names, titles, comments, and metadata identified by the spec as potential hints are hidden or configurable in puzzle mode.
+- [x] T128 [US3] Add widget tests that search visible text and the Flutter semantics tree for hidden SAN, UCI, comments, and variation labels before reveal.
+- [x] T129 [US3] Add tests proving review mode reveals the solution after each final outcome.
+- [x] T130 [US3] Add golden tests for phone puzzle layout with White to move, Black to move, large text scale, and failed-review mode.
 
 **User Story 3B checkpoint**: A user can solve a puzzle, and automated tests prove the solution is absent from visible and accessibility output before reveal.
 

@@ -124,8 +124,17 @@ Future<void> _openBlock(
       return;
     }
     await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => GameReaderPage(content: content)),
+      MaterialPageRoute<void>(
+        builder: (_) => GameReaderPage(
+          content: content,
+          onClassificationOverride: block.authoredContentType == null
+              ? (type) => dependencies.pgnIndexRepository
+                    .overrideClassification(block.id, type)
+              : null,
+        ),
+      ),
     );
+    await libraryController.load();
   } on AppFailure catch (failure) {
     if (!context.mounted) return;
     if (_isMissingSource(failure)) {

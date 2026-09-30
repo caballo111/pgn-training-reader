@@ -112,7 +112,11 @@ final class DriftChessContentRepository implements ChessContentRepository {
         message: 'The selected PGN block cannot be decoded.',
       );
     }
-    return parser.parse(pgn, contentType: block.contentType);
+    return parser.parse(
+      pgn,
+      contentType: block.contentType,
+      inferredClassification: block.inferredClassification,
+    );
   }
 
   OpaqueSourceReference _referenceFor(PgnSource source) {

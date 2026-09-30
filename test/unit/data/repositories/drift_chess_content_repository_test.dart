@@ -14,6 +14,50 @@ import 'package:pgntrainingreader/domain/library/pgn_source_repository.dart';
 
 void main() {
   test(
+    'loads an inferred Z0 introduction without altering source bytes',
+    () async {
+      final bytes = Uint8List.fromList(
+        '[White "1) Introduction"]\n[PlyCount "1"]\n\n{Read first} 1. Z0 *\n'
+            .codeUnits,
+      );
+      final original = Uint8List.fromList(bytes);
+      final fingerprint = FileFingerprintInput(
+        length: bytes.length,
+        modifiedAt: null,
+        samples: [FingerprintSample(offset: 0, bytes: bytes)],
+      );
+      final file = _RecordingRangeSource(
+        bytes,
+        currentFingerprintInput: fingerprint,
+      );
+      final repository = DriftChessContentRepository(
+        indexRepository: _Blocks([
+          PgnBlockIndex(
+            id: 'intro',
+            sourceId: 'source',
+            startOffset: 0,
+            endOffset: bytes.length,
+            ordinal: 0,
+            contentType: ContentType.demonstration,
+            inferredClassification: true,
+            parseStatus: PgnBlockParseStatus.notParsed,
+          ),
+        ]),
+        sourceRepository: _OneSource(
+          fingerprint: SourceFingerprint.compute(fingerprint),
+        ),
+        fileSource: file,
+      );
+      final content = (await repository.getById('intro'))!;
+      expect(content.contentType, ContentType.instruction);
+      expect(content.comments, ['Read first']);
+      expect(content.rootMoves, isEmpty);
+      expect(bytes, original);
+      expect(file.lastRead, original);
+    },
+  );
+
+  test(
     'loads exactly the indexed first, middle, and last byte ranges',
     () async {
       const games = [

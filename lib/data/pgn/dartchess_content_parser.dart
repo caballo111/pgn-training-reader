@@ -9,7 +9,11 @@ import '../../domain/chess_content/move_node.dart';
 final class DartchessContentParser {
   const DartchessContentParser();
 
-  ChessContent parse(String pgn, {required ContentType contentType}) {
+  ChessContent parse(
+    String pgn, {
+    required ContentType contentType,
+    bool? inferredClassification,
+  }) {
     if (contentType == ContentType.unsupported) {
       throw const UnsupportedContentFailure(
         code: 'unsupported_content',
@@ -32,16 +36,49 @@ final class DartchessContentParser {
         );
       }
       final initialPosition = PgnGame.startingPosition(game.headers);
-      final roots = game.moves.children
-          .map((child) => _node(child, initialPosition))
-          .toList(growable: false);
+      final inferred =
+          inferredClassification ?? !game.headers.containsKey('X-ContentType');
+      // Dartchess normalizes several null-move spellings to `--`. Check the
+      // original movetext as well so only this export's exact Z0 is accepted.
+      final movetext = pgn
+          .replaceAll(RegExp(r'^\s*\[.*\]\s*$', multiLine: true), '')
+          .replaceAll(RegExp(r'\{[^}]*\}', dotAll: true), '')
+          .replaceAll(RegExp(r';[^\r\n]*'), '')
+          .trim();
+      final placeholder =
+          RegExp(r'^1\.\s*Z0\s*\*$').hasMatch(movetext) &&
+          game.moves.children.length == 1 &&
+          game.moves.children.single.data.san == '--' &&
+          game.moves.children.single.children.isEmpty &&
+          game.headers['SetUp'] != '1' &&
+          !game.headers.containsKey('FEN') &&
+          (game.headers['X-ContentType'] == null ||
+              game.headers['X-ContentType'] == 'Instruction') &&
+          contentType != ContentType.puzzle &&
+          (game.comments.isNotEmpty ||
+              (game.moves.children.single.data.comments?.isNotEmpty ?? false) ||
+              (game.moves.children.single.data.startingComments?.isNotEmpty ??
+                  false));
+      final roots = placeholder
+          ? <MoveNode>[]
+          : game.moves.children
+                .map((child) => _node(child, initialPosition))
+                .toList(growable: false);
       return ChessContent(
         headers: Map<String, String>.from(game.headers),
         startingFen: initialPosition.fen,
         rootMoves: roots,
-        comments: List<String>.of(game.comments),
+        comments: [
+          ...game.comments,
+          if (placeholder) ...?game.moves.children.single.data.startingComments,
+          if (placeholder) ...?game.moves.children.single.data.comments,
+        ],
         result: game.headers['Result'],
-        contentType: contentType,
+        contentType: placeholder && inferred
+            ? ContentType.instruction
+            : contentType,
+        inferredClassification: inferred,
+        instructionalPlaceholder: placeholder ? 'Z0' : null,
       );
     } on AppFailure {
       rethrow;

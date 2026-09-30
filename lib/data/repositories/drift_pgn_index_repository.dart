@@ -126,6 +126,31 @@ final class DriftPgnIndexRepository implements PgnIndexRepository {
     );
   });
 
+  /// Saves local classification metadata without writing to the PGN source.
+  /// An authored X-ContentType remains authoritative.
+  Future<void> overrideClassification(String id, ContentType type) =>
+      _guard(() async {
+        final changed =
+            await (_database.update(_database.pgnBlocks)..where(
+                  (b) =>
+                      b.id.equals(id) &
+                      b.authoredContentType.isNull() &
+                      CustomExpression<bool>('pgn_blocks.is_current = 1'),
+                ))
+                .write(
+                  PgnBlocksCompanion(
+                    contentType: Value(type.toDatabaseValue()),
+                    inferredClassification: const Value(false),
+                  ),
+                );
+        if (changed != 1) {
+          throw const ValidationFailure(
+            code: 'classification_not_editable',
+            message: 'This classification cannot be changed.',
+          );
+        }
+      });
+
   static String _escapeLike(String value) => value
       .replaceAll(r'\', r'\\')
       .replaceAll('%', r'\%')

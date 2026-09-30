@@ -8,6 +8,10 @@
 
 ## Purpose
 
+Open physical-device assessment findings are tracked in
+[`assessment-issues.md`](assessment-issues.md). Resolve and revalidate these
+findings before treating the affected user-story checkpoints as accepted.
+
 This task list is intentionally decomposed into small, explicit units that can be assigned to compact coding models such as Luna, Flash-class models, or Qwen 27B-class models. Each task should be completable with limited repository context and should produce a narrow, verifiable change.
 
 ## Execution Rules for Coding Agents

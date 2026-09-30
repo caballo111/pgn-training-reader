@@ -15,6 +15,8 @@ final class ChessContent {
     List<String> comments = const [],
     String? result,
     required ContentType contentType,
+    bool inferredClassification = false,
+    String? instructionalPlaceholder,
   }) {
     if (startingFen.isEmpty) {
       throw ArgumentError.value(
@@ -37,6 +39,8 @@ final class ChessContent {
       comments: List.unmodifiable(comments),
       result: result,
       contentType: contentType,
+      inferredClassification: inferredClassification,
+      instructionalPlaceholder: instructionalPlaceholder,
     );
   }
 
@@ -47,6 +51,8 @@ final class ChessContent {
     required this.comments,
     required this.result,
     required this.contentType,
+    required this.inferredClassification,
+    required this.instructionalPlaceholder,
   });
 
   /// PGN tag names and values, including custom tags, in source order.
@@ -80,6 +86,21 @@ final class ChessContent {
   /// Classification of this block as a puzzle, instruction, demonstration, or
   /// unsupported content.
   final ContentType contentType;
+  final bool inferredClassification;
+
+  /// Exact supported export placeholder; never a playable or scored move.
+  final String? instructionalPlaceholder;
+
+  ChessContent withContentType(ContentType type) => ChessContent(
+    headers: headers,
+    startingFen: startingFen,
+    rootMoves: rootMoves,
+    comments: comments,
+    result: result,
+    contentType: type,
+    inferredClassification: false,
+    instructionalPlaceholder: instructionalPlaceholder,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -90,7 +111,9 @@ final class ChessContent {
           _listEquals(other.rootMoves, rootMoves) &&
           _listEquals(other.comments, comments) &&
           other.result == result &&
-          other.contentType == contentType;
+          other.contentType == contentType &&
+          other.inferredClassification == inferredClassification &&
+          other.instructionalPlaceholder == instructionalPlaceholder;
 
   @override
   int get hashCode => Object.hash(
@@ -100,6 +123,8 @@ final class ChessContent {
     Object.hashAll(comments),
     result,
     contentType,
+    inferredClassification,
+    instructionalPlaceholder,
   );
 }
 

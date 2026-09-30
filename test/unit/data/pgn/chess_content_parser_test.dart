@@ -4,6 +4,62 @@ import 'package:pgntrainingreader/data/pgn/dartchess_content_parser.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 
 void main() {
+  test('sole Z0 instruction preserves commentary and headers without a move', () {
+    const pgn =
+        '[White "1) Introduction"]\n[PlyCount "1"]\n\n{Read this first} 1. Z0 {Closing note} *';
+    final content = const DartchessContentParser().parse(
+      pgn,
+      contentType: ContentType.demonstration,
+    );
+    expect(content.contentType, ContentType.instruction);
+    expect(content.inferredClassification, isTrue);
+    expect(content.instructionalPlaceholder, 'Z0');
+    expect(content.rootMoves, isEmpty);
+    expect(content.comments, ['Read this first', 'Closing note']);
+    expect(content.headers['PlyCount'], '1');
+    expect(pgn, contains('1. Z0'));
+  });
+
+  test('placeholder support excludes null moves, mixed trees and puzzles', () {
+    for (final moves in [
+      '1. -- *',
+      '1. 0000 *',
+      '1. @@@@ *',
+      '1. Z0 e5 *',
+      '1. e4 Z0 *',
+      '1. Z0 (1. e4) *',
+      '1. Z0 junk *',
+      '1. e5 *',
+    ]) {
+      expect(
+        () => const DartchessContentParser().parse(
+          '[Event "Invalid"]\n\n{Note} $moves',
+          contentType: ContentType.demonstration,
+        ),
+        throwsA(isA<PgnFailure>()),
+        reason: moves,
+      );
+    }
+    expect(
+      () => const DartchessContentParser().parse(
+        '[X-ContentType "Puzzle"]\n\n{Note} 1. Z0 *',
+        contentType: ContentType.puzzle,
+      ),
+      throwsA(isA<PgnFailure>()),
+    );
+  });
+
+  test('saved reader override is respected for placeholder content', () {
+    final content = const DartchessContentParser().parse(
+      '[White "Introduction"]\n\n{Note} 1. Z0 *',
+      contentType: ContentType.demonstration,
+      inferredClassification: false,
+    );
+    expect(content.contentType, ContentType.demonstration);
+    expect(content.inferredClassification, isFalse);
+    expect(content.rootMoves, isEmpty);
+  });
+
   test(
     'preserves headers, start FEN, comments, NAGs, and authored variations',
     () {

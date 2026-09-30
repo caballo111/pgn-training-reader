@@ -24,7 +24,7 @@ void main() {
               displayName: source,
               accessMode: 'managedCopy',
               scannerVersion: 1,
-              importState: 'ready',
+              importState: 'indexed',
               createdAtMicros: 1,
               updatedAtMicros: 1,
             ),
@@ -34,6 +34,31 @@ void main() {
   });
 
   tearDown(() => database.close());
+
+  test(
+    'classification override persists separately from authored source metadata',
+    () async {
+      await repository.overrideClassification('a1', ContentType.instruction);
+      final block = await DriftPgnIndexRepository(database).getById('a1');
+      expect(block!.contentType, ContentType.instruction);
+      expect(block.inferredClassification, isFalse);
+      expect(block.white, 'Alice');
+      await (database.update(
+        database.pgnBlocks,
+      )..where((b) => b.id.equals('a1'))).write(
+        const PgnBlocksCompanion(authoredContentType: Value('Puzzle')),
+      );
+      expect(
+        () =>
+            repository.overrideClassification('a1', ContentType.demonstration),
+        throwsA(isA<ValidationFailure>()),
+      );
+      expect(
+        (await repository.getById('a1'))!.contentType,
+        ContentType.instruction,
+      );
+    },
+  );
 
   test('filters all metadata and combines constraints with AND', () async {
     final cases = <PgnIndexFilter, String>{

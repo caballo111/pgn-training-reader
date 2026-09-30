@@ -60,6 +60,13 @@ final class _InstructionViewState extends State<InstructionView> {
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text('Instruction'),
           ),
+          if (widget.content.instructionalPlaceholder != null)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Z0 is an instructional placeholder. This entry has no playable moves.',
+              ),
+            ),
           if (widget.content.headers.isNotEmpty)
             ExpansionTile(
               title: const Text('Content details'),

@@ -118,25 +118,83 @@ Future<void> _openBlock(
   PgnBlockIndex block,
 ) async {
   try {
-    final content = await dependencies.chessContentRepository.getById(block.id);
+    var content = await dependencies.chessContentRepository.getById(block.id);
     if (!context.mounted) return;
     if (content == null) {
       _showOpenFailure(context, 'This library item is no longer available.');
       return;
     }
+    var nextBlock = await dependencies.pgnIndexRepository.getNextInSource(
+      block,
+    );
+    var previousBlock = await dependencies.pgnIndexRepository
+        .getPreviousInSource(block);
+    if (!context.mounted) return;
+    var loading = false;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => GameReaderPage(
-          content: content,
-          puzzleViewBuilder: (_, puzzle) => LibraryPuzzlePractice(
-            dependencies: dependencies,
-            blockId: block.id,
-            puzzle: puzzle,
-          ),
-          onClassificationOverride: block.authoredContentType == null
-              ? (type) => dependencies.pgnIndexRepository
-                    .overrideClassification(block.id, type)
-              : null,
+        builder: (_) => StatefulBuilder(
+          builder: (readerContext, setReaderState) {
+            Future<void> navigate(PgnBlockIndex target) async {
+              if (loading) return;
+              setReaderState(() => loading = true);
+              try {
+                final loaded = await dependencies.chessContentRepository
+                    .getById(target.id);
+                if (loaded == null) {
+                  throw const ValidationFailure(
+                    code: 'library_item_missing',
+                    message: 'This library item is no longer available.',
+                  );
+                }
+                final next = await dependencies.pgnIndexRepository
+                    .getNextInSource(target);
+                final previous = await dependencies.pgnIndexRepository
+                    .getPreviousInSource(target);
+                if (!readerContext.mounted) return;
+                setReaderState(() {
+                  block = target;
+                  content = loaded;
+                  nextBlock = next;
+                  previousBlock = previous;
+                });
+              } catch (error) {
+                if (!readerContext.mounted) return;
+                _showOpenFailure(
+                  readerContext,
+                  error is AppFailure
+                      ? error.message
+                      : 'The selected library item could not be opened.',
+                );
+              } finally {
+                if (readerContext.mounted) {
+                  setReaderState(() => loading = false);
+                }
+              }
+            }
+
+            final currentBlock = block;
+            return GameReaderPage(
+              key: ValueKey(currentBlock.id),
+              content: content!,
+              showBlockNavigation: true,
+              onPreviousBlock: loading || previousBlock == null
+                  ? null
+                  : () => unawaited(navigate(previousBlock!)),
+              onNextBlock: loading || nextBlock == null
+                  ? null
+                  : () => unawaited(navigate(nextBlock!)),
+              puzzleViewBuilder: (_, puzzle) => LibraryPuzzlePractice(
+                dependencies: dependencies,
+                blockId: currentBlock.id,
+                puzzle: puzzle,
+              ),
+              onClassificationOverride: currentBlock.authoredContentType == null
+                  ? (type) => dependencies.pgnIndexRepository
+                        .overrideClassification(currentBlock.id, type)
+                  : null,
+            );
+          },
         ),
       ),
     );

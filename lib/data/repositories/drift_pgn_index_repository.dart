@@ -26,6 +26,40 @@ final class DriftPgnIndexRepository implements PgnIndexRepository {
     return row == null ? null : _fromRow(row);
   });
 
+  /// Finds the next current block in the same source without loading a page.
+  Future<PgnBlockIndex?> getNextInSource(PgnBlockIndex current) =>
+      _getAdjacentInSource(current, forward: true);
+
+  /// Finds the previous current block in the same source.
+  Future<PgnBlockIndex?> getPreviousInSource(PgnBlockIndex current) =>
+      _getAdjacentInSource(current, forward: false);
+
+  Future<PgnBlockIndex?> _getAdjacentInSource(
+    PgnBlockIndex current, {
+    required bool forward,
+  }) => _guard(() async {
+    final query = _database.select(_database.pgnBlocks)
+      ..where(
+        (block) =>
+            block.sourceId.equals(current.sourceId) &
+            (forward
+                ? block.ordinal.isBiggerThanValue(current.ordinal)
+                : block.ordinal.isSmallerThanValue(current.ordinal)) &
+            const CustomExpression<bool>(
+              "pgn_blocks.is_current = 1 AND pgn_blocks.source_id IN "
+              "(SELECT id FROM pgn_sources WHERE import_state = 'indexed')",
+            ),
+      )
+      ..orderBy([
+        (block) => forward
+            ? OrderingTerm.asc(block.ordinal)
+            : OrderingTerm.desc(block.ordinal),
+      ])
+      ..limit(1);
+    final row = await query.getSingleOrNull();
+    return row == null ? null : _fromRow(row);
+  });
+
   @override
   Future<int> countForSource(String sourceId) => _guard(
     () async =>

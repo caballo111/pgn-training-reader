@@ -23,6 +23,47 @@ ChessContent _content(ContentType type) => ChessContent(
 );
 
 void main() {
+  testWidgets('block navigation invokes callbacks and disables boundaries', (
+    tester,
+  ) async {
+    var previous = 0;
+    var next = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(
+          content: _content(ContentType.puzzle),
+          showBlockNavigation: true,
+          onPreviousBlock: () => previous++,
+          onNextBlock: () => next++,
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('Previous PGN block'));
+    await tester.tap(find.byTooltip('Next PGN block'));
+    expect(previous, 1);
+    expect(next, 1);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(
+          content: _content(ContentType.puzzle),
+          showBlockNavigation: true,
+        ),
+      ),
+    );
+    for (final label in ['Previous PGN block', 'Next PGN block']) {
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (widget) => widget is IconButton && widget.tooltip == label,
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+    }
+  });
+
   for (final token in ['Z0', '--']) {
     testWidgets(
       '$token introduction opens as non-scored content and saves an override',

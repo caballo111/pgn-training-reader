@@ -124,6 +124,25 @@ void main() {
     expect(await repository.getById('missing'), isNull);
   });
 
+  test('adjacent blocks stay in source and stop at both boundaries', () async {
+    final first = (await repository.getById('a1'))!;
+    final middle = (await repository.getById('a2'))!;
+    final last = (await repository.getById('a3'))!;
+    expect(await repository.getPreviousInSource(first), isNull);
+    expect((await repository.getNextInSource(first))!.id, 'a2');
+    expect((await repository.getPreviousInSource(middle))!.id, 'a1');
+    expect((await repository.getNextInSource(middle))!.id, 'a3');
+    expect((await repository.getPreviousInSource(last))!.id, 'a2');
+    expect(await repository.getNextInSource(last), isNull);
+
+    // Source ordinals can have gaps after invalid or retired blocks.
+    await database.customStatement(
+      "UPDATE pgn_blocks SET is_current = 0 WHERE id = 'a2'",
+    );
+    expect((await repository.getNextInSource(first))!.id, 'a3');
+    expect((await repository.getPreviousInSource(last))!.id, 'a1');
+  });
+
   test('rejects invalid page sizes and offsets', () async {
     for (final limit in [0, 1001, -1]) {
       await expectLater(

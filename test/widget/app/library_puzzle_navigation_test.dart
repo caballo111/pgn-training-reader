@@ -14,6 +14,7 @@ import 'package:pgntrainingreader/data/file_access/managed_file_source.dart';
 import 'package:pgntrainingreader/data/file_access/source_fingerprint.dart';
 import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_board.dart';
+import 'package:pgntrainingreader/features/game_reader/presentation/game_reader_page.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solving_view.dart';
 
 void main() {
@@ -100,9 +101,42 @@ void main() {
               event: const Value('Exercise 1'),
             ),
           );
+      await db
+          .into(db.pgnBlocks)
+          .insert(
+            PgnBlocksCompanion.insert(
+              id: 'second-block',
+              sourceId: 'source',
+              startOffset: 0,
+              endOffset: bytes.length,
+              ordinal: 1,
+              contentType: 'Puzzle',
+              parseStatus: 'NotParsed',
+              event: const Value('Exercise 2'),
+            ),
+          );
       await tester.pumpWidget(PgnTrainingReaderApp(dependencies: dependencies));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Exercise 1').first);
+      await tester.pumpAndSettle();
+      final readerRoute = ModalRoute.of(
+        tester.element(find.byType(GameReaderPage)),
+      );
+      await tester.tap(find.byTooltip('Next PGN block'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('second-block')), findsOneWidget);
+      expect(
+        ModalRoute.of(tester.element(find.byType(GameReaderPage))),
+        same(readerRoute),
+      );
+      await tester.tap(find.byTooltip('Previous PGN block'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('block')), findsOneWidget);
+      expect(
+        ModalRoute.of(tester.element(find.byType(GameReaderPage))),
+        same(readerRoute),
+      );
+
       await tester.pumpAndSettle();
       expect(find.text('Black to move'), findsOneWidget);
       expect(find.textContaining('SECRET ANSWER'), findsNothing);

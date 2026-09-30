@@ -17,10 +17,16 @@ final class GameReaderPage extends StatefulWidget {
     required this.content,
     this.puzzleViewBuilder,
     this.onClassificationOverride,
+    this.showBlockNavigation = false,
+    this.onNextBlock,
+    this.onPreviousBlock,
     super.key,
   });
 
   final ChessContent content;
+  final bool showBlockNavigation;
+  final VoidCallback? onNextBlock;
+  final VoidCallback? onPreviousBlock;
 
   /// Injected puzzle presentation; no solution-bearing content is rendered
   /// when a puzzle view has not been supplied by the caller.
@@ -55,6 +61,20 @@ final class _GameReaderPageState extends State<GameReaderPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(title.isEmpty ? 'PGN Reader' : title),
+        actions: [
+          if (widget.showBlockNavigation)
+            IconButton(
+              tooltip: 'Previous PGN block',
+              onPressed: _saving ? null : widget.onPreviousBlock,
+              icon: const Icon(Icons.skip_previous),
+            ),
+          if (widget.showBlockNavigation)
+            IconButton(
+              tooltip: 'Next PGN block',
+              onPressed: _saving ? null : widget.onNextBlock,
+              icon: const Icon(Icons.skip_next),
+            ),
+        ],
         bottom:
             content.inferredClassification ||
                 widget.onClassificationOverride != null

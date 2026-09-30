@@ -144,6 +144,15 @@ When the user opens it in reader mode
 Then the application shows its headers, starting position, moves, comments,
 NAGs, result, and authored variations without silently changing them.
 
+#### Scenario 6a — Move between PGN blocks
+
+Given a block is open from the library\
+When the user selects “Next PGN block” or “Previous PGN block”\
+Then the adjacent indexed block in the same source opens in the chosen direction,
+regardless of library filters or pagination\
+And Previous is disabled on the first block and Next on the last block\
+And unfinished puzzle practice remains saved and resumable after leaving practice.
+
 #### Scenario 7 — Read a FEN-start or annotated block
 
 Given an indexed block uses `SetUp` and `FEN`, or contains recursive
@@ -332,6 +341,11 @@ And the user receives an actionable recovery path rather than silent data loss.
 
 - **FR-019**: Reader mode MUST provide headers, position navigation, notation,
   comments, NAGs, results, and authored variations for supported content.
+- **FR-019a**: Library reader mode MUST offer navigation to the next and previous indexed
+  blocks in the same source, in source order, independent of library filters
+  and pagination. Previous MUST be disabled on the first block and Next on
+  the last block.
+  Navigation MUST preserve unfinished puzzle practice and existing history.
 - **FR-020**: The current mode MUST be unmistakable as Reading, Instruction,
   Demonstration, or Puzzle solving.
 - **FR-021**: Before a puzzle is completed, failed, skipped, or revealed, the

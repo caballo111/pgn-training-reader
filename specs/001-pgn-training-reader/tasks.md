@@ -219,16 +219,16 @@ For every task:
 
 # Phase 9: Puzzle Evaluation Domain
 
-- [ ] T110 [US3] Create `lib/domain/training/puzzle_state.dart` with not-started, active, failed-review, passed-review, revealed-review, skipped, timed-out, and abandoned states.
-- [ ] T111 [US3] Implement `lib/domain/training/authored_line_puzzle_evaluator.dart` using `dartchess` for legality and the current `MoveNode` children for authored acceptance.
-- [ ] T112 [US3] Distinguish illegal interaction from a legal move that is absent from authored accepted children. Illegal interaction must not automatically count as a wrong move.
-- [ ] T113 [US3] Accept every explicitly authored child variation at the current node. Preserve child order but do not assume only the first child is valid.
-- [ ] T114 [US3] Mark the attempt passed only when an accepted terminal solution node is reached without a prior finalized failure or reveal.
-- [ ] T115 [US3] Implement the default wrong-move policy: first legal authored mismatch finalizes `wrong_move`; the user may continue only in review mode.
-- [ ] T116 [US3] Implement reveal, skip, timeout, and abandon transitions with exact failure reasons.
-- [ ] T117 [US3] Reject invalid state transitions, including converting a finalized failed attempt into passed.
-- [ ] T118 [US3] Add table-driven evaluator tests for correct main line, correct alternate line, illegal move, wrong legal move, reveal, skip, timeout, abandon, and attempt-after-finalization.
-- [ ] T119 [US3] Add FEN-start tests for both White to move and Black to move.
+- [x] T110 [US3] Create `lib/domain/training/puzzle_state.dart` with not-started, active, failed-review, passed-review, revealed-review, skipped, timed-out, and abandoned states.
+- [x] T111 [US3] Implement `lib/domain/training/authored_line_puzzle_evaluator.dart` using `dartchess` for legality and the current `MoveNode` children for authored acceptance.
+- [x] T112 [US3] Distinguish illegal interaction from a legal move that is absent from authored accepted children. Illegal interaction must not automatically count as a wrong move.
+- [x] T113 [US3] Accept every explicitly authored child variation at the current node. Preserve child order but do not assume only the first child is valid.
+- [x] T114 [US3] Mark the attempt passed only when an accepted terminal solution node is reached without a prior finalized failure or reveal.
+- [x] T115 [US3] Implement the default wrong-move policy: first legal authored mismatch finalizes `wrong_move`; the user may continue only in review mode.
+- [x] T116 [US3] Implement reveal, skip, timeout, and abandon transitions with exact failure reasons.
+- [x] T117 [US3] Reject invalid state transitions, including converting a finalized failed attempt into passed.
+- [x] T118 [US3] Add table-driven evaluator tests for correct main line, correct alternate line, illegal move, wrong legal move, reveal, skip, timeout, abandon, and attempt-after-finalization.
+- [x] T119 [US3] Add FEN-start tests for both White to move and Black to move.
 
 **User Story 3A checkpoint**: Puzzle-result decisions are deterministic and fully tested without widgets or database access.
 

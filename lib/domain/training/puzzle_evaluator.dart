@@ -63,11 +63,13 @@ abstract interface class PuzzleEvaluator {
   ///
   /// The content must be a supported Puzzle with a valid starting position
   /// and at least one authored solution move. [attempt] must not already be
-  /// finalized. Implementations must conceal the solution in the returned
-  /// state.
+  /// finalized. [previousMoves] contains any persisted user move history to
+  /// restore when resuming an active or paused attempt. Implementations must
+  /// conceal the solution in the returned state.
   PuzzleEvaluationState initialize({
     required ChessContent puzzle,
     required PuzzleAttempt attempt,
+    List<AttemptMove> previousMoves = const [],
   });
 
   /// Returns legal destination squares for [fromSquare] in the current
@@ -85,11 +87,25 @@ abstract interface class PuzzleEvaluator {
   /// the authored children finalizes it as `wrong_move` with reason
   /// `incorrectMove`. An illegal submitted move finalizes it as `wrong_move`
   /// with reason `illegalMove`, as required by FR-023. No move may be submitted
-  /// before initialization or after finalization.
+  /// before initialization or after finalization. Malformed UCI input is a
+  /// validation error and leaves evaluator state unchanged. Board gestures
+  /// that the presentation layer does not submit do not affect attempt state.
   PuzzleEvaluationState submitMove({required String uci});
 
   /// Finalizes an unfinished attempt as `revealed` and makes the authored
   /// solution available to presentation. If already finalized, the historical
   /// result is retained unchanged.
   PuzzleEvaluationState reveal();
+
+  /// Finalizes an unfinished attempt as `skipped` without a failure reason.
+  /// If already finalized, the historical result is retained unchanged.
+  PuzzleEvaluationState skip();
+
+  /// Finalizes an unfinished attempt as `timed_out` with a time-limit reason.
+  /// If already finalized, the historical result is retained unchanged.
+  PuzzleEvaluationState timeout();
+
+  /// Finalizes an unfinished attempt as `abandoned` with a user-abandoned
+  /// reason. If already finalized, the historical result is retained unchanged.
+  PuzzleEvaluationState abandon();
 }

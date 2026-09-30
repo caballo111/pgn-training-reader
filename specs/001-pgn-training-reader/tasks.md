@@ -202,16 +202,16 @@ For every task:
 
 # Phase 8: Board and Reader Modes
 
-- [ ] T100 [P] [US2] Create `lib/shared/chessboard/chessboard_adapter.dart` that maps domain position, side to move, legal destinations, last move, and orientation into `chessground` inputs.
-- [ ] T101 [P] [US2] Create reusable reader navigation state supporting first, previous, next, last, select variation, and return to parent line.
-- [ ] T102 [US2] Create `game_reader_controller.dart` that derives the current position from the parsed move tree using `dartchess` and never trusts stored display text for side to move.
-- [ ] T103 [P] [US2] Create `reader_board.dart` with board coordinates, orientation control, last-move highlight, and accessible side-to-move label.
-- [ ] T104 [P] [US2] Create `move_tree_view.dart` for visible moves, variations, comments, and NAG display in normal reader mode.
-- [ ] T105 [P] [US2] Create `instruction_view.dart` for Instruction content. Ensure opening it does not create or modify a puzzle attempt.
-- [ ] T106 [P] [US2] Create `demonstration_view.dart` for Demonstration content with board and annotated navigation.
-- [ ] T107 [US2] Create `game_reader_page.dart` that selects the correct mode from `ContentType`.
-- [ ] T108 [US2] Add widget tests for side-to-move display, navigation, orientation, comments, and variation selection.
-- [ ] T109 [US2] Add tests proving Instruction and Demonstration content does not affect training scores.
+- [x] T100 [P] [US2] Create `lib/shared/chessboard/chessboard_adapter.dart` that maps domain position, side to move, legal destinations, last move, and orientation into `chessground` inputs.
+- [x] T101 [P] [US2] Create reusable reader navigation state supporting first, previous, next, last, select variation, and return to parent line.
+- [x] T102 [US2] Create `game_reader_controller.dart` that derives the current position from the parsed move tree using `dartchess` and never trusts stored display text for side to move.
+- [x] T103 [P] [US2] Create `reader_board.dart` with board coordinates, orientation control, last-move highlight, and accessible side-to-move label.
+- [x] T104 [P] [US2] Create `move_tree_view.dart` for visible moves, variations, comments, and NAG display in normal reader mode.
+- [x] T105 [P] [US2] Create `instruction_view.dart` for Instruction content. Ensure opening it does not create or modify a puzzle attempt.
+- [x] T106 [P] [US2] Create `demonstration_view.dart` for Demonstration content with board and annotated navigation.
+- [x] T107 [US2] Create `game_reader_page.dart` that selects the correct mode from `ContentType`.
+- [x] T108 [US2] Add widget tests for side-to-move display, navigation, orientation, comments, and variation selection.
+- [x] T109 [US2] Add tests proving Instruction and Demonstration content does not affect training scores.
 
 **User Story 2B checkpoint**: Games, instructions, and demonstrations render correctly and remain non-scored.
 

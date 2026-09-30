@@ -1,0 +1,122 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
+import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
+import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
+import 'package:pgntrainingreader/features/game_reader/presentation/game_reader_page.dart';
+
+const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+ChessContent _content(ContentType type) => ChessContent(
+  headers: const {'X-Title': 'Reader test'},
+  startingFen: _startFen,
+  contentType: type,
+  rootMoves: [
+    MoveNode(
+      san: 'secret solution',
+      uci: 'e2e4',
+      fenBefore: _startFen,
+      fenAfter: 'ignored',
+    ),
+  ],
+);
+
+void main() {
+  testWidgets('routes instruction content to InstructionView', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(content: _content(ContentType.instruction)),
+      ),
+    );
+
+    expect(find.text('Reader test'), findsNWidgets(2));
+    expect(find.text('Instruction'), findsOneWidget);
+    expect(find.text('secret solution'), findsOneWidget);
+  });
+
+  testWidgets('routes demonstration content to the board reader', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(content: _content(ContentType.demonstration)),
+      ),
+    );
+
+    expect(find.text('White to move'), findsOneWidget);
+    expect(find.text('secret solution'), findsOneWidget);
+  });
+
+  testWidgets('delegates puzzles to the injected puzzle view', (tester) async {
+    final puzzle = _content(ContentType.puzzle);
+    ChessContent? received;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(
+          content: puzzle,
+          puzzleViewBuilder: (context, content) {
+            received = content;
+            return const Text('Injected puzzle solver');
+          },
+        ),
+      ),
+    );
+
+    expect(received, same(puzzle));
+    expect(find.text('Injected puzzle solver'), findsOneWidget);
+  });
+
+  testWidgets('does not expose a puzzle title hint in text or semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final puzzle = ChessContent(
+      headers: const {'X-Title': 'Mate on h7', 'Event': 'Winning tactic'},
+      startingFen: _startFen,
+      contentType: ContentType.puzzle,
+      rootMoves: _content(ContentType.puzzle).rootMoves,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(
+          content: puzzle,
+          puzzleViewBuilder: (context, content) => const Text('Puzzle view'),
+        ),
+      ),
+    );
+
+    expect(find.text('Puzzle'), findsOneWidget);
+    expect(find.text('Mate on h7'), findsNothing);
+    expect(find.text('Winning tactic'), findsNothing);
+    expect(find.bySemanticsLabel('Mate on h7'), findsNothing);
+    expect(find.bySemanticsLabel('Winning tactic'), findsNothing);
+    semantics.dispose();
+  });
+
+  testWidgets('does not show solution moves without an injected puzzle view', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: GameReaderPage(content: _content(ContentType.puzzle))),
+    );
+
+    expect(find.text('Puzzle practice is not available yet.'), findsOneWidget);
+    expect(find.text('secret solution'), findsNothing);
+  });
+
+  testWidgets('shows a safe fallback for unsupported content', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(content: _content(ContentType.unsupported)),
+      ),
+    );
+
+    expect(
+      find.text('This content type is not supported for display.'),
+      findsOneWidget,
+    );
+    expect(find.text('secret solution'), findsNothing);
+  });
+}

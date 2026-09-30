@@ -63,7 +63,7 @@ final class _ActivePuzzleControls extends StatelessWidget {
         icon: const Icon(Icons.pause),
         label: const Text('Pause'),
       ),
-      FilledButton(
+      TextButton(
         onPressed: enabled
             ? () => _confirm(
                 context,

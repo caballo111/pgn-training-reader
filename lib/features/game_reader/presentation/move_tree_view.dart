@@ -9,7 +9,7 @@ import '../application/reader_navigation_state.dart';
 /// Selecting a move reports the navigation cursor immediately after that
 /// move. Variations remain visible as indented branches and use their source
 /// order from the parsed move tree.
-final class MoveTreeView extends StatelessWidget {
+final class MoveTreeView extends StatefulWidget {
   const MoveTreeView({
     required this.content,
     required this.navigation,
@@ -26,18 +26,44 @@ final class MoveTreeView extends StatelessWidget {
   final bool scrollable;
 
   @override
+  State<MoveTreeView> createState() => _MoveTreeViewState();
+}
+
+class _MoveTreeViewState extends State<MoveTreeView> {
+  final _activeMoveKey = GlobalKey();
+
+  @override
+  void didUpdateWidget(covariant MoveTreeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final activeContext = _activeMoveKey.currentContext;
+      if (mounted && activeContext != null) {
+        Scrollable.ensureVisible(
+          activeContext,
+          alignment: .5,
+          duration: const Duration(milliseconds: 180),
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (content.rootMoves.isEmpty) {
+    if (widget.content.rootMoves.isEmpty) {
       return const Center(child: Text('No moves in this game'));
     }
 
-    final activePath = navigation.path;
+    final activePath = widget.navigation.path;
     return ListView(
-      shrinkWrap: shrinkWrap,
-      physics: scrollable ? null : const NeverScrollableScrollPhysics(),
+      shrinkWrap: widget.shrinkWrap,
+      physics: widget.scrollable ? null : const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        for (var index = 0; index < content.rootMoves.length; index++) ...[
+        for (
+          var index = 0;
+          index < widget.content.rootMoves.length;
+          index++
+        ) ...[
           if (index > 0)
             Padding(
               padding: const EdgeInsetsDirectional.only(start: 10, top: 4),
@@ -47,12 +73,13 @@ final class MoveTreeView extends StatelessWidget {
               ),
             ),
           _MoveBranch(
-            node: content.rootMoves[index],
-            content: content,
+            node: widget.content.rootMoves[index],
+            content: widget.content,
             depth: index == 0 ? 0 : 1,
             path: [index],
             activePath: activePath,
-            onSelected: onNavigationChanged,
+            activeMoveKey: _activeMoveKey,
+            onSelected: widget.onNavigationChanged,
           ),
         ],
       ],
@@ -67,6 +94,7 @@ final class _MoveBranch extends StatelessWidget {
     required this.depth,
     required this.path,
     required this.activePath,
+    required this.activeMoveKey,
     required this.onSelected,
   });
 
@@ -75,6 +103,7 @@ final class _MoveBranch extends StatelessWidget {
   final int depth;
   final List<int> path;
   final List<MoveNode> activePath;
+  final GlobalKey activeMoveKey;
   final ValueChanged<ReaderNavigationState> onSelected;
 
   @override
@@ -121,6 +150,7 @@ final class _MoveBranch extends StatelessWidget {
               depth: 1,
               path: [...movePath, index],
               activePath: activePath,
+              activeMoveKey: activeMoveKey,
               onSelected: onSelected,
             ),
           );
@@ -148,6 +178,7 @@ final class _MoveBranch extends StatelessWidget {
     final isBlack = fen.length >= 6 ? fen[1] == 'b' : movePath.length.isEven;
     final prefix = '$number${isBlack ? '...' : '.'}';
     return Semantics(
+      key: isActive ? activeMoveKey : null,
       button: true,
       selected: isActive,
       label: 'Move $prefix ${move.san}${isActive ? ', current position' : ''}',

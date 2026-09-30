@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'dependencies.dart';
+import '../shared/presentation/study_layout.dart';
+import '../shared/presentation/flip_board_button.dart';
 import '../domain/chess_content/chess_content.dart';
 import '../domain/chess_content/content_type.dart';
 import '../domain/training/authored_line_puzzle_evaluator.dart';
@@ -31,6 +33,14 @@ final class LibraryPuzzlePractice extends StatefulWidget {
 }
 
 final class _LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice> {
+  PuzzleSide? _orientation;
+
+  @override
+  void didUpdateWidget(covariant LibraryPuzzlePractice oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.puzzle != widget.puzzle) _orientation = null;
+  }
+
   bool _starting = false;
   String? _error;
 
@@ -111,26 +121,32 @@ final class _LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice> {
     final side = widget.puzzle.startingFen.split(' ')[1] == 'b'
         ? PuzzleSide.black
         : PuzzleSide.white;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+    return StudyLayout(
+      board: ReaderBoard(
+        showOrientationControl: false,
+        board: ChessboardAdapter.fromPosition(
+          fen: widget.puzzle.startingFen,
+          sideToMove: side,
+          legalDestinations: const {},
+          orientation: _orientation ?? side,
+        ),
+      ),
+      controls: FlipBoardButton(
+        onPressed: () => setState(() {
+          _orientation = (_orientation ?? side) == PuzzleSide.white
+              ? PuzzleSide.black
+              : PuzzleSide.white;
+        }),
+      ),
+      details: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: ReaderBoard(
-              board: ChessboardAdapter.fromPosition(
-                fen: widget.puzzle.startingFen,
-                sideToMove: side,
-                legalDestinations: const {},
-                orientation: side,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
+          Text('Practice', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
           const Text(
             'Start a timed practice attempt or resume your unfinished attempt. Leaving practice pauses it. Results are saved in training progress.',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           FilledButton(
             onPressed: _starting ? null : _start,
             child: const Text('Start or resume practice'),

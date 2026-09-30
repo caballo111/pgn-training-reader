@@ -3,6 +3,7 @@ import 'package:dartchess/dartchess.dart' as chess;
 import 'package:flutter/material.dart';
 
 import '../../../shared/chessboard/chessboard_adapter.dart';
+import '../../../shared/presentation/flip_board_button.dart';
 
 /// Read-only board presentation for the game reader.
 ///
@@ -51,19 +52,6 @@ class _ReaderBoardState extends State<ReaderBoard> {
             child: Text(sideLabel, textAlign: TextAlign.center),
           ),
         ),
-        if (widget.showOrientationControl)
-          Align(
-            child: TextButton.icon(
-              key: const ValueKey('reader-board-orientation'),
-              onPressed: _toggleOrientation,
-              icon: const Icon(Icons.rotate_90_degrees_ccw),
-              label: Text(
-                _orientation == chess.Side.white
-                    ? 'Rotate: Black at bottom'
-                    : 'Rotate: White at bottom',
-              ),
-            ),
-          ),
         Semantics(
           container: true,
           label:
@@ -87,6 +75,13 @@ class _ReaderBoardState extends State<ReaderBoard> {
             ),
           ),
         ),
+        if (widget.showOrientationControl)
+          Center(
+            child: FlipBoardButton(
+              key: const ValueKey('reader-board-orientation'),
+              onPressed: _toggleOrientation,
+            ),
+          ),
       ],
     );
   }

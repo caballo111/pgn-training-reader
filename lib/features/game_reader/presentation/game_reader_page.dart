@@ -51,15 +51,45 @@ final class _GameReaderPageState extends State<GameReaderPage> {
 
   @override
   Widget build(BuildContext context) {
+    String? meaningfulHeader(String name) {
+      final value = content.headers[name]?.trim();
+      return value == null || value.isEmpty || value == '?' ? null : value;
+    }
+
+    final white = meaningfulHeader('White');
+    final black = meaningfulHeader('Black');
+    final studyTitle =
+        meaningfulHeader('X-Title') ??
+        meaningfulHeader('Event') ??
+        (white != null && black != null ? '$white vs $black' : null) ??
+        (content.rootMoves.isNotEmpty ? 'Game' : 'Study text');
     final title = switch (content.contentType) {
       ContentType.puzzle => 'Puzzle',
       ContentType.unsupported => 'Unsupported content',
-      ContentType.text =>
-        content.headers['X-Title'] ?? content.headers['Event'] ?? 'PGN Reader',
+      ContentType.text => studyTitle,
     };
+    final titleStyle = Theme.of(context).textTheme.headlineSmall!;
+    final titlePainter = TextPainter(
+      text: TextSpan(text: title, style: titleStyle),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: MediaQuery.sizeOf(context).width - 32);
+    final titleHeight = titlePainter.height + 24;
+    titlePainter.dispose();
     return Scaffold(
       appBar: AppBar(
-        title: Text(title.isEmpty ? 'PGN Reader' : title),
+        centerTitle: false,
+        scrolledUnderElevation: 0,
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(titleHeight),
+          child: SizedBox(
+            width: double.infinity,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: Text(title, style: titleStyle),
+            ),
+          ),
+        ),
         actions: [
           if (widget.showBlockNavigation)
             IconButton(
@@ -73,44 +103,24 @@ final class _GameReaderPageState extends State<GameReaderPage> {
               onPressed: _saving ? null : widget.onNextBlock,
               icon: const Icon(Icons.skip_next),
             ),
-        ],
-        bottom:
-            content.inferredClassification ||
-                widget.onClassificationOverride != null
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(64),
-                child: Wrap(
-                  children: [
-                    const SizedBox(width: 16),
-                    Text(
-                      content.inferredClassification
-                          ? 'Inferred classification: '
-                          : 'Classification: ',
+          if (widget.onClassificationOverride != null)
+            PopupMenuButton<ContentType>(
+              tooltip: 'Change content type',
+              enabled: !_saving,
+              onSelected: _override,
+              itemBuilder: (_) => [
+                for (final type in const [ContentType.text, ContentType.puzzle])
+                  CheckedPopupMenuItem(
+                    value: type,
+                    checked: content.contentType == type,
+                    child: Text(
+                      type == ContentType.text ? 'Study text / game' : 'Puzzle',
                     ),
-                    if (widget.onClassificationOverride != null)
-                      DropdownButton<ContentType>(
-                        value: content.contentType == ContentType.unsupported
-                            ? null
-                            : content.contentType,
-                        hint: Text(content.contentType.toDatabaseValue()),
-                        onChanged: _saving ? null : _override,
-                        items: [
-                          for (final type in const [
-                            ContentType.puzzle,
-                            ContentType.text,
-                          ])
-                            DropdownMenuItem(
-                              value: type,
-                              child: Text(type.toDatabaseValue()),
-                            ),
-                        ],
-                      )
-                    else
-                      Text(content.contentType.toDatabaseValue()),
-                  ],
-                ),
-              )
-            : null,
+                  ),
+              ],
+              icon: const Icon(Icons.more_vert),
+            ),
+        ],
       ),
       body: switch (content.contentType) {
         ContentType.text => TextView(content: content),

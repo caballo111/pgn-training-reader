@@ -7,6 +7,8 @@ import '../application/puzzle_solver_controller.dart';
 import 'puzzle_board.dart';
 import 'puzzle_controls.dart';
 import 'puzzle_header.dart';
+import '../../../shared/presentation/study_layout.dart';
+import '../../../shared/presentation/flip_board_button.dart';
 
 /// Active puzzle surface. It consumes the safe presentation projection and
 /// never renders puzzle metadata or the authored move tree.
@@ -39,6 +41,18 @@ final class PuzzleSolvingView extends StatefulWidget {
 }
 
 final class _PuzzleSolvingViewState extends State<PuzzleSolvingView> {
+  late PuzzleSide _orientation = widget.orientation;
+
+  @override
+  void didUpdateWidget(covariant PuzzleSolvingView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.orientation != widget.orientation ||
+        oldWidget.controller != widget.controller ||
+        oldWidget.currentExercise != widget.currentExercise) {
+      _orientation = widget.orientation;
+    }
+  }
+
   String? _error;
   bool _writePending = false;
 
@@ -76,73 +90,63 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Puzzle')),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 32,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  PuzzleHeader(
-                    currentExercise: widget.currentExercise,
-                    totalExercises: widget.totalExercises,
-                    evaluation: evaluation,
-                  ),
-                  const SizedBox(height: 16),
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: PuzzleBoard(
-                        fen: presentation.currentFen,
-                        sideToMove: presentation.sideToMove,
-                        legalDestinations: _legalDestinationMap(),
-                        orientation: widget.orientation,
-                        lastMoveUci: presentation.playedMoves.isEmpty
-                            ? null
-                            : presentation.playedMoves.last,
-                        enabled: !isPaused && !_writePending,
-                        onMoveSubmitted: _submitMove,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _PlayedMoves(moves: presentation.playedMoves),
-                  if (_error case final error?) ...[
-                    const SizedBox(height: 8),
-                    Semantics(liveRegion: true, child: Text(error)),
-                  ],
-                  const SizedBox(height: 12),
-                  if (isPaused) ...[
-                    if (widget.pauseOwnAttempt) ...[
-                      Semantics(
-                        liveRegion: true,
-                        child: Text('Attempt paused'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.icon(
-                        onPressed: _writePending
-                            ? null
-                            : () => _run(widget.controller.resume),
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Resume'),
-                      ),
-                    ],
-                  ] else
-                    PuzzleControls(
-                      mode: PuzzleControlsMode.active,
-                      enabled: !_writePending,
-                      onPause: _pause,
-                      onShowSolution: () => _run(widget.controller.reveal),
-                      onSkip: () => _run(widget.controller.skip),
-                    ),
-                ],
-              ),
+      body: StudyLayout(
+        board: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PuzzleHeader(
+              currentExercise: widget.currentExercise,
+              totalExercises: widget.totalExercises,
+              evaluation: evaluation,
             ),
-          ),
+            const SizedBox(height: 12),
+            PuzzleBoard(
+              fen: presentation.currentFen,
+              sideToMove: presentation.sideToMove,
+              legalDestinations: _legalDestinationMap(),
+              orientation: _orientation,
+              lastMoveUci: presentation.playedMoves.isEmpty
+                  ? null
+                  : presentation.playedMoves.last,
+              enabled: !isPaused && !_writePending,
+              onMoveSubmitted: _submitMove,
+            ),
+          ],
+        ),
+        controls: FlipBoardButton(
+          onPressed: () => setState(() {
+            _orientation = _orientation == PuzzleSide.white
+                ? PuzzleSide.black
+                : PuzzleSide.white;
+          }),
+        ),
+        details: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _PlayedMoves(moves: presentation.playedMoves),
+            if (_error case final error?)
+              Semantics(liveRegion: true, child: Text(error)),
+            const SizedBox(height: 16),
+            if (isPaused) ...[
+              if (widget.pauseOwnAttempt) ...[
+                const Text('Attempt paused'),
+                FilledButton.icon(
+                  onPressed: _writePending
+                      ? null
+                      : () => _run(widget.controller.resume),
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Resume'),
+                ),
+              ],
+            ] else
+              PuzzleControls(
+                mode: PuzzleControlsMode.active,
+                enabled: !_writePending,
+                onPause: _pause,
+                onShowSolution: () => _run(widget.controller.reveal),
+                onSkip: () => _run(widget.controller.skip),
+              ),
+          ],
         ),
       ),
     );
@@ -200,7 +204,7 @@ final class _PlayedMoves extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Your moves'),
+        Text('Your moves', style: Theme.of(context).textTheme.titleSmall),
         if (moves.isEmpty)
           const Text('No moves yet')
         else

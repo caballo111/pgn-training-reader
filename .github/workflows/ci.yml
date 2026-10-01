@@ -22,11 +22,16 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      - name: Check generated database code
+        run: |
+          dart run build_runner build
+          git diff --exit-code -- lib/data/database/app_database.g.dart
+
       - name: Check formatting
-        run: dart format --output=none --set-exit-if-changed lib test integration_test
+        run: dart format --output=none --set-exit-if-changed lib test integration_test tool
 
       - name: Analyze application and tests
-        run: flutter analyze lib test integration_test
+        run: flutter analyze lib test integration_test tool
 
       - name: Run unit and widget tests
         run: flutter test --no-pub test
@@ -38,6 +43,9 @@ jobs:
           name: puzzle-golden-failures
           path: test/widget/features/puzzle_solver/failures
           if-no-files-found: ignore
+
+      - name: Build Android debug application
+        run: flutter build apk --debug --no-pub
 
       - name: Compile Android integration tests
         shell: bash

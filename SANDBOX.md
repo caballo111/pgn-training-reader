@@ -46,6 +46,28 @@ sbx env rm --force .
 
 Removal retains project files and the global OAuth credential.
 
+## Switching between host and sandbox builds
+
+Flutter generates `.dart_tool/package_config.json`, plugin metadata and native
+asset/build caches with absolute SDK/cache paths. The shared workspace exposes
+these files to both machines, but the Mac host and Linux sandbox have different
+paths and native binaries. Regenerate these files when switching environments;
+package configuration from `/home/agent` cannot be used for a Mac build.
+
+On the host, use the pinned SDK and run:
+
+```sh
+fvm flutter clean
+fvm flutter pub get
+fvm flutter build apk --debug
+```
+
+Use equivalent plain `flutter` commands if the pinned SDK is already on PATH.
+Avoid `--no-pub` immediately after switching environments unless dependency
+resolution has already run in that environment. Sandbox validation should move
+its generated caches aside before handing the shared workspace back to the host.
+This affects generated build data, not imported application data or source files.
+
 ## Codex MCP compatibility
 
 SBX 0.45.1 generated unsupported `type` and `headers` fields for its MCP

@@ -145,6 +145,39 @@ void main() {
         );
       }
     });
+
+    test(
+      'limits persisted and streamed diagnostics across malformed neighbors',
+      () async {
+        final malformed = List.generate(
+          1005,
+          (i) => '[Event "broken-$i"]\n[White "unfinished\n1. e4 *',
+        ).join('\n');
+        final run = await _import(_bytes(malformed));
+        expect(run.result.diagnosticCount, 1000);
+        expect(run.streamDiagnostics, hasLength(1000));
+        expect(run.persistedDiagnostics, hasLength(1000));
+        expect(
+          (await run.db.select(run.db.importJobs).getSingle()).diagnosticCount,
+          1000,
+        );
+      },
+    );
+
+    test('oversized block is skipped and following block is still indexed', () async {
+      final before = '[Event "before"]\n1. e4 *\n';
+      final oversized =
+          '[Event "large"]\n${List.filled(8 * 1024 * 1024 + 32, 'x').join()} *\n';
+      final after = '[Event "after"]\n1. d4 *';
+      final run = await _import(_bytes('$before$oversized$after'));
+      final blocks = await run.db.select(run.db.pgnBlocks).get();
+      expect(blocks.map((block) => block.event), ['before', 'after']);
+      expect(run.result.indexedBlockCount, 2);
+      expect(
+        run.streamDiagnostics.map((diagnostic) => diagnostic.category),
+        contains(PgnImportDiagnosticCategory.malformedBlock),
+      );
+    });
   });
 }
 

@@ -29,6 +29,7 @@ void main() {
   testWidgets(
     'session shows the existing puzzle solver and pauses on app inactivity',
     (tester) async {
+      final semantics = tester.ensureSemantics();
       tester.view.physicalSize = const Size(320, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -159,6 +160,14 @@ void main() {
       clock.elapsed += const Duration(seconds: 5);
       await tester.pump(const Duration(seconds: 5));
       expect(find.text('Session 00:07'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('Session active time')).value,
+        '00:07',
+      );
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('Cycle active time')).value,
+        '00:07',
+      );
       expect(controller.state.session?.status, TrainingSessionStatus.paused);
       expect(
         tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
@@ -178,6 +187,7 @@ void main() {
       expect(find.text('Open session'), findsOneWidget);
       expect(service.closeCalls, 2);
       await tester.pumpWidget(const SizedBox.shrink());
+      semantics.dispose();
       controller.dispose();
     },
   );

@@ -329,6 +329,34 @@ requires separate evidence for stable length, repeatable range reads, access
 after restart, and source-change detection on the target provider. No MVP
 import will rely on that option.
 
+## T180 — Malformed PGN bounds
+
+The requirements and T005–T007 evidence require preserving tags, annotations,
+comments, recursive variations, and neighboring valid games, but they do not
+set numeric parser limits. Phase 16 therefore adopts explicit implementation
+bounds sized around the existing 8 MiB block-read cap:
+
+- One PGN block: 8 MiB. Larger blocks are skipped with one sanitized
+  diagnostic; indexing continues at a discovered next game boundary.
+- One tag pair: 64 KiB. The scanner measures source bytes; the decoded header
+  reader also caps a tag value at 64 Ki characters.
+- One brace or semicolon comment: 1 MiB. The scanner does not retain comment
+  data and marks an over-limit block malformed.
+- Variation nesting: 256 levels. The scanner tracks the full delimiter depth
+  to locate a safe block end but rejects the over-limit block before the
+  recursive content parser runs.
+- Content-tree conversion uses an explicit work stack so a long flat main line
+  does not consume the Dart call stack.
+- Header diagnostics: 32 per block; import diagnostics: 1,000 per job. Excess
+  diagnostics are omitted while scanning/indexing continues.
+
+These are conservative engineering caps, not PGN format maxima or empirically
+derived Android device thresholds. They keep malformed metadata, comments,
+recursive variation conversion, and diagnostic storage bounded while leaving
+normal chess games and the tested nested variation fixtures intact. Raise a
+cap only after measuring memory and stack use on the minimum supported Android
+device and retain the valid-neighbor recovery tests.
+
 ## T010 — Lifecycle signals and active-time policy
 
 **Decision (2026-09-28):** Observe Flutter's application lifecycle with
@@ -425,3 +453,15 @@ corpus is smaller than either target, so repeated blocks are expected and these
 fixtures measure scanner/index scaling rather than content uniqueness. T182
 records measured results for the 10,000-block target; the 100,000-block target
 is the stress target.
+
+### T182/T183 host-run limitation (2026-10-01)
+
+The reference device and its Woodpecker source are not attached to this host
+session. A separate sanitized synthetic benchmark was run with 10,000 and
+100,000 repeated 84-byte complete blocks to exercise the real importer,
+disk-backed Drift index, paginated search, and selected-block parser pipeline.
+Those host measurements are recorded in
+[`performance-results.md`](performance-results.md); they must not be treated
+as runs of the Woodpecker-derived target fixtures or as reference-device
+results. The exact source-derived fixture requirement above remains in force
+for the Galaxy S25 validation.

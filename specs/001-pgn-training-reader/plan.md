@@ -646,3 +646,24 @@ After reviewing and completing the missing specification and Phase 0/1 artifacts
 ```
 
 This should generate `specs/001-pgn-training-reader/tasks.md` with dependency-ordered, independently testable implementation tasks.
+
+## Phase 16/17 review (2026-10-01)
+
+Owner authorized Phases 16/17 and deferred Phase 15 portable training-history
+export/restore. No account/synchronization feature is present; export-before-sync
+remains a future gate under Principle VIII. The owner selected GPL-3.0-or-later;
+LICENSE, THIRD_PARTY_NOTICES.md and docs/distribution-license-review.md record
+the decision and artifact/source obligations.
+
+Current UI/domain categories are Puzzle/Text/Unsupported. Legacy authored
+Instruction/Demonstration content is supported in the Text reader, with original
+PGN headers/bytes retained and no scored attempts for reading. Existing schema
+6/7 migration evidence covers compatibility; spec FR-016/020 now describe the
+implemented consolidation. History remains separate from canonical content.
+
+The final Constitution Check and requirement/success-criterion traceability are
+in [release-review.md](release-review.md). Host hardening, semantics/layout and
+benchmark evidence cannot accept reference-device requirements. Android build,
+original-corpus measurements and physical TalkBack/process-death acceptance
+remain pending. This review does not approve binary distribution. Future main
+screen/icon/board-design proposals are tracked in [backlog](../backlog.md).

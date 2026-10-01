@@ -148,8 +148,24 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
                         Text(
                           'Cycle progress: ${current.clamp(0, total)} of $total',
                         ),
-                        Text('Session ${_format(state.sessionActiveTime)}'),
-                        Text('Cycle ${_format(state.cycleActiveTime)}'),
+                        Semantics(
+                          label: 'Session active time',
+                          value: _format(state.sessionActiveTime),
+                          child: ExcludeSemantics(
+                            child: Text(
+                              'Session ${_format(state.sessionActiveTime)}',
+                            ),
+                          ),
+                        ),
+                        Semantics(
+                          label: 'Cycle active time',
+                          value: _format(state.cycleActiveTime),
+                          child: ExcludeSemantics(
+                            child: Text(
+                              'Cycle ${_format(state.cycleActiveTime)}',
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

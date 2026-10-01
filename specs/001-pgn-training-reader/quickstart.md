@@ -1,39 +1,59 @@
-# PGN Scanner Memory Benchmark
+# Quickstart
 
-Run the scanner benchmark from the repository root with the pinned Flutter
-SDK's Dart executable:
-
-```sh
-fvm dart tool/pgn_scanner_memory_benchmark.dart
-```
-
-By default, it scans generated 10,000-block and 100,000-block PGNs. Each size
-runs in a fresh Dart process. The executable generates repeated PGN bytes into
-a fixed 64 KiB buffer, sends them to `PgnBoundaryScanner`, counts and discards
-each returned range list, and does not create a PGN file or retain all ranges.
-It reports total input bytes, block throughput, baseline RSS, peak RSS, and
-growth over baseline. On Linux, RSS values come from `/proc/self/status`; other platforms use Dart `ProcessInfo` memory counters.
-
-Each process also streams a 256 MiB brace comment through the scanner using
-fixed-size chunks. This checks that the scanner does not retain a huge comment
-or line. The benchmark fails if the largest corpus run's RSS growth exceeds
-64 MiB or grows more than 24 MiB above the smallest run's growth. RSS sampling
-is host dependent; use the same machine and Dart build when comparing results.
-
-To run different block counts, pass them as arguments. An optional million
-block run is:
+Use FVM with `.fvmrc`: Flutter **3.47.5**, bundled Dart **3.13.4**. Android's
+minimum supported API is 24. Install a compatible Android SDK/JDK 17 and accept
+SDK licenses for device builds. Do not upgrade dependencies independently of
+the pinned `pubspec.lock` during validation.
 
 ```sh
-fvm dart tool/pgn_scanner_memory_benchmark.dart 10000 100000 1000000
+fvm install
+fvm flutter pub get
+fvm flutter doctor -v
+fvm dart run build_runner build
+fvm dart format --output=none --set-exit-if-changed lib test integration_test tool
+fvm flutter analyze lib test integration_test tool
+fvm flutter test --no-pub test
 ```
 
-The workload is synthetic and measures scanner memory and throughput only; it
-does not measure parsing, database writes, Android UI memory, or import speed
-on a reference device.
+After generation, `git diff --exit-code -- lib/data/database/app_database.g.dart`
+checks that committed generated code remains current. If Flutter is installed
+directly, use its `bin/flutter` and `bin/dart` equivalents of the FVM commands.
 
-Validated on 2026-09-29 in the Linux ARM64 development sandbox with Flutter
-3.47.5 / Dart 3.13.4: 10,000, 100,000, and 1,000,000 blocks used 3.5, 10.0,
-and 8.6 MiB of additional peak RSS, respectively. Input sizes were 0.4, 4.0,
-and 40.1 MiB. The 256 MiB comment stress also passed. These host measurements
-support bounded scanner memory; reference Android import targets still require
-device measurements.
+## Fixture import and Android acceptance
+
+Copy the sanitized PGNs in `samples/` to the device's Downloads directory. Run
+`fvm flutter devices`, then `fvm flutter run -d <device-id>`. Select Import PGN
+from the library and choose a sample. Read Text, solve both colors/FEN starts,
+create a mixed set, pause/resume across restart and inspect reports. Test toolbar
+and system Back, TalkBack, large text, landscape and 320-pixel portrait controls.
+
+```sh
+fvm flutter build apk --debug --no-pub
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+adb shell am force-stop lberrios.pgntrainingreader
+```
+
+The repository has host workflow integration coverage inside `test/`; the
+`integration_test/` directory currently has no device test entry point and no
+`integration_test` SDK dependency. `flutter test integration_test -d <device-id>`
+is the command to use after a device harness is added; it is not a passing check
+for this release. Record the manual device run in release-review.md and the
+open assessment checklist. Force-stop/relaunch verifies durable restart state,
+not orderly lifecycle closure alone.
+
+## Benchmarks
+
+```sh
+fvm dart run tool/pgn_scanner_memory_benchmark.dart 10000 100000
+fvm flutter test --no-pub test/performance/pgn_performance_benchmark_test.dart
+fvm flutter test --no-pub --dart-define=PGN_BENCHMARK_BLOCKS=10000 test/performance/pgn_performance_benchmark_test.dart
+fvm flutter test --no-pub --dart-define=PGN_BENCHMARK_BLOCKS=100000 test/performance/pgn_performance_benchmark_test.dart
+```
+
+The full pipeline benchmark and reproducible host results are documented in
+[performance-results.md](performance-results.md). Reference acceptance uses
+research.md's Galaxy S25 and original corpus, repeated to exact 10k/100k block
+counts without rewriting source blocks. Generated benchmark files stay outside
+version control. Synthetic host results cannot establish Android p95/memory or
+frame-rate acceptance. Run benchmark smoke checks before release and compare
+against the same build, corpus, device and configuration.

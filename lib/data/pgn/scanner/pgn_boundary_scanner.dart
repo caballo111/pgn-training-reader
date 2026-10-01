@@ -20,6 +20,11 @@ class PgnBlockRange {
 /// Feed source bytes to [consume]. Only newly completed ranges are returned.
 /// [startOffset] supports resuming at a previously saved safe checkpoint.
 class PgnBoundaryScanner {
+  /// Import bounds selected for predictable memory and parser stack use.
+  static const int maximumTagBytes = 64 * 1024;
+  static const int maximumCommentBytes = 1024 * 1024;
+  static const int maximumVariationDepth = 256;
+
   PgnBoundaryScanner({int startOffset = 0})
     : state = PgnScannerState(
         absoluteOffset: startOffset,
@@ -37,6 +42,7 @@ class PgnBoundaryScanner {
   String? _diagnostic;
   final StringBuffer _token = StringBuffer();
   int _tokenLength = 0;
+  int _lexicalBytes = 0;
 
   /// Last offset known not to lie inside an unresolved game.
   int get safeCheckpoint => _candidateStart ?? _triviaStart ?? _safeCheckpoint;
@@ -64,16 +70,28 @@ class PgnBoundaryScanner {
 
       final c = String.fromCharCode(byte);
       if (state.inSemicolonComment) {
+        _lexicalBytes++;
+        if (_lexicalBytes > maximumCommentBytes) {
+          _markMalformed('comment_too_large');
+        }
         if (byte == 10 || byte == 13) {
           state.inSemicolonComment = false;
           _triviaStart = null;
+          _lexicalBytes = 0;
         }
       } else if (state.inBraceComment) {
+        _lexicalBytes++;
+        if (_lexicalBytes > maximumCommentBytes) {
+          _markMalformed('comment_too_large');
+        }
         if (byte == 125) {
           state.inBraceComment = false;
           _triviaStart = null;
+          _lexicalBytes = 0;
         }
       } else if (state.inTagString) {
+        _lexicalBytes++;
+        if (_lexicalBytes > maximumTagBytes) _markMalformed('tag_too_large');
         if (state.tagEscapePending) {
           state.tagEscapePending = false;
           if (byte == 10 || byte == 13) {
@@ -81,11 +99,13 @@ class PgnBoundaryScanner {
             _diagnostic ??= 'unterminated_tag_string';
             state.inTag = false;
             state.inTagString = false;
+            _lexicalBytes = 0;
           }
         } else if (byte == 92) {
           state.tagEscapePending = true;
         } else if (byte == 34) {
           state.inTagString = false;
+          if (!state.inTag) _lexicalBytes = 0;
         } else if (byte == 10 || byte == 13) {
           _malformed = true;
           _diagnostic ??= 'unterminated_tag_string';
@@ -93,24 +113,37 @@ class PgnBoundaryScanner {
           state.inTagString = false;
         }
       } else if (state.inTag) {
+        _lexicalBytes++;
+        if (_lexicalBytes > maximumTagBytes) _markMalformed('tag_too_large');
         if (byte == 34) state.inTagString = true;
-        if (byte == 93) state.inTag = false;
+        if (byte == 93) {
+          state.inTag = false;
+          _lexicalBytes = 0;
+        }
         if ((byte == 10 || byte == 13) && state.inTag) {
           _malformed = true;
           _diagnostic ??= 'unterminated_tag';
           state.inTag = false;
+          _lexicalBytes = 0;
         }
       } else if (byte == 123) {
         _flushToken(emitted, offset);
         if (_candidateStart == null) _triviaStart = offset;
         state.inBraceComment = true;
+        _lexicalBytes = 1;
       } else if (byte == 59) {
         _flushToken(emitted, offset);
         if (_candidateStart == null) _triviaStart = offset;
         state.inSemicolonComment = true;
+        _lexicalBytes = 1;
       } else if (byte == 40) {
         _flushToken(emitted, offset);
-        if (_candidateStart != null) state.variationDepth++;
+        if (_candidateStart != null) {
+          state.variationDepth++;
+          if (state.variationDepth > maximumVariationDepth) {
+            _markMalformed('variation_too_deep');
+          }
+        }
       } else if (byte == 41) {
         _flushToken(emitted, offset);
         if (state.variationDepth > 0) {
@@ -201,6 +234,11 @@ class PgnBoundaryScanner {
     _hasMovetext = false;
     _malformed = false;
     _diagnostic = null;
+  }
+
+  void _markMalformed(String code) {
+    _malformed = true;
+    _diagnostic ??= code;
   }
 
   void _appendToken(String c) {

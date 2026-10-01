@@ -149,7 +149,13 @@ final class _PuzzleSolutionReviewViewState
       details: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('Result: ${_outcomeLabel(widget.presentation)}'),
+          Semantics(
+            label: 'Puzzle outcome',
+            value: _outcomeLabel(widget.presentation),
+            child: ExcludeSemantics(
+              child: Text('Result: ${_outcomeLabel(widget.presentation)}'),
+            ),
+          ),
           if (widget.presentation.comments.isNotEmpty) ...[
             const SizedBox(height: 12),
             const Text(

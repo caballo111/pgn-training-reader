@@ -22,6 +22,13 @@ class StudyLayout extends StatelessWidget {
         final wide =
             constraints.maxWidth >= 840 ||
             constraints.maxWidth > constraints.maxHeight;
+        final portraitBoardLimit =
+            constraints.maxHeight -
+            (controls == null
+                ? 0.0
+                : 56.0 * MediaQuery.textScalerOf(context).scale(1.0)) -
+            12 -
+            140;
         final size = wide
             ? math.max(
                 80.0,
@@ -33,7 +40,10 @@ class StudyLayout extends StatelessWidget {
                   ),
                 ),
               )
-            : constraints.maxWidth;
+            : math.min(
+                constraints.maxWidth,
+                math.max(80.0, portraitBoardLimit),
+              );
         final position = Column(
           mainAxisSize: MainAxisSize.min,
           children: [

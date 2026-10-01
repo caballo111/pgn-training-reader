@@ -36,6 +36,7 @@ final class DriftPgnImportService implements PgnImportService {
   static const int scannerVersion = 1;
   static const int _chunkSize = 64 * 1024;
   static const int _maximumBlockBytes = 8 * 1024 * 1024;
+  static const int _maximumDiagnostics = 1000;
   static const int _batchSize = 50;
 
   final AppDatabase database;
@@ -660,6 +661,10 @@ final class DriftPgnImportService implements PgnImportService {
             checkpoint == safeCheckpoint) {
           return;
         }
+        final diagnosticRoom = max(0, _maximumDiagnostics - diagnostics);
+        final committedDiagnostics = batchDiagnostics
+            .take(diagnosticRoom)
+            .toList(growable: false);
         await database.transaction(() async {
           for (final item in batchBlocks) {
             final b = item.index;
@@ -713,7 +718,7 @@ final class DriftPgnImportService implements PgnImportService {
               ),
             );
           }
-          for (final diagnostic in batchDiagnostics) {
+          for (final diagnostic in committedDiagnostics) {
             await database
                 .into(database.importDiagnostics)
                 .insert(
@@ -739,7 +744,7 @@ final class DriftPgnImportService implements PgnImportService {
               blocksScanned: Value(ordinal),
               blocksIndexed: Value(indexed + batchBlocks.length),
               blocksSkipped: Value(skipped),
-              diagnosticCount: Value(diagnostics + batchDiagnostics.length),
+              diagnosticCount: Value(diagnostics + committedDiagnostics.length),
               safeCheckpoint: Value(checkpoint),
             ),
           );
@@ -754,10 +759,10 @@ final class DriftPgnImportService implements PgnImportService {
           );
         });
         indexed += batchBlocks.length;
-        for (final diagnostic in batchDiagnostics) {
+        for (final diagnostic in committedDiagnostics) {
           operation.emitDiagnostic(diagnostic);
         }
-        diagnostics += batchDiagnostics.length;
+        diagnostics += committedDiagnostics.length;
         batchBlocks.clear();
         batchDiagnostics.clear();
         batchDuplicateMarks.clear();
@@ -873,8 +878,12 @@ final class DriftPgnImportService implements PgnImportService {
       }
       await commit(bytesRead);
       if (reindexing) {
-        final unresolved = await _finishReindex(sourceId, jobId);
-        if (unresolved != null) {
+        final unresolved = await _finishReindex(
+          sourceId,
+          jobId,
+          allowDiagnostic: diagnostics < _maximumDiagnostics,
+        );
+        if (unresolved != null && diagnostics < _maximumDiagnostics) {
           diagnostics++;
           operation.emitDiagnostic(unresolved);
         }
@@ -924,7 +933,8 @@ final class DriftPgnImportService implements PgnImportService {
       final message = isFileFailure
           ? 'The source could not be read. Repair or relink it, then retry.'
           : 'Indexing stopped after a storage error. Previously committed blocks are preserved; resume to continue.';
-      var failureDiagnosticCount = diagnostics + 1;
+      var failureDiagnosticCount = min(_maximumDiagnostics, diagnostics + 1);
+      var emitFailureDiagnostic = diagnostics < _maximumDiagnostics;
       var committedCheckpoint = safeCheckpoint;
       var committedIndexed = indexed;
       try {
@@ -939,7 +949,12 @@ final class DriftPgnImportService implements PgnImportService {
           // may include ranges from the failed, uncommitted batch.
           committedCheckpoint = savedJob.safeCheckpoint;
           committedIndexed = savedJob.blocksIndexed;
-          failureDiagnosticCount = savedJob.diagnosticCount + 1;
+          emitFailureDiagnostic =
+              savedJob.diagnosticCount < _maximumDiagnostics;
+          failureDiagnosticCount = min(
+            _maximumDiagnostics,
+            savedJob.diagnosticCount + 1,
+          );
           final d = PgnImportDiagnostic(
             severity: PgnImportDiagnosticSeverity.error,
             category: category,
@@ -947,21 +962,23 @@ final class DriftPgnImportService implements PgnImportService {
             message: message,
           );
           await database.transaction(() async {
-            await database
-                .into(database.importDiagnostics)
-                .insert(
-                  ImportDiagnosticsCompanion.insert(
-                    id: idGenerator.generateId(),
-                    importJobId: jobId,
-                    severity: d.severity.name,
-                    blockOrdinal: const Value.absent(),
-                    startOffset: const Value.absent(),
-                    endOffset: const Value.absent(),
-                    diagnosticCode: d.category.name,
-                    sanitizedMessage: d.message,
-                    createdAtMicros: _nowMicros(),
-                  ),
-                );
+            if (savedJob.diagnosticCount < _maximumDiagnostics) {
+              await database
+                  .into(database.importDiagnostics)
+                  .insert(
+                    ImportDiagnosticsCompanion.insert(
+                      id: idGenerator.generateId(),
+                      importJobId: jobId,
+                      severity: d.severity.name,
+                      blockOrdinal: const Value.absent(),
+                      startOffset: const Value.absent(),
+                      endOffset: const Value.absent(),
+                      diagnosticCode: d.category.name,
+                      sanitizedMessage: d.message,
+                      createdAtMicros: _nowMicros(),
+                    ),
+                  );
+            }
             await (database.update(
               database.importJobs,
             )..where((r) => r.id.equals(jobId))).write(
@@ -995,6 +1012,7 @@ final class DriftPgnImportService implements PgnImportService {
         indexedBlockCount: committedIndexed,
         diagnosticCount: failureDiagnosticCount,
         safeCheckpoint: committedCheckpoint,
+        emitDiagnostic: emitFailureDiagnostic,
       );
     } finally {
       _activeSources.remove(sourceId);
@@ -1005,8 +1023,9 @@ final class DriftPgnImportService implements PgnImportService {
 
   Future<PgnImportDiagnostic?> _finishReindex(
     String sourceId,
-    String jobId,
-  ) async {
+    String jobId, {
+    required bool allowDiagnostic,
+  }) async {
     final baseline = await database
         .customSelect(
           "SELECT id, ordinal, authored_exercise_id, fallback_identity_key, exercise_id, "
@@ -1132,7 +1151,7 @@ final class DriftPgnImportService implements PgnImportService {
         "UPDATE pgn_blocks SET reindex_job_id = NULL WHERE source_id = ? AND reindex_job_id = ?",
         [sourceId, 'baseline:$jobId'],
       );
-      if (unresolvedLegacyFallback) {
+      if (unresolvedLegacyFallback && allowDiagnostic) {
         await database
             .into(database.importDiagnostics)
             .insert(
@@ -1147,7 +1166,7 @@ final class DriftPgnImportService implements PgnImportService {
             );
       }
     });
-    if (!unresolvedLegacyFallback) return null;
+    if (!unresolvedLegacyFallback || !allowDiagnostic) return null;
     return PgnImportDiagnostic(
       severity: PgnImportDiagnosticSeverity.warning,
       category: PgnImportDiagnosticCategory.unresolvedFallbackIdentity,
@@ -1331,6 +1350,7 @@ final class _ImportOperation implements PgnImportOperation {
     int safeCheckpoint = 0,
     PgnImportDiagnosticCategory category = PgnImportDiagnosticCategory.other,
     String? sourceId,
+    bool emitDiagnostic = true,
   }) async {
     final result = PgnImportResult(
       jobId: jobId,
@@ -1345,7 +1365,7 @@ final class _ImportOperation implements PgnImportOperation {
       sourceId: sourceId,
       message: message,
     );
-    if (!_diagnostics.isClosed) _diagnostics.add(d);
+    if (emitDiagnostic && !_diagnostics.isClosed) _diagnostics.add(d);
     complete(result, safeCheckpoint: safeCheckpoint);
   }
 

@@ -141,6 +141,40 @@ void main() {
       expect(ranges.first.diagnosticCode, 'missing_game_termination');
     }
   });
+
+  test('oversized tag and comment blocks are quarantined with valid neighbors retained', () {
+    final source = utf8.encode(
+      '[Event "before"]\n1. e4 *\n'
+      '[Event "${_repeat('x', PgnBoundaryScanner.maximumTagBytes + 10)}"]\n1. d4 *\n'
+      '[Event "comment"]\n1. c4 {${_repeat('x', PgnBoundaryScanner.maximumCommentBytes + 10)}} *\n'
+      '[Event "after"]\n1. Nf3 *',
+    );
+    final ranges = _scan(source, 4096);
+    expect(ranges, hasLength(4));
+    expect(ranges.map((range) => range.isMalformed), [
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(ranges[1].diagnosticCode, 'tag_too_large');
+    expect(ranges[2].diagnosticCode, 'comment_too_large');
+    expect(_blockText(source, ranges.first), contains('[Event "before"]'));
+    expect(_blockText(source, ranges.last), contains('[Event "after"]'));
+  });
+
+  test('excessive variation nesting is malformed and next game survives', () {
+    final nested = _repeat('(', PgnBoundaryScanner.maximumVariationDepth + 1);
+    final source = utf8.encode(
+      '[Event "deep"]\n1. e4 $nested 1. d4 ${_repeat(')', nested.length)} *\n'
+      '[Event "after"]\n1. d4 *',
+    );
+    final ranges = _scan(source, 7);
+    expect(ranges, hasLength(2));
+    expect(ranges.first.isMalformed, isTrue);
+    expect(ranges.first.diagnosticCode, 'variation_too_deep');
+    expect(_blockText(source, ranges.last), contains('[Event "after"]'));
+  });
 }
 
 List<PgnBlockRange> _scan(List<int> source, int chunkSize) {
@@ -169,3 +203,5 @@ List<(int, int, bool, String?)> _tuples(List<PgnBlockRange> ranges) => ranges
 
 String _blockText(List<int> source, PgnBlockRange range) =>
     utf8.decode(source.sublist(range.startOffset, range.endOffset));
+
+String _repeat(String value, int count) => List.filled(count, value).join();

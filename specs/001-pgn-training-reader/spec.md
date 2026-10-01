@@ -372,8 +372,10 @@ And the user receives an actionable recovery path rather than silent data loss.
 - **FR-015**: When classification is inferred, the application MUST mark it as
   inferred and MUST allow a user override without altering unrelated PGN
   content.
-- **FR-016**: Every indexed block MUST have an explicit classification:
-  `Puzzle`, `Instruction`, `Demonstration`, or `Unsupported`.
+- **FR-016**: Every indexed block MUST have an explicit behavior classification:
+  `Puzzle`, `Text`, or `Unsupported`. Authored `Instruction` and
+  `Demonstration` are supported as Text and retained in source/header metadata;
+  their consolidation MUST NOT alter the PGN or create puzzle scores.
 - **FR-017**: The application MUST derive the active side and starting
   position from the PGN/FEN content, not from names, titles, comments, or
   duplicated metadata.
@@ -390,8 +392,8 @@ And the user receives an actionable recovery path rather than silent data loss.
   and pagination. Previous MUST be disabled on the first block and Next on
   the last block.
   Navigation MUST preserve unfinished puzzle practice and existing history.
-- **FR-020**: The current mode MUST be unmistakable as Reading, Instruction,
-  Demonstration, or Puzzle solving.
+- **FR-020**: The current mode MUST be unmistakable as Text reading or Puzzle solving;
+  authored instructional/demonstration metadata MUST remain available in reading.
 - **FR-021**: While solving or continuing practice after a wrong move, the
   interface MUST conceal solution moves, future solution positions, solution
   comments, and answer-revealing navigation or accessibility labels. Terminal
@@ -662,3 +664,17 @@ attempt data, or telemetry without explicit informed consent. Destructive
 operations must state their scope. Standard PGN compatibility is a product
 requirement; application-specific `X-` metadata may be ignored by other PGN
 readers without making the underlying chess content unreadable.
+
+## Phase 16/17 scope clarification (2026-10-01)
+
+The owner deferred Phase 15 portable training-history export/restore and
+authorized hardening/documentation work to proceed. No sync/account feature
+is included, so FR-041's export-before-sync obligation remains future work.
+Data portability is not claimed for this version. Existing Text behavior
+consolidates legacy Instruction/Demonstration into a non-scored reader category
+while preserving the authored classification and original PGN bytes. FR-016/020
+now describe that implemented behavior; schema-v6 migration tests establish
+compatibility. Numeric input limits are documented in research.md. Future UI
+and launcher-icon ideas are captured in ../backlog.md rather than accepted
+requirements. Release review distinguishes automated evidence from pending
+reference-device acceptance.

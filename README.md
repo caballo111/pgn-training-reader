@@ -1,44 +1,44 @@
 # PGN Training Reader
 
-An offline-first Flutter app for reading PGN libraries and training with chess
-puzzles.
+A local Flutter app for reading PGN books and practicing authored chess puzzles
+in repeatable training cycles. Android is the first supported platform.
 
-## Content types
+Import PGN into a managed local copy, browse indexed content, read annotated
+moves/variations, or solve concealed puzzles. Build ordered sets across books,
+resume cycles across days, and review transparent accuracy and active-time
+reports. Casual book practice stays separate from cycle scoring.
 
-The library and training sets use two content types: **Puzzle** and **Text**.
-Puzzles are solved and scored. Text is study material, including lessons and
-annotated games; it is read and explicitly completed without creating puzzle
-attempts or scores. Text entries may include positions, moves, and variations
-for board navigation.
+Content categories are **Puzzle** and **Text**. Legacy `Instruction` and
+`Demonstration` tags map to Text; text study does not create puzzle scores.
+Unknown types and unsupported chess variants are diagnosed. Original PGN bytes,
+headers, comments, NAGs, FEN positions and authored variations remain canonical.
+Custom `X-` tags describe content/identity/filter metadata; see the tag reference.
 
-PGN files that use the legacy `X-ContentType` values `Instruction` or
-`Demonstration` are read as Text. New files should use `X-ContentType "Text"`.
-
-## Development setup
-
-Install [FVM](https://fvm.app/documentation/getting-started/installation), then
-from the repository root install the Flutter SDK version pinned in `.fvmrc` and
-fetch packages:
+## Development and documentation
 
 ```sh
 fvm install
 fvm flutter pub get
-```
-
-Run Flutter and Dart commands through FVM so they use the pinned SDK, for
-example `fvm flutter run` or `fvm dart format .`. The pin currently uses the
-latest stable Flutter release, 3.47.5.
-
-Generate Drift database code after changing the schema:
-
-```sh
 fvm dart run build_runner build
+fvm flutter test --no-pub test
 ```
 
-## Formatting conventions
+`.fvmrc` pins Flutter 3.47.5 with Dart 3.13.4. Use the pinned formatter and
+`.editorconfig` conventions (UTF-8, LF, final newline, spaces).
 
-`.editorconfig` sets UTF-8 encoding, LF line endings, final newlines, and
-space-based indentation. Dart, YAML, JSON, and Markdown use two-space
-indentation; Gradle and Kotlin use four spaces. Use the pinned Dart formatter
-(`fvm dart format .`) as the authority for Dart formatting. Markdown trailing
-spaces are preserved for intentional line breaks.
+- [Setup, generation, validation and Android commands](specs/001-pgn-training-reader/quickstart.md)
+- [Custom PGN tags](docs/custom-pgn-tags.md) and [sanitized samples](samples/)
+- [Training model and scoring](docs/training-model.md)
+- [Privacy and local storage](docs/privacy-and-data.md)
+- [Release review and pending acceptance](specs/001-pgn-training-reader/release-review.md)
+- [Future product ideas](specs/backlog.md)
+
+Core workflows need no server or account. Training-history backup/export and
+restore (Phase 15) are deferred. Stockfish, engine-equivalent puzzle validation,
+sync/accounts and analysis features are outside the MVP. Device accessibility,
+reference performance and final Android release checks remain acceptance gates;
+read the release review before distributing a build.
+
+Application code is **GPL-3.0-or-later**; see [LICENSE](LICENSE),
+[third-party notices](THIRD_PARTY_NOTICES.md), and
+[distribution obligations](docs/distribution-license-review.md).

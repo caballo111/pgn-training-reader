@@ -323,7 +323,11 @@ For every task:
 
 ---
 
-# Phase 15: Backup and Export of Training History
+# Phase 15: Backup and Export of Training History — Deferred
+
+Owner decision (2026-10-01): defer T170–T176 and proceed with Phases 16/17.
+There is no implemented portable history export/restore. Revisit before
+synchronization/account features; see [backlog](../backlog.md).
 
 - [ ] T170 [US6] Define a versioned, documented training-history export format in `specs/001-pgn-training-reader/contracts/training-history-export.md`. Exclude raw PGN content unless explicitly selected.
 - [ ] T171 [US6] Implement export of sets, set items, cycles, sessions, attempts, outcomes, timing segments, and stable exercise references.
@@ -339,34 +343,39 @@ For every task:
 
 # Phase 16: Accessibility, Performance, and Hardening
 
-- [ ] T177 [P] Audit every screen for labels, focus order, large text, touch-target size, and non-color status indicators. Record results in `specs/001-pgn-training-reader/accessibility-review.md`.
-- [ ] T178 [P] Add semantics tests for side to move, timer, outcome, import progress, and puzzle controls.
-- [ ] T179 [P] Add a static production-log audit test or lint check that prevents calls containing raw PGN, comments, SAN solution lines, paths, or URIs.
-- [ ] T180 Add malformed-input limits for tag length, comment size, variation depth, block size, and diagnostic count. Values must come from `spec.md` or documented research.
-- [ ] T181 Add performance instrumentation for import throughput, query latency, selected-block load latency, and peak-memory sampling.
-- [ ] T182 Run the 10,000-block benchmark and record results in `specs/001-pgn-training-reader/performance-results.md`.
-- [ ] T183 Run the 100,000-block benchmark and record results. If a target fails, create a focused remediation task rather than broad optimization.
-- [ ] T184 Optimize only measured bottlenecks. Each optimization must include a before/after benchmark and regression test where practical.
-- [ ] T185 Test app behavior with low storage, cancelled import, corrupted database copy, interrupted migration, and process death.
-- [ ] T186 Add a dependency and license inventory to `THIRD_PARTY_NOTICES.md` or the repository's chosen notice format.
-- [ ] T187 Complete the distribution-license review required by the constitution and record the application licensing decision.
+- [x] T177 [P] Audit every screen for labels, focus order, large text, touch-target size, and non-color status indicators. Record results in `specs/001-pgn-training-reader/accessibility-review.md`.
+- [x] T178 [P] Add semantics tests for side to move, timer, outcome, import progress, and puzzle controls.
+- [x] T179 [P] Add a static production-log audit test or lint check that prevents calls containing raw PGN, comments, SAN solution lines, paths, or URIs.
+- [x] T180 Add malformed-input limits for tag length, comment size, variation depth, block size, and diagnostic count. Values must come from `spec.md` or documented research.
+- [x] T181 Add performance instrumentation for import throughput, query latency, selected-block load latency, and peak-memory sampling.
+- [ ] T182 Run the reference-corpus 10,000-block benchmark and record results in `specs/001-pgn-training-reader/performance-results.md`. Supplemental synthetic host 10,000-block run passed; Galaxy S25/original-corpus validation pending.
+- [ ] T183 Run the reference-corpus 100,000-block benchmark and record results. Supplemental synthetic host 100,000-block run passed; Galaxy S25/original-corpus validation pending. If a target fails, create a focused remediation task rather than broad optimization.
+- [x] T184 Optimize only measured bottlenecks. Host measurements did not establish a representative bottleneck requiring optimization, so no performance refactor was added. Each future optimization must include a before/after benchmark and regression test where practical.
+- [ ] T185 Test app behavior with low storage, cancelled import, corrupted database copy, interrupted migration, and process death. Host injected-storage/cancellation tests, corrupted-copy preservation, migration rollback/retry, and durable state recreation pass; actual Android process eviction/force-stop validation remains pending (see resilience-review.md).
+- [x] T186 Add a dependency and license inventory to `THIRD_PARTY_NOTICES.md` or the repository's chosen notice format.
+- [x] T187 Complete the distribution-license review required by the constitution and record the application licensing decision.
 
-**Phase 16 checkpoint**: Accessibility, performance, resilience, and license obligations are documented and tested.
+**Phase 16 checkpoint**: Host implementation/evidence is recorded in
+[accessibility-review.md](accessibility-review.md),
+[performance-results.md](performance-results.md),
+[resilience-review.md](resilience-review.md), and the distribution license review.
+Physical accessibility and reference Android performance remain pending; see
+[release-review.md](release-review.md).
 
 ---
 
 # Phase 17: Documentation and Release Readiness
 
-- [ ] T188 Create `specs/001-pgn-training-reader/quickstart.md` with pinned setup, code generation, test, fixture import, benchmark, and Android integration-test commands.
-- [ ] T189 Update `README.md` with project purpose, supported content types, custom PGN tags, local-first behavior, and current limitations.
-- [ ] T190 Create `docs/custom-pgn-tags.md` documenting `X-ContentType`, `X-ExerciseId`, `X-Section`, `X-Sequence`, `X-Theme`, `X-Difficulty`, and every implemented custom tag, including examples.
-- [ ] T191 Create `docs/training-model.md` explaining Collection, Set, Cycle, Session, Attempt, active time, and multi-day behavior.
-- [ ] T192 Create `docs/privacy-and-data.md` explaining where PGNs, indexes, attempts, diagnostics, and exports are stored.
-- [ ] T193 Add sanitized sample PGNs for Puzzle, Instruction, Demonstration, FEN-start exercise, and alternative accepted variations.
-- [ ] T194 Run full formatting, static analysis, unit tests, widget tests, integration tests, database generation checks, and benchmark smoke tests.
-- [ ] T195 Perform a final Constitution Check and record it in `plan.md` or a release review artifact.
-- [ ] T196 Verify every functional requirement and success criterion in `spec.md`. Link each one to passing tests or documented manual validation.
-- [ ] T197 Prepare the MVP release notes with implemented features, known limitations, deferred analysis features, data compatibility, and upgrade notes.
+- [x] T188 Create `specs/001-pgn-training-reader/quickstart.md` with pinned setup, code generation, test, fixture import, benchmark, and Android integration-test commands.
+- [x] T189 Update `README.md` with project purpose, supported content types, custom PGN tags, local-first behavior, and current limitations.
+- [x] T190 Create `docs/custom-pgn-tags.md` documenting `X-ContentType`, `X-ExerciseId`, `X-Section`, `X-Sequence`, `X-Theme`, `X-Difficulty`, and every implemented custom tag, including examples.
+- [x] T191 Create `docs/training-model.md` explaining Collection, Set, Cycle, Session, Attempt, active time, and multi-day behavior.
+- [x] T192 Create `docs/privacy-and-data.md` explaining where PGNs, indexes, attempts, diagnostics, and exports are stored.
+- [x] T193 Add sanitized sample PGNs for Puzzle, Instruction, Demonstration, FEN-start exercise, and alternative accepted variations.
+- [ ] T194 Run full formatting, static analysis, unit tests, widget tests, integration tests, database generation checks, and benchmark smoke tests. Host checks pass: all 353 tests including workflow integration and benchmark smoke, analysis/formatting, unchanged generated Drift output. Android build is blocked by missing SDK; no device integration harness exists. Device checks remain pending.
+- [x] T195 Perform a final Constitution Check and record it in `plan.md` or a release review artifact. Recorded in release-review.md with release acceptance pending for explicit physical-device/distribution gates.
+- [x] T196 Verify every functional requirement and success criterion in `spec.md`. Complete traceability in release-review.md links automated evidence and explicitly identifies unvalidated/partial requirements; it does not claim all device acceptance passed.
+- [x] T197 Prepare the MVP release notes with implemented features, known limitations, deferred analysis features, data compatibility, and upgrade notes.
 
 ---
 
@@ -388,8 +397,7 @@ Phase 0 specification and research
   -> Phase 12 sessions/timing
   -> Phase 13 reporting
   -> Phase 14 recovery
-  -> Phase 15 backup/export
-  -> Phase 16 hardening
+  -> Phase 16 hardening (Phase 15 backup/export deferred by owner)
   -> Phase 17 release readiness
 ```
 
@@ -490,6 +498,28 @@ The feature is complete when:
 - Multi-day timing tests prove idle intervals are excluded.
 - Attempt history remains append-only.
 - Source changes cannot cause silent stale-offset reads.
-- Training history can be backed up and restored.
+- Deferred training-history backup/restore is accurately documented; it must
+  be implemented before synchronization/account functionality is introduced.
 - Dependency licenses and distribution obligations are documented.
 - The final Constitution Check passes.
+
+## Phase 16/17 implementation and validation (2026-10-01)
+
+Three Luna workers implemented accessibility/layout, data/log/recovery hardening,
+and performance instrumentation under parent review. Parent integrated the
+GPL-3.0-or-later decision and 109 package notices, documentation/examples,
+requirement traceability, deferred Phase 15 scope, backlog and CI generation/
+Android-build checks. Review strengthened multibyte comment bounds, long-line
+iteration, diagnostic caps at reindex/failure and migration rollback/retry.
+
+All 353 host tests pass, including widget goldens, integration flows, real-file
+sample import/reopen and the 100-block pipeline benchmark smoke. Formatting and
+analysis pass; Drift regeneration leaves committed output unchanged. The first
+full run found an empty stale generated test asset bundle; rebuilding ignored
+asset/build caches restored packaged chess images, and the complete rerun passed.
+10k/100k synthetic host measurements and scanner memory regression are recorded
+in performance-results.md. T182/T183/T185/T194 remain open for unavailable
+reference-corpus/device, real Android process-death and SDK/integration checks.
+The release review lists final artifact/source/signing obligations.
+
+Future UI and app-icon proposals are captured in [backlog](../backlog.md).

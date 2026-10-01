@@ -32,21 +32,25 @@ class StudyNavigationControls extends StatelessWidget {
       if (showNavigation) ...[
         IconButton(
           tooltip: 'Starting position',
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           onPressed: canPrevious ? onFirst : null,
           icon: const Icon(Icons.first_page),
         ),
         IconButton(
           tooltip: 'Previous move',
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           onPressed: canPrevious ? onPrevious : null,
           icon: const Icon(Icons.chevron_left),
         ),
         IconButton(
           tooltip: 'Next move',
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           onPressed: canNext ? onNext : null,
           icon: const Icon(Icons.chevron_right),
         ),
         IconButton(
           tooltip: 'Last move on main line',
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           onPressed: canNext ? onLast : null,
           icon: const Icon(Icons.last_page),
         ),

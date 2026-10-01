@@ -30,7 +30,7 @@ class StudyMoveButton extends StatelessWidget {
         backgroundColor: selected
             ? Theme.of(context).colorScheme.secondaryContainer
             : null,
-        minimumSize: const Size(48, 44),
+        minimumSize: const Size(48, 48),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         tapTargetSize: MaterialTapTargetSize.padded,
       ),

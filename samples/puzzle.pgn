@@ -1,0 +1,10 @@
+[Event "Sample development puzzle"]
+[X-ContentType "Puzzle"]
+[X-ExerciseId "sample-puzzle"]
+[X-Section "Basics"]
+[X-Sequence "1"]
+[X-Theme "Development"]
+[X-Difficulty "Easy"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 {✔ Develop a knight.} *

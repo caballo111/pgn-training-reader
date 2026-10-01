@@ -39,6 +39,7 @@ void main() {
   testWidgets('review reveals authored content for every terminal outcome', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     tester.view.physicalSize = const Size(1200, 1800);
     tester.view.devicePixelRatio = 1;
     final outcomes =
@@ -93,6 +94,11 @@ void main() {
       expect(find.text('Solution line'), findsOneWidget);
       expect(find.text('e4'), findsWidgets);
       expect(find.text('Result: ${labels[expectedOutcome]}'), findsOneWidget);
+      expect(find.bySemanticsLabel('Puzzle outcome'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('Puzzle outcome')).value,
+        labels[expectedOutcome],
+      );
       await tester.ensureVisible(find.byTooltip('Next move'));
       await tester.tap(find.byTooltip('Next move'));
       await tester.pumpAndSettle();
@@ -100,6 +106,7 @@ void main() {
     }
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
+    semantics.dispose();
   });
 
   testWidgets('review navigates authored moves and presents annotations', (

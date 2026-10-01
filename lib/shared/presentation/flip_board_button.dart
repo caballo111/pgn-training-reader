@@ -9,6 +9,7 @@ class FlipBoardButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => IconButton(
     tooltip: 'Flip board',
+    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
     onPressed: onPressed,
     icon: const Icon(Icons.flip_camera_android_outlined),
   );

@@ -1,0 +1,8 @@
+[Event "Sample Black to move"]
+[X-ContentType "Puzzle"]
+[X-ExerciseId "sample-fen"]
+[SetUp "1"]
+[FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1"]
+[Result "*"]
+
+1... e5 {✔} *

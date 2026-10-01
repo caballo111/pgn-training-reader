@@ -65,7 +65,7 @@ class DatabaseMigrator {
       await migrator.createAll();
       await afterCreate?.call(migrator.database);
     },
-    onUpgrade: _upgrade,
+    onUpgrade: _upgradeTransactionally,
     beforeOpen: beforeOpen,
   );
 
@@ -114,6 +114,26 @@ class DatabaseMigrator {
 
       await step.migrate(migrator);
       currentVersion++;
+    }
+  }
+
+  Future<void> _upgradeTransactionally(
+    Migrator migrator,
+    int from,
+    int to,
+  ) async {
+    try {
+      await migrator.database.transaction(() => _upgrade(migrator, from, to));
+    } catch (_) {
+      // Some SQLite opening delegates update user_version before invoking
+      // onUpgrade. Restore the prior version after rolling back schema work so
+      // a later process can safely retry the same migration.
+      try {
+        await migrator.database.customStatement('PRAGMA user_version = $from');
+      } catch (_) {
+        // Keep the original migration error; the database may be unavailable.
+      }
+      rethrow;
     }
   }
 }

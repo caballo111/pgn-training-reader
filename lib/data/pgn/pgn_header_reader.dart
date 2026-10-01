@@ -4,11 +4,31 @@
 /// stops at the first non-tag token after the headers. Diagnostic messages
 /// are deliberately generic and never include tag values or source text.
 final class PgnHeaderReader {
+  static const int maximumTagCharacters = 64 * 1024;
+  static const int maximumDiagnostics = 32;
   const PgnHeaderReader();
 
   PgnHeaderReadResult read(String block) {
     final headers = <String, String>{};
     final diagnostics = <PgnHeaderDiagnostic>[];
+    void addDiagnostic(PgnHeaderDiagnostic diagnostic) {
+      if (diagnostics.length < maximumDiagnostics) diagnostics.add(diagnostic);
+    }
+
+    if (block.length > 8 * 1024 * 1024) {
+      addDiagnostic(
+        const PgnHeaderDiagnostic(
+          code: 'blockTooLarge',
+          message: 'A PGN block exceeds the supported metadata size.',
+        ),
+      );
+      return PgnHeaderReadResult(
+        headers: const {},
+        diagnostics: List.unmodifiable(diagnostics),
+        isMalformed: true,
+        movetextOffset: 0,
+      );
+    }
     var cursor = block.startsWith('\uFEFF') ? 1 : 0;
     var movetextOffset = cursor;
 
@@ -17,7 +37,7 @@ final class PgnHeaderReader {
       if (cursor < block.length &&
           block.codeUnitAt(cursor) == 0x7b &&
           block.indexOf('}', cursor + 1) < 0) {
-        diagnostics.add(
+        addDiagnostic(
           const PgnHeaderDiagnostic(
             code: 'malformedTag',
             message: 'A PGN header comment is malformed.',
@@ -33,7 +53,7 @@ final class PgnHeaderReader {
         cursor++;
       }
       if (cursor == nameStart) {
-        diagnostics.add(
+        addDiagnostic(
           const PgnHeaderDiagnostic(
             code: 'malformedTag',
             message: 'A PGN header tag is malformed.',
@@ -44,7 +64,7 @@ final class PgnHeaderReader {
       final name = block.substring(nameStart, cursor);
       if (cursor >= block.length ||
           !_isHeaderWhitespace(block.codeUnitAt(cursor))) {
-        diagnostics.add(
+        addDiagnostic(
           const PgnHeaderDiagnostic(
             code: 'malformedTag',
             message: 'A PGN header tag is malformed.',
@@ -57,7 +77,7 @@ final class PgnHeaderReader {
         cursor++;
       }
       if (cursor >= block.length || block.codeUnitAt(cursor) != 0x22) {
-        diagnostics.add(
+        addDiagnostic(
           const PgnHeaderDiagnostic(
             code: 'malformedTag',
             message: 'A PGN header tag is malformed.',
@@ -67,9 +87,14 @@ final class PgnHeaderReader {
       }
       cursor++;
       final value = StringBuffer();
+      final valueStart = cursor;
       var closed = false;
       var invalid = false;
       while (cursor < block.length) {
+        if (cursor - valueStart >= maximumTagCharacters) {
+          invalid = true;
+          break;
+        }
         final unit = block.codeUnitAt(cursor++);
         if (unit == 0x22) {
           closed = true;
@@ -103,7 +128,7 @@ final class PgnHeaderReader {
         value.writeCharCode(unit);
       }
       if (!closed || invalid) {
-        diagnostics.add(
+        addDiagnostic(
           const PgnHeaderDiagnostic(
             code: 'malformedTag',
             message: 'A PGN header tag is malformed.',
@@ -116,7 +141,7 @@ final class PgnHeaderReader {
         cursor++;
       }
       if (cursor >= block.length || block.codeUnitAt(cursor) != 0x5d) {
-        diagnostics.add(
+        addDiagnostic(
           const PgnHeaderDiagnostic(
             code: 'malformedTag',
             message: 'A PGN header tag is malformed.',
@@ -126,7 +151,7 @@ final class PgnHeaderReader {
       }
       cursor++;
       if (headers.containsKey(name)) {
-        diagnostics.add(
+        addDiagnostic(
           const PgnHeaderDiagnostic(
             code: 'duplicateTag',
             message: 'A PGN header tag is repeated; the last value was used.',
@@ -161,7 +186,7 @@ final class PgnHeaderReader {
       }
       if (cursor < block.length && block.codeUnitAt(cursor) == 0x7b) {
         final end = block.indexOf('}', cursor + 1);
-        if (end < 0) return cursor;
+        if (end < 0 || end - cursor > 1024 * 1024) return cursor;
         cursor = end + 1;
         continue;
       }

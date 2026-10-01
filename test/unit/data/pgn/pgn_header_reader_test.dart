@@ -52,4 +52,19 @@ void main() {
       isTrue,
     );
   });
+
+  test('caps oversized tag values and emitted diagnostics', () {
+    final oversized = reader.read(
+      '[Event "${List.filled(PgnHeaderReader.maximumTagCharacters, 'x').join()}x"]\n1. e4 *',
+    );
+    expect(oversized.isMalformed, isTrue);
+    expect(oversized.diagnostics, hasLength(1));
+    expect(oversized.diagnostics.single.message, isNot(contains('xxxx')));
+
+    final manyTags = List.generate(100, (i) => '[X-$i "value"]').join('\n');
+    expect(
+      reader.read(manyTags).diagnostics.length,
+      lessThanOrEqualTo(PgnHeaderReader.maximumDiagnostics),
+    );
+  });
 }

@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/core/errors/app_failure.dart';
 import 'package:pgntrainingreader/data/pgn/dartchess_content_parser.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
+import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
+import 'package:pgntrainingreader/data/pgn/scanner/pgn_boundary_scanner.dart';
 
 void main() {
   test('sole Z0 instruction preserves commentary and headers without a move', () {
@@ -172,5 +174,60 @@ void main() {
       ),
       throwsA(isA<PgnFailure>()),
     );
+  });
+
+  test('rejects over nested variation input before recursive parsing', () {
+    final nesting = List.filled(
+      PgnBoundaryScanner.maximumVariationDepth + 1,
+      '(',
+    ).join();
+    expect(
+      () => const DartchessContentParser().parse(
+        '[Event "Deep"]\n1. e4 $nesting 1. d4 ${List.filled(nesting.length, ')').join()} *',
+        contentType: ContentType.text,
+      ),
+      throwsA(
+        isA<PgnFailure>().having(
+          (failure) => failure.code,
+          'code',
+          'pgn_variation_too_deep',
+        ),
+      ),
+    );
+  });
+
+  test('comment byte limit also applies to multibyte Unicode', () {
+    final comment = List.filled(600000, 'é').join();
+    expect(
+      () => const DartchessContentParser().parse(
+        '[Event "Unicode limit"]\n{$comment} 1. e4 *',
+        contentType: ContentType.text,
+      ),
+      throwsA(
+        isA<PgnFailure>().having(
+          (failure) => failure.code,
+          'code',
+          'pgn_construct_too_large',
+        ),
+      ),
+    );
+  });
+
+  test('converts a long flat main line without recursive stack growth', () {
+    final movetext = List.generate(
+      300,
+      (i) => '${i * 4 + 1}. Nf3 Nf6 ${i * 4 + 2}. Ng1 Ng8',
+    ).join(' ');
+    final content = const DartchessContentParser().parse(
+      '[Event "Long line"]\n$movetext *',
+      contentType: ContentType.text,
+    );
+    var moves = 0;
+    MoveNode? node = content.rootMoves.single;
+    while (node != null) {
+      moves++;
+      node = node.children.isEmpty ? null : node.children.first;
+    }
+    expect(moves, 1200);
   });
 }

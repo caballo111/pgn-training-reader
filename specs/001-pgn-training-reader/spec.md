@@ -35,6 +35,8 @@ access.
   tree, while concealing solution-bearing content during an active attempt.
 - Organize exercises and explanatory material into ordered sets and repeatable
   cycles that can span sessions and calendar days.
+- Let each book choose whether to `read` or `solve` its puzzles. Standalone
+  solving and cycle-scored training remain separate contexts.
 - Show transparent progress, timing, failure reasons, and comparisons between
   cycles.
 - Preserve imported material and attempt history through app restarts, source
@@ -170,6 +172,15 @@ When the user opens it
 Then the application labels it unsupported and explains the limitation  
 And does not silently interpret it as ordinary chess.
 
+#### Scenario 8a — Choose a book's reading intent
+
+Given a readable book is opened outside a training session
+When the user chooses `read` or `solve` for puzzles in that book
+Then that intent applies to the book and is retained for later visits
+And `read` opens the puzzle as reader content
+And `solve` opens a standalone interaction outside a cycle unless the user
+separately starts or resumes cycle training.
+
 ### US3: Solve authored puzzles
 
 #### Scenario 9 — Start a puzzle without leaking its solution
@@ -190,22 +201,42 @@ solution tree
 And an explicitly authored alternative variation is accepted wherever it is
 available.
 
-#### Scenario 11 — Fail on an incorrect move
+#### Scenario 11 — Record a first error and continue concealed practice
 
 Given the user is attempting a puzzle  
 When the user submits a legal move that is not an allowed child of the current
 solution node, or submits an illegal move  
-Then the attempt immediately ends with outcome `wrong_move`  
-And the wrong move and failure reason are recorded  
-And the solution may then be revealed because the attempt has failed.
+Then the scored attempt is finalized immediately with outcome `wrong_move`
+And the wrong move and failure reason are recorded
+But the practice board remains interactive and solution content remains
+concealed
+And continuing practice cannot change the finalized score.
 
-#### Scenario 12 — Complete, reveal, or skip a puzzle
+#### Scenario 12 — Complete, reveal, show a move, or skip a puzzle
 
 Given the user is attempting a puzzle  
-When the user completes the authored solution, explicitly reveals it, or skips
-the puzzle  
-Then the attempt is finalized with the corresponding outcome  
-And the solution becomes available after completion, reveal, or skip.
+When the user completes the authored solution, explicitly reveals the full
+solution, shows the next authored move, or skips the puzzle
+Then the attempt is finalized with the corresponding outcome
+And successful completion is `Passed` without hints or `Assisted` after any
+hint
+And showing a move finalizes as `Revealed`, advances the shared practice board,
+and can never later become a pass
+And full review navigation is available through an explicit Next action.
+
+#### Scenario 12a — Stop at a key move or complete every move
+
+Given a cycle snapshots either key-move or all-moves completion
+When the learner reaches a solution node marked by a standalone `✔` token in
+its comment
+Then key-move policy finalizes at that node when it lies on the accepted
+branch
+But all-moves policy continues through the authored continuation
+And if the accepted branch has no marker, key-move policy falls back at that
+branch's endpoint even when another variation contains a marker
+And ordinary opponent replies follow the first authored child automatically
+And a marked opponent reply requires the learner to predict it before
+key-move credit is awarded.
 
 ### US4: Train in cycles
 
@@ -226,6 +257,19 @@ day
 Then the application preserves completed items and resumes at the unfinished
 item or next pending item according to recorded state  
 And time between sessions is not counted as active training time.
+And the cycle retains its original ordered item selection and completion
+policy if the source set is edited later
+And resuming restores the durable cycle cursor before asking for the next item
+And the cursor may identify a finalized failed-practice interaction awaiting
+review, which must reopen before any later item is selected.
+
+#### Scenario 14a — Solve a puzzle outside a cycle
+
+Given the user's book intent is `solve` and there is no active cycle
+When they make moves, use hints, or reveal a move
+Then the interaction is saved in the separate standalone puzzle history
+And no database Cycle or TrainingSession row is created
+And no timer or cycle progress report changes.
 
 #### Scenario 15 — Treat non-puzzle items correctly
 
@@ -240,7 +284,7 @@ But it does not create a scored puzzle result or distort puzzle accuracy.
 
 Given the user has finalized puzzle attempts  
 When the user opens progress for a set or cycle  
-Then the application shows attempted, passed, and non-passing outcomes,
+Then the application shows attempted, passed, assisted, and other outcomes,
 accuracy, total active time, average and median active time per attempt, wrong
 moves, hints, reveals, skips, timeouts, and abandoned attempts  
 And each metric has an understandable definition.
@@ -348,34 +392,78 @@ And the user receives an actionable recovery path rather than silent data loss.
   Navigation MUST preserve unfinished puzzle practice and existing history.
 - **FR-020**: The current mode MUST be unmistakable as Reading, Instruction,
   Demonstration, or Puzzle solving.
-- **FR-021**: Before a puzzle is completed, failed, skipped, or revealed, the
+- **FR-021**: While solving or continuing practice after a wrong move, the
   interface MUST conceal solution moves, future solution positions, solution
-  comments, and answer-revealing navigation or accessibility labels.
+  comments, and answer-revealing navigation or accessibility labels. Terminal
+  outcomes do not silently expose the solution; inspection enters explicit
+  review. For a newly scored first error, concealment remains until continued
+  practice completes or the user explicitly reveals. A legacy finalized
+  attempt without a saved interaction snapshot MAY open read-only review.
 - **FR-022**: Puzzle validation MUST use legal chess moves and the authored
   PGN solution tree. It MUST support multiple explicitly authored acceptable
   variations.
 - **FR-023**: An incorrect or illegal submitted move MUST immediately finalize
-  the attempt as `wrong_move` in the MVP. The failure reason and wrong-move
-  count MUST be retained independently of aggregate metrics.
-- **FR-024**: A puzzle pass MUST require completion of the authored solution
-  without reveal. Completing a puzzle, revealing, skipping, timing out, or
-  abandoning it MUST produce a distinct recorded outcome.
+  the scored attempt as `wrong_move` in the MVP. The failure reason and
+  wrong-move count MUST be retained independently of aggregate metrics.
+  Practice MUST remain interactive and concealed, and later moves MUST NOT
+  change that finalized score. Retain the first rejected move for the scored
+  audit; additional incorrect practice moves MUST show feedback without
+  appending more rejected notation entries.
+- **FR-024**: Completing the selected authored endpoint without reveal MUST
+  produce `passed` if no hint was used and `assisted` if any hint was used.
+  Revealing, skipping, timing out, and abandoning MUST produce distinct
+  recorded outcomes. Showing a move MUST finalize as `revealed` before the
+  shared practice board advances.
 - **FR-025**: The interface MUST clearly show whose turn it is and MUST provide
   accessible labels for the board, coordinates, controls, side to move, and
   outcome without relying only on color.
 - **FR-026**: Hints, when offered, MUST be explicitly user initiated, counted
-  per attempt, and MUST NOT expose solution content before the attempt reaches
-  an outcome that permits reveal.
+  per attempt. A completed attempt that used any hint MUST be `Assisted`, never
+  `Passed`. A hint MUST highlight the origin piece square on the board with
+  an accessible description of that granted cue, rather than displaying hint
+  prose. It MUST NOT expose destination moves, variations, or comments.
+- **FR-026a**: Showing an authored move MUST finalize the scored attempt as
+  `Revealed` before moving the shared practice board. It MUST NOT later become
+  `Passed`. Full solution review navigation MUST be an explicit user action.
+- **FR-026b**: Puzzle completion policy MUST be either `keyMoves` or
+  `allMoves`. A standalone solve interaction selects its policy for that
+  interaction; a cycle freezes its selected policy at cycle creation. A
+  completion marker is a standalone `✔` token in a move comment. Under
+  `keyMoves`, credit completes at a marker on the accepted branch. If that
+  branch has no marker, credit falls back at that branch's endpoint,
+  regardless of markers on other variations. `allMoves` completes only at an
+  authored terminal node. Ordinary opponent moves follow the first authored
+  child automatically, after briefly displaying the committed learner position
+  with input locked for the transition; a marked opponent reply must be predicted by the learner
+  for key-move credit.
+- **FR-026c**: The first incorrect or illegal submitted move MUST finalize the
+  scored attempt as `wrong_move`, while practice remains interactive and
+  solution content remains concealed. Further practice MUST NOT mutate that
+  finalized attempt or its outcome. Keep the solution concealed until
+  continued practice completes or the user explicitly reveals it. A legacy
+  finalized attempt with no saved interaction snapshot MAY open read-only
+  review.
+- **FR-026d**: A book's reading intent MUST be `read` or `solve`. `Read` shows
+  the puzzle as reader content. `Solve` opens a standalone interaction when no
+  cycle is active; this interaction MUST NOT create Cycle or TrainingSession
+  rows, show a timer, or affect cycle aggregates. Reading intent MUST NOT imply
+  whether a solve is cycle-scored.
 
 ### Sets, cycles, sessions, and timing requirements
 
 - **FR-027**: A training set MUST contain an explicitly ordered mixture of
   Puzzle, Instruction, and Demonstration items. One indexed block MUST NOT
   appear more than once in the same set; a block MAY appear in different sets.
+  The editor MUST keep Save visible without scrolling, fit long filter labels
+  at narrow widths, and expose bulk selection of all current search/filter
+  results before long result and preview lists. Bulk selection MUST preserve
+  duplicate and unavailable-content safeguards.
 - **FR-028**: A cycle MUST represent one pass through the exercises in a set.
   The MVP MUST allow at most one active cycle per training set.
 - **FR-029**: A cycle MUST span any number of sessions and calendar days, and
-  MUST preserve pending, completed, and unfinished item state.
+  MUST snapshot its explicit ordered item selection and selected completion
+  policy. A durable cursor MUST be restored before selecting another item and
+  MAY point to a finalized failed-practice interaction awaiting review.
 - **FR-030**: A session MUST record wall-clock start and end information for
   history, while active solving time MUST be calculated separately.
 - **FR-031**: An attempt MUST record its exercise, cycle and session context,
@@ -395,15 +483,19 @@ And the user receives an actionable recovery path rather than silent data loss.
 
 - **FR-035**: Progress MUST distinguish puzzle outcomes from completion of
   instructional or demonstration items.
-- **FR-036**: The application MUST show attempted exercises, passed and
-  non-passing outcomes, accuracy, total active time, average and median active
+- **FR-036**: The application MUST show attempted exercises, passed, assisted,
+  and other outcomes, accuracy, total active time, average and median active
   time per attempt, wrong moves, hints, reveals, skips, timeouts, and
   abandoned attempts.
 - **FR-037**: For the MVP, accuracy MUST equal passed finalized puzzle attempts
-  divided by all finalized puzzle attempts, expressed as a percentage. An
-  empty denominator MUST display as not yet available rather than zero.
+  divided by all finalized puzzle attempts, including assisted attempts,
+  expressed as a percentage. An empty denominator MUST display as not yet
+  available rather than zero.
 - **FR-038**: Cycle comparisons MUST use the same raw definitions and MUST
-  show changes without introducing a hidden composite score.
+  show changes without introducing a hidden composite score. When ordered
+  cycle selections or completion policies differ, the report MUST explain
+  that the cycles are not directly comparable and MUST suppress numeric
+  deltas.
 - **FR-039**: All progress-affecting writes MUST be atomic. A failed finalization
   MUST NOT leave a partial attempt, move history, or timing segment presented
   as complete.
@@ -476,9 +568,9 @@ And the user receives an actionable recovery path rather than silent data loss.
 | Content classification | `Puzzle`, `Instruction`, `Demonstration`, or `Unsupported`, plus whether the classification was authored or inferred and whether a user override exists. |
 | Training set | A named, user-owned ordered collection of training items. It may mix puzzles, instructions, and demonstrations. |
 | Training-set item | A stable reference to one indexed content block plus explicit order and set-specific state. It is not identified only by list position. |
-| Cycle | One pass through the exercises in a training set, with lifecycle state and item progress. A set has no more than one active cycle in the MVP. |
+| Cycle | One pass through its snapshotted ordered selection and completion policy, with lifecycle state, item progress, and durable cursor. The cursor may point to a finalized attempt whose practice/review remains open. A set has no more than one active cycle in the MVP. |
 | Training session | A bounded study period within a cycle, with wall-clock start/end values and resumable lifecycle state. |
-| Puzzle attempt | One interaction with one puzzle in one cycle. It is append-only after finalization and records outcome, timing, moves, hints, reveal status, and failure reason. |
+| Puzzle attempt | One cycle-scored interaction with one puzzle. It is append-only after finalization and records outcome (including Assisted), timing, moves, hints, reveal status, and failure reason. Casual interactions are stored separately. |
 | Attempt move | A timestamped user-submitted move associated with an attempt, including whether it was legal and accepted. |
 | Timing segment | One contiguous period in which an attempt is actively being solved. Segments exclude pauses, inactivity, suspension, closure, and time between sessions. |
 | Import job | The durable state of an import, including source revision, progress, counts, cancellation, and the last safe continuation point. |
@@ -496,9 +588,16 @@ must expose whether it can resume, restart, or requires source repair.
 ### Training lifecycle
 
 A set may be created, edited, archived, or deleted with deliberate confirmation.
+The training-set menu exposes Remove for active and archived sets. Confirmation
+explains that the set leaves the list and can no longer be trained, while its
+imported content and saved training history are retained. A failed removal
+keeps the set visible and shows a retryable error. Removal survives restart.
 A cycle may be pending, active, completed, or stopped. A session may be opened,
 paused, resumed, closed, or recovered. An attempt may be active, paused,
-completed, failed, revealed, skipped, timed out, or abandoned.
+completed, failed, revealed, skipped, timed out, or abandoned. Each book's
+`read`/`solve` intent is separate from the cycle's snapshotted completion
+policy. Completion policy is chosen per standalone solve interaction or
+captured by a cycle; it is not a per-book persisted preference.
 
 Only an explicit terminal action or successful completion finalizes an attempt.
 Finalization records all terminal fields together. A resumed attempt continues
@@ -506,10 +605,13 @@ its existing identity; a retry creates a new attempt.
 
 ### Puzzle visibility lifecycle
 
-Before a terminal puzzle outcome, solution-bearing moves, positions, comments,
-and answer-revealing navigation are hidden. After pass, wrong move, reveal,
-skip, timeout, or abandonment, the user may inspect the solution and related
-annotations.
+Before explicit review or a terminal path that permits review, solution-bearing
+moves, positions, comments, and answer-revealing navigation are hidden. A first
+wrong move finalizes its score but leaves the practice board interactive and
+concealed. A hint does not reveal the solution. Showing a move finalizes as
+Revealed before advancing the shared board. Review navigation and Next are
+explicit user actions; terminal scoring never changes afterward. A legacy
+finalized attempt without an interaction snapshot may open read-only review.
 
 ## 9. Measurable success criteria
 

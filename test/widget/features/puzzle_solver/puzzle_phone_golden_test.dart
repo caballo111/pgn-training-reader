@@ -98,8 +98,17 @@ Future<PuzzleSolverController> _controller({bool blackToMove = false}) async {
     repository: _Repository(_attempt()),
     evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: _Ids()),
   );
-  await controller.initialize(puzzle: _puzzle, attemptId: 'golden-attempt');
-  if (blackToMove) await controller.submitMove(uci: 'e2e4');
+  await controller.initialize(
+    puzzle: blackToMove
+        ? ChessContent(
+            headers: const {},
+            startingFen: _afterE4,
+            contentType: ContentType.puzzle,
+            rootMoves: _puzzle.rootMoves.first.children,
+          )
+        : _puzzle,
+    attemptId: 'golden-attempt',
+  );
   return controller;
 }
 
@@ -367,7 +376,14 @@ Future<Uint8List> _solidPng(
 MaterialApp _app({required Widget home}) => MaterialApp(
   debugShowCheckedModeBanner: false,
   theme: ThemeData(fontFamily: 'Roboto'),
-  home: home,
+  home: Scaffold(
+    appBar: AppBar(
+      title: Text(
+        home is PuzzleSolutionReviewView ? 'Solution review' : 'Puzzle',
+      ),
+    ),
+    body: home,
+  ),
 );
 
 Future<void> _loadTestFont(String family, String filename) async {

@@ -32,16 +32,22 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => DatabaseMigrator(
     schemaVersion: schemaVersion,
-    afterCreate: _installReindexColumns,
+    afterCreate: (database) async {
+      await _installReindexColumns(database);
+      await _installPuzzleSettings(database);
+    },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
     steps: <int, DatabaseMigrationStep>{
+      6: DatabaseMigrationStep(
+        migrate: (migrator) => _installPuzzleSettings(migrator.database),
+      ),
       1: DatabaseMigrationStep(
         migrate: (migrator) async {
           await migrator.addColumn(pgnBlocks, pgnBlocks.inferredClassification);
@@ -92,6 +98,12 @@ class AppDatabase extends _$AppDatabase {
       ),
     },
   ).strategy;
+
+  static Future<void> _installPuzzleSettings(GeneratedDatabase database) async {
+    await database.customStatement(
+      'CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+    );
+  }
 
   static Future<void> _installReindexColumns(GeneratedDatabase database) async {
     await database.customStatement(

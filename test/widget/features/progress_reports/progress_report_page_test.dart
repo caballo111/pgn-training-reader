@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/training/cycle.dart';
 import 'package:pgntrainingreader/domain/training/lifecycle_status.dart';
 import 'package:pgntrainingreader/domain/training/progress_aggregate.dart';
 import 'package:pgntrainingreader/domain/training/progress_calculator.dart';
 import 'package:pgntrainingreader/domain/training/progress_report_data.dart';
+import 'package:pgntrainingreader/domain/training/puzzle_interaction_repository.dart';
 import 'package:pgntrainingreader/domain/training/training_repository.dart';
 import 'package:pgntrainingreader/domain/training/training_session.dart';
+import 'package:pgntrainingreader/domain/training/training_set.dart';
+import 'package:pgntrainingreader/domain/training/training_set_item.dart';
 import 'package:pgntrainingreader/features/progress_reports/application/progress_report_controller.dart';
 import 'package:pgntrainingreader/features/progress_reports/presentation/progress_report_page.dart';
 
@@ -39,6 +43,7 @@ final _cycleProgress = _progress(
   skipped: 1,
   timeout: 1,
   abandoned: 1,
+  assisted: 1,
   durations: const [
     Duration(seconds: 5),
     Duration(seconds: 10),
@@ -47,12 +52,14 @@ final _cycleProgress = _progress(
     Duration(seconds: 25),
     Duration(seconds: 30),
     Duration(seconds: 35),
+    Duration(seconds: 40),
   ],
   nonPuzzleSeconds: 60,
 );
 
 ProgressAggregate _progress({
   int passed = 0,
+  int assisted = 0,
   int wrong = 0,
   int revealed = 0,
   int skipped = 0,
@@ -62,6 +69,7 @@ ProgressAggregate _progress({
   int nonPuzzleSeconds = 0,
 }) => ProgressAggregate(
   passedCount: passed,
+  assistedCount: assisted,
   wrongMoveOutcomeCount: wrong,
   revealedCount: revealed,
   skippedCount: skipped,
@@ -73,10 +81,50 @@ ProgressAggregate _progress({
   nonPuzzleActiveDuration: Duration(seconds: nonPuzzleSeconds),
 );
 
-final class _FakeTrainingRepository implements TrainingRepository {
-  _FakeTrainingRepository({this.metadata = true});
+final class _FakeTrainingRepository
+    implements TrainingRepository, CycleSnapshotRepository {
+  _FakeTrainingRepository({
+    this.metadata = true,
+    this.mismatchedCycle = false,
+    this.mismatchedPolicy = false,
+  });
 
   final bool metadata;
+  final bool mismatchedCycle;
+  final bool mismatchedPolicy;
+
+  TrainingSet _snapshot(String cycleId) => TrainingSet(
+    id: 'set',
+    name: 'Tactics',
+    items: [
+      TrainingSetItem(
+        id: 'item',
+        trainingSetId: 'set',
+        blockId: mismatchedCycle && cycleId == 'older' ? 'other' : 'block',
+        position: 0,
+        contentType: ContentType.puzzle,
+        addedAt: DateTime(2026, 1, 1),
+      ),
+    ],
+    createdAt: DateTime(2026, 1, 1),
+    updatedAt: DateTime(2026, 1, 1),
+  );
+
+  @override
+  Future<TrainingSet?> getCycleSet(String cycleId) async => _snapshot(cycleId);
+
+  @override
+  Future<String?> getCyclePolicy(String cycleId) async =>
+      mismatchedPolicy && cycleId == 'older' ? 'allMoves' : 'keyMoves';
+
+  @override
+  Future<void> setCyclePolicy(String cycleId, String policy) async {}
+
+  @override
+  Future<String?> getCycleCursor(String cycleId) async => null;
+
+  @override
+  Future<void> setCycleCursor(String cycleId, String? attemptId) async {}
 
   @override
   Future<List<Cycle>> listCycles(String trainingSetId) async => [
@@ -185,6 +233,7 @@ void main() {
       );
       for (final label in [
         ('Failed on a wrong move', summary.wrongMoveOutcomeCount),
+        ('Assisted', summary.assistedCount),
         ('Revealed', summary.revealedCount),
         ('Skipped', summary.skippedCount),
         ('Timed out', summary.timedOutCount),
@@ -265,6 +314,76 @@ void main() {
       );
     },
   );
+
+  testWidgets('suppresses comparisons when cycle snapshots differ', (
+    tester,
+  ) async {
+    final controller = ProgressReportController(
+      trainingSetId: 'set',
+      repository: _FakeTrainingRepository(mismatchedCycle: true),
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProgressReportPage(
+          controller: controller,
+          trainingSetName: 'Tactics',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Cycle comparison'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.state.comparisonCompatible, isFalse);
+    expect(controller.state.comparison, isNull);
+    expect(
+      find.text(
+        'Selections or completion policies differ; these cycles are not directly comparable.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('suppresses comparisons when cycle policies differ', (
+    tester,
+  ) async {
+    final controller = ProgressReportController(
+      trainingSetId: 'set',
+      repository: _FakeTrainingRepository(mismatchedPolicy: true),
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProgressReportPage(
+          controller: controller,
+          trainingSetName: 'Tactics',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Cycle comparison'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.state.comparisonCompatible, isFalse);
+    expect(controller.state.comparison, isNull);
+    expect(
+      find.text(
+        'Selections or completion policies differ; these cycles are not directly comparable.',
+      ),
+      findsOneWidget,
+    );
+  });
 
   testWidgets(
     'shows explicit unavailable state when theme and difficulty metadata are absent',

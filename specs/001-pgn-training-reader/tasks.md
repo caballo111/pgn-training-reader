@@ -227,8 +227,8 @@ For every task:
 - [x] T111 [US3] Implement `lib/domain/training/authored_line_puzzle_evaluator.dart` using `dartchess` for legality and the current `MoveNode` children for authored acceptance.
 - [x] T112 [US3] Distinguish illegal interaction from a legal move that is absent from authored accepted children. Illegal interaction must not automatically count as a wrong move.
 - [x] T113 [US3] Accept every explicitly authored child variation at the current node. Preserve child order but do not assume only the first child is valid.
-- [x] T114 [US3] Mark the attempt passed only when an accepted terminal solution node is reached without a prior finalized failure or reveal.
-- [x] T115 [US3] Implement the default wrong-move policy: first legal authored mismatch finalizes `wrong_move`; the user may continue only in review mode.
+- [x] T114 [US3] Mark completion `Passed` at the selected endpoint without hints; mark it `Assisted` after any hint. Neither can replace an earlier finalized failure or reveal.
+- [x] T115 [US3] Implement first-error scoring: the first incorrect or illegal submission finalizes the scored attempt as `wrong_move`, while concealed practice remains interactive and cannot change that score.
 - [x] T116 [US3] Implement reveal, skip, timeout, and abandon transitions with exact failure reasons.
 - [x] T117 [US3] Reject invalid state transitions, including converting a finalized failed attempt into passed.
 - [x] T118 [US3] Add table-driven evaluator tests for correct main line, correct alternate line, illegal move, wrong legal move, reveal, skip, timeout, abandon, and attempt-after-finalization.
@@ -244,12 +244,12 @@ For every task:
 - [x] T121 [US3] Create `puzzle_solver_controller.dart` that maps user board moves to the evaluator and persists attempt state through the training repository.
 - [x] T122 [P] [US3] Create `puzzle_header.dart` showing exercise progress and an accessible “White to move” or “Black to move” label derived from the active position.
 - [x] T123 [P] [US3] Create `puzzle_board.dart` with legal interactions only, orientation preference, and no future-move navigation.
-- [x] T124 [P] [US3] Create puzzle controls for Pause, Show solution, Skip, and permitted retry/review actions. Destructive result changes must be clear.
+- [x] T124 [P] [US3] Create puzzle controls for Pause, Show move, Reveal solution, Skip, and permitted retry/review actions. Show move finalizes `Revealed` before advancing the shared practice board.
 - [x] T125 [US3] Create the solving view without a visible solution move list. Display only user-played accepted moves while the attempt is active.
-- [x] T126 [US3] Create review mode that reveals the authored solution tree, comments, and navigation only after pass, fail, skip, timeout, abandon, or explicit reveal.
+- [x] T126 [US3] Create review mode on the shared practice board. Keep post-error practice interactive and concealed; reveal authored branches only in review, with explicit navigation and Next actions.
 - [x] T127 [US3] Ensure player names, titles, comments, and metadata identified by the spec as potential hints are hidden or configurable in puzzle mode.
 - [x] T128 [US3] Add widget tests that search visible text and the Flutter semantics tree for hidden SAN, UCI, comments, and variation labels before reveal.
-- [x] T129 [US3] Add tests proving review mode reveals the solution after each final outcome.
+- [x] T129 [US3] Add tests proving explicit review is available for eligible terminal outcomes while a new first-error interaction stays concealed until continued practice completes or explicit reveal.
 - [x] T130 [US3] Add golden tests for phone puzzle layout with White to move, Black to move, large text scale, and failed-review mode.
 
 **User Story 3B checkpoint**: A user can solve a puzzle, and automated tests prove the solution is absent from visible and accessibility output before reveal.
@@ -275,14 +275,14 @@ For every task:
 - [x] T138 [US4] Implement `lib/domain/training/active_time_tracker.dart` using `AppClock`. Support start segment, pause, resume, close segment, accumulated duration, and recovery.
 - [x] T139 [US4] Add tests proving wall-clock jumps do not affect monotonic active duration while the process is running.
 - [x] T140 [US4] Implement `training_session_service_impl.dart` to start a cycle and open its first session.
-- [x] T141 [US4] Implement selection of the next pending set item while preserving Instruction and Demonstration items in order and excluding them from scored-attempt counts.
+- [x] T141 [US4] Snapshot each cycle's ordered item identities. Persist its selected completion policy before puzzle training and keep it immutable. Select from the snapshot, traversing non-puzzle items without scored attempts.
 - [x] T142 [US4] Implement session pause and close. Closing must transactionally close the active timing segment.
-- [x] T143 [US4] Implement resume of an incomplete cycle by opening a new session and selecting the unfinished or next item according to the spec.
+- [x] T143 [US4] Restore the durable cycle cursor before selecting another item; it may identify a finalized attempt with continued practice or review still open. After explicit Next, select from the cycle snapshot.
 - [x] T144 [US4] Implement explicit multi-day support. Store each session's wall-clock day while aggregating only active durations.
 - [x] T145 [US4] Implement lifecycle observer integration that pauses active timing when the application becomes inactive/backgrounded and starts a new segment only after explicit or policy-defined resume.
 - [x] T146 [US4] Implement process-recreation recovery using the last persisted lifecycle boundary. Unknown time after the last safe boundary must not be counted.
 - [x] T147 [US4] Finalize completed attempts append-only. Retrying creates a new attempt linked to the same cycle and exercise.
-- [x] T148 [US4] Complete a cycle only when every required scored item has a finalized outcome and all required ordered content has been traversed according to the spec.
+- [x] T148 [US4] Complete a cycle only when every snapshotted item has been traversed, non-puzzle items are durably complete, and every required puzzle has a finalized scored outcome.
 - [x] T149 [P] [US4] Create `active_session_controller.dart` with loading, active item, paused, completed, and recoverable-failure states.
 - [x] T150 [P] [US4] Create `active_session_page.dart` showing cycle progress, current session active time, cycle active time, and current content.
 - [x] T151 [US4] Add integration test: begin on simulated Monday, solve some puzzles, pause, resume on simulated Tuesday, finish, and assert idle overnight time is excluded.
@@ -295,14 +295,14 @@ For every task:
 
 # Phase 13: Scoring and Progress Reports
 
-- [x] T154 [US5] Create `lib/domain/training/progress_calculator.dart` as the single implementation of accuracy, total active time, average, median, outcome counts, and cycle comparison.
+- [x] T154 [US5] Create `lib/domain/training/progress_calculator.dart` as the single implementation of accuracy, timing, distinct Passed/Assisted/other outcomes, and cycle comparison.
 - [x] T155 [US5] Define denominator behavior for abandoned attempts, skips, and timeouts exactly as stated in `spec.md`. If the spec is ambiguous, stop and report it.
 - [x] T156 [US5] Add fixed-fixture unit tests for zero attempts, one attempt, mixed outcomes, even-count median, odd-count median, retries, and multi-session cycle totals.
 - [x] T157 [US5] Implement repository queries for cycle summary, session summary, exercise history, theme summary, and difficulty summary.
 - [x] T158 [P] [US5] Create `progress_report_controller.dart` with cycle selection and comparison state.
 - [x] T159 [P] [US5] Create a cycle summary view with attempted, passed, failed, accuracy, total active time, average, median, and separate outcome counts.
 - [x] T160 [P] [US5] Create a daily sessions view listing each session's date, active duration, attempted count, and outcome counts.
-- [x] T161 [P] [US5] Create a cycle comparison view showing transparent deltas in accuracy and active time. Do not add composite scores.
+- [x] T161 [P] [US5] Create a cycle comparison view showing transparent deltas in accuracy, active time, and assisted outcomes. Suppress numeric comparisons when cycle selections or completion policies differ.
 - [x] T162 [US5] Create theme and difficulty summaries only when metadata exists. Show an explicit unavailable state otherwise.
 - [x] T163 [US5] Add widget tests proving all displayed metrics match the tested calculator output.
 
@@ -437,7 +437,48 @@ Return:
 4. Any blocker or ambiguity. Do not guess missing requirements.
 ```
 
+---
+
+# Phase 18: Practice Intent, Completion Policy, and Report Compatibility
+
+Implementation is present and all 316 automated tests pass. Static analysis,
+formatting, and whitespace checks pass. Physical-device acceptance remains open;
+Android compilation is unavailable here because the Android SDK is not installed.
+
+- [ ] T198 [US2/US3] Validate per-book `read`/`solve` intent on device. Confirm standalone solving persists separately, shows no timer, creates no database cycle/session rows, and never changes cycle aggregates.
+- [ ] T199 [US3] Validate key-move and all-moves completion on device, including standalone-token `✔` markers, branch-local fallback when another variation is marked, authored-order automatic opponent replies, prediction of marked replies, and immutable cycle policy after its initial write.
+- [ ] T200 [US3] Validate that first error finalizes the score while practice stays interactive and concealed; hints finish as Assisted; Show move finalizes Revealed and advances the shared board; solving/review show side to move above the board with progress details alongside; review advances only through explicit Next.
+- [ ] T201 [US4] Validate cycle item/policy snapshots and cursor restart after app restart, including edited set order and selection plus finalized failed-practice/review cursor restoration before next-item selection.
+- [ ] T202 [US5] Validate incompatible cycle selections or policies show the comparison warning and suppress numeric deltas; validate compatible snapshots retain comparisons.
+- [x] T203 Run and record the final automated suite after integrating all parallel changes: all 316 tests passed; analysis reports no issues; formatting and whitespace checks pass. Android build attempted but unavailable without the SDK; device checks remain open.
+
 # Definition of Done
+
+Set-editor opening performance follow-up (2026-10-01): replaced eager candidate
+and shrink-wrapped preview layout with lazy slivers; metadata batches increased
+from 100 to 1,000 entries; filter work moved outside draft updates; bulk
+addition now emits once with linear deduplication. Verified 3,000 entries with
+three queries and fewer than thirty mounted candidate rows, exact whole-result
+selection, interactive form during loading, paging cancellation after leaving,
+and lazy-preview drag/removal. All 337 tests pass; analysis, formatting, and
+whitespace checks pass. Device timing remains unmeasured.
+
+Training-set removal follow-up (2026-10-01): implemented Remove for active and
+archived sets with confirmation, cancellation, and retryable save errors.
+Removal atomically archives and hides the definition using a durable marker;
+items, training history, snapshots, and imported content remain intact.
+Verified persistence after reopening, archive timestamp retention, idempotency,
+and rollback when the marker write fails. All 324 automated tests pass; static
+analysis, changed-file formatting, and whitespace checks pass.
+
+Builder and board UX follow-up (2026-10-01): three Luna workers implemented
+dropdown constraints, persistent Save, search-aware bulk selection, 300 ms
+opponent-reply pacing, suppression of repeated rejected practice entries, visual
+piece hints, and shared board/navigation/move components. Oversight added
+durable pause/Back coordination and disposal handling, reviewed the new review
+golden, and strengthened narrow-screen/long-book-title coverage. All 334 tests
+pass; analysis, changed-file formatting, and whitespace checks pass. Device
+acceptance remains separate.
 
 The feature is complete when:
 

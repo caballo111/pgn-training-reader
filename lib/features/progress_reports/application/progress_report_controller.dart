@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../../domain/training/cycle.dart';
 import '../../../domain/training/progress_calculator.dart';
+import '../../../domain/training/puzzle_interaction_repository.dart';
 import '../../../domain/training/training_repository.dart';
+import '../../../domain/training/training_set.dart';
 
 enum ProgressReportStatus { loading, ready, failed }
 
@@ -16,6 +18,7 @@ final class ProgressReportState {
     this.comparisonCycleId,
     this.selectedSummary,
     this.comparison,
+    this.comparisonCompatible = true,
     this.errorMessage,
   });
 
@@ -25,6 +28,7 @@ final class ProgressReportState {
   final String? comparisonCycleId;
   final ProgressSummary? selectedSummary;
   final ProgressComparison? comparison;
+  final bool comparisonCompatible;
   final String? errorMessage;
 
   Cycle? get selectedCycle => _cycleFor(selectedCycleId);
@@ -140,11 +144,42 @@ final class ProgressReportController extends ChangeNotifier {
           : await comparisonFuture;
       if (!_current(generation)) return;
 
+      var comparisonCompatible = true;
+      if (selectedCycleId != null &&
+          comparisonCycleId != null &&
+          repository is CycleSnapshotRepository) {
+        final snapshots = repository as CycleSnapshotRepository;
+        final selectedCycle = cycles.firstWhere(
+          (cycle) => cycle.id == selectedCycleId,
+        );
+        final comparisonCycle = cycles.firstWhere(
+          (cycle) => cycle.id == comparisonCycleId,
+        );
+        final selectedSnapshot =
+            await snapshots.getCycleSet(selectedCycleId) ??
+            await repository.getSet(selectedCycle.trainingSetId);
+        final comparisonSnapshot =
+            await snapshots.getCycleSet(comparisonCycleId) ??
+            await repository.getSet(comparisonCycle.trainingSetId);
+        final selectedPolicy =
+            await snapshots.getCyclePolicy(selectedCycleId) ?? 'allMoves';
+        final comparisonPolicy =
+            await snapshots.getCyclePolicy(comparisonCycleId) ?? 'allMoves';
+        comparisonCompatible =
+            selectedSnapshot != null &&
+            comparisonSnapshot != null &&
+            selectedPolicy == comparisonPolicy &&
+            _sameCycleSelection(selectedSnapshot, comparisonSnapshot);
+      }
+      if (!_current(generation)) return;
+
       final selectedSummary = selectedAggregate == null
           ? null
           : ProgressCalculator.calculate(selectedAggregate);
       final comparison =
-          selectedAggregate == null || comparisonAggregate == null
+          !comparisonCompatible ||
+              selectedAggregate == null ||
+              comparisonAggregate == null
           ? null
           : ProgressCalculator.compare(comparisonAggregate, selectedAggregate);
       _set(
@@ -155,6 +190,7 @@ final class ProgressReportController extends ChangeNotifier {
           comparisonCycleId: comparisonCycleId,
           selectedSummary: selectedSummary,
           comparison: comparison,
+          comparisonCompatible: comparisonCompatible,
         ),
       );
     } catch (_) {
@@ -173,6 +209,19 @@ final class ProgressReportController extends ChangeNotifier {
   );
 
   bool _current(int generation) => !_disposed && generation == _generation;
+
+  bool _sameCycleSelection(TrainingSet left, TrainingSet right) {
+    final leftItems = left.items;
+    final rightItems = right.items;
+    if (leftItems.length != rightItems.length) return false;
+    for (var index = 0; index < leftItems.length; index++) {
+      if (leftItems[index].blockId != rightItems[index].blockId ||
+          leftItems[index].contentType != rightItems[index].contentType) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   void _set(ProgressReportState state) {
     _state = state;

@@ -149,6 +149,7 @@ final class _MetadataCard extends StatelessWidget {
             const SizedBox(height: 8),
             _MetricRow('Attempted', '${metrics.attemptedCount}'),
             _MetricRow('Passed', '${metrics.passedCount}'),
+            _MetricRow('Assisted', '${metrics.assistedCount}'),
             _MetricRow('Failed', '${metrics.nonPassingCount}'),
             _MetricRow(
               'Accuracy',
@@ -167,6 +168,7 @@ final class _MetadataCard extends StatelessWidget {
             ),
             const Divider(height: 20),
             _MetricRow('Passed', '${metrics.passedCount}'),
+            _MetricRow('Assisted', '${metrics.assistedCount}'),
             _MetricRow('Wrong move', '${metrics.wrongMoveOutcomeCount}'),
             _MetricRow('Revealed', '${metrics.revealedCount}'),
             _MetricRow('Skipped', '${metrics.skippedCount}'),

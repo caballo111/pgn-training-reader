@@ -13,6 +13,7 @@ final class MoveNode {
     required String uci,
     required String fenBefore,
     required String fenAfter,
+    List<String> startingComments = const [],
     List<String> comments = const [],
     List<int> nags = const [],
     List<MoveNode> children = const [],
@@ -38,6 +39,7 @@ final class MoveNode {
       uci: uci,
       fenBefore: fenBefore,
       fenAfter: fenAfter,
+      startingComments: List.unmodifiable(startingComments),
       comments: List.unmodifiable(comments),
       nags: List.unmodifiable(nags),
       children: List.unmodifiable(children),
@@ -49,6 +51,7 @@ final class MoveNode {
     required this.uci,
     required this.fenBefore,
     required this.fenAfter,
+    required this.startingComments,
     required this.comments,
     required this.nags,
     required this.children,
@@ -66,7 +69,10 @@ final class MoveNode {
   /// FEN position immediately after this move.
   final String fenAfter;
 
-  /// Comments attached to this move, preserved in their source order.
+  /// Comments authored before this move, typically introducing a variation.
+  final List<String> startingComments;
+
+  /// Comments authored after this move, preserved in their source order.
   ///
   /// Empty comments are retained because an empty PGN comment is valid input.
   final List<String> comments;
@@ -88,6 +94,7 @@ final class MoveNode {
           other.uci == uci &&
           other.fenBefore == fenBefore &&
           other.fenAfter == fenAfter &&
+          _listEquals(other.startingComments, startingComments) &&
           _listEquals(other.comments, comments) &&
           _listEquals(other.nags, nags) &&
           _listEquals(other.children, children);
@@ -98,6 +105,7 @@ final class MoveNode {
     uci,
     fenBefore,
     fenAfter,
+    Object.hashAll(startingComments),
     Object.hashAll(comments),
     Object.hashAll(nags),
     Object.hashAll(children),

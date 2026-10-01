@@ -84,6 +84,7 @@ void main() {
         item: item,
         repository: repository,
       );
+      service.failCloseCount = 1;
       final controller = ActiveSessionController(
         trainingSet: TrainingSet(
           id: 'set',
@@ -100,8 +101,24 @@ void main() {
             AuthoredLinePuzzleEvaluator(clock: clock, idGenerator: _Ids()),
       );
       await tester.pumpWidget(
-        MaterialApp(home: ActiveSessionPage(controller: controller)),
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ActiveSessionPage(controller: controller),
+                    ),
+                  ),
+                  child: const Text('Open session'),
+                ),
+              ),
+            ),
+          ),
+        ),
       );
+      await tester.tap(find.text('Open session'));
       await tester.pumpAndSettle();
       expect(find.text('White to move'), findsOneWidget);
       expect(find.byType(PuzzleSolvingView), findsOneWidget);
@@ -134,11 +151,32 @@ void main() {
       expect(repository.attempt.outcome, PuzzleAttemptOutcome.passed);
       controller.refreshClock();
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Continue to review'));
+      expect(find.text('Selected move: e4'), findsOneWidget);
+      expect(find.text('Continue to review'), findsNothing);
+      await tester.tap(find.byTooltip('Pause session'));
       await tester.pumpAndSettle();
+      expect(controller.state.status, ActiveSessionStatus.paused);
       clock.elapsed += const Duration(seconds: 5);
       await tester.pump(const Duration(seconds: 5));
       expect(find.text('Session 00:07'), findsOneWidget);
+      expect(controller.state.session?.status, TrainingSessionStatus.paused);
+      expect(
+        tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+        isFalse,
+      );
+      await controller.whenIdle();
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(service.closeCalls, 1);
+      expect(
+        find.text('The session could not be saved or restored. Try again.'),
+        findsOneWidget,
+      );
+      expect(find.text('Open session'), findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Open session'), findsOneWidget);
+      expect(service.closeCalls, 2);
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
     },
@@ -211,6 +249,8 @@ final class _SessionService implements TrainingSessionService {
   final TrainingSetItem item;
   final _TrainingRepository repository;
   int pauseCalls = 0;
+  int closeCalls = 0;
+  int failCloseCount = 0;
   final List<Duration> segmentDurations = [];
   @override
   Future<Cycle> startOrResumeCycle({
@@ -233,15 +273,17 @@ final class _SessionService implements TrainingSessionService {
     required Duration? activeAttemptSegmentDuration,
   }) async {
     pauseCalls++;
-    final duration = activeAttemptSegmentDuration!;
+    final duration = activeAttemptSegmentDuration ?? Duration.zero;
     segmentDurations.add(duration);
-    repository.saveAttempt(
-      _copyAttempt(
-        repository.attempt,
-        status: PuzzleAttemptStatus.paused,
-        activeDuration: repository.attempt.activeDuration + duration,
-      ),
-    );
+    if (repository.attempt.outcome == null) {
+      repository.saveAttempt(
+        _copyAttempt(
+          repository.attempt,
+          status: PuzzleAttemptStatus.paused,
+          activeDuration: repository.attempt.activeDuration + duration,
+        ),
+      );
+    }
     return TrainingSession(
       id: session.id,
       cycleId: session.cycleId,
@@ -273,6 +315,26 @@ final class _SessionService implements TrainingSessionService {
         sessionId: session.id,
         startedAt: resumedAt,
       ),
+    );
+  }
+
+  @override
+  Future<TrainingSession> closeSession({
+    required String sessionId,
+    required DateTime endedAt,
+  }) async {
+    closeCalls++;
+    if (failCloseCount > 0) {
+      failCloseCount--;
+      throw StateError('Session close failed.');
+    }
+    return TrainingSession(
+      id: sessionId,
+      cycleId: session.cycleId,
+      status: TrainingSessionStatus.closed,
+      startedAt: session.startedAt,
+      endedAt: endedAt,
+      studyDay: session.studyDay,
     );
   }
 

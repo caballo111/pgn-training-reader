@@ -11,6 +11,7 @@ import 'lifecycle_status.dart';
 import 'puzzle_attempt.dart';
 import 'timing_segment.dart';
 import 'training_repository.dart';
+import 'puzzle_interaction_repository.dart';
 import 'training_session.dart';
 import 'training_session_service.dart';
 import 'training_set.dart';
@@ -255,7 +256,7 @@ final class TrainingSessionServiceImpl implements TrainingSessionService {
         message: 'Active cycle not found.',
       );
     }
-    final set = await _requireSet(cycle.trainingSetId);
+    final set = await _cycleSet(cycle);
     final completed = await _repository.completedNonPuzzleItemIds(cycleId);
     final attempts = await _repository.listAttempts(cycleId);
     for (final item in set.items) {
@@ -302,7 +303,7 @@ final class TrainingSessionServiceImpl implements TrainingSessionService {
         message: 'Attempt requires an active session in an active cycle.',
       );
     }
-    final set = await _requireSet(cycle.trainingSetId);
+    final set = await _cycleSet(cycle);
     final matches = set.items.where((item) => item.id == trainingSetItemId);
     if (matches.isEmpty || matches.single.contentType != ContentType.puzzle) {
       throw ValidationFailure(
@@ -359,7 +360,7 @@ final class TrainingSessionServiceImpl implements TrainingSessionService {
         message: 'Active cycle not found.',
       );
     }
-    final set = await _requireSet(cycle.trainingSetId);
+    final set = await _cycleSet(cycle);
     final items = set.items.where((item) => item.id == trainingSetItemId);
     if (items.isEmpty || items.single.contentType == ContentType.puzzle) {
       throw ValidationFailure(
@@ -603,7 +604,7 @@ final class TrainingSessionServiceImpl implements TrainingSessionService {
         message: 'Active cycle not found.',
       );
     }
-    final set = await _requireSet(cycle.trainingSetId);
+    final set = await _cycleSet(cycle);
     final attempts = await _repository.listAttempts(cycleId);
     final completed = await _repository.completedNonPuzzleItemIds(cycleId);
     if (attempts.any(
@@ -692,6 +693,14 @@ final class TrainingSessionServiceImpl implements TrainingSessionService {
         code: 'invalid_training_transition',
         message: 'Attempt not found.',
       ));
+  Future<TrainingSet> _cycleSet(Cycle cycle) async {
+    final repository = _repository;
+    final snapshot = repository is CycleSnapshotRepository
+        ? await (repository as CycleSnapshotRepository).getCycleSet(cycle.id)
+        : null;
+    return snapshot ?? await _requireSet(cycle.trainingSetId);
+  }
+
   Future<TrainingSet> _requireSet(String id) async =>
       await _repository.getSet(id) ??
       (throw ValidationFailure(
@@ -719,7 +728,7 @@ final class TrainingSessionServiceImpl implements TrainingSessionService {
   Future<PuzzleAttempt?> _pausedAttempt(String cycleId) async {
     final cycle = await _repository.getCycle(cycleId);
     if (cycle == null) return null;
-    final set = await _requireSet(cycle.trainingSetId);
+    final set = await _cycleSet(cycle);
     final attempts = await _repository.listAttempts(cycleId);
     for (final item in set.items) {
       if (item.contentType != ContentType.puzzle) continue;

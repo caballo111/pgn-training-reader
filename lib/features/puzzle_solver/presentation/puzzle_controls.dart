@@ -64,58 +64,12 @@ final class _ActivePuzzleControls extends StatelessWidget {
         label: const Text('Pause'),
       ),
       TextButton(
-        onPressed: enabled
-            ? () => _confirm(
-                context,
-                title: 'Show solution?',
-                message: 'This ends the attempt and records a revealed result. You can review the solution afterward.',
-                confirmLabel: 'Show solution',
-                onConfirm: onShowSolution,
-              )
-            : null,
+        onPressed: enabled ? onShowSolution : null,
         child: const Text('Show solution'),
       ),
-      TextButton(
-        onPressed: enabled
-            ? () => _confirm(
-                context,
-                title: 'Skip this puzzle?',
-                message: 'This ends the attempt and records it as skipped. The solution will be available for review.',
-                confirmLabel: 'Skip puzzle',
-                onConfirm: onSkip,
-              )
-            : null,
-        child: const Text('Skip'),
-      ),
+      TextButton(onPressed: enabled ? onSkip : null, child: const Text('Skip')),
     ],
   );
-
-  Future<void> _confirm(
-    BuildContext context, {
-    required String title,
-    required String message,
-    required String confirmLabel,
-    required VoidCallback onConfirm,
-  }) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) onConfirm();
-  }
 }
 
 final class _ReviewPuzzleControls extends StatelessWidget {

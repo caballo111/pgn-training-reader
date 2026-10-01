@@ -10,6 +10,7 @@ const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 Widget _host({
   required PuzzleSide orientation,
   required ValueChanged<String> onMoveSubmitted,
+  String? hintSquare,
 }) => MaterialApp(
   home: Scaffold(
     body: Center(
@@ -22,6 +23,7 @@ Widget _host({
             'e2': {'e4'},
           },
           orientation: orientation,
+          hintSquare: hintSquare,
           onMoveSubmitted: onMoveSubmitted,
         ),
       ),
@@ -86,5 +88,53 @@ void main() {
     expect(submitted, ['e2e4']);
     expect(find.text('Next'), findsNothing);
     expect(find.text('Previous'), findsNothing);
+  });
+
+  testWidgets('announces and visually marks the hinted origin square', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        orientation: PuzzleSide.black,
+        onMoveSubmitted: (_) {},
+        hintSquare: 'e2',
+      ),
+    );
+
+    expect(
+      find.bySemanticsLabel('Puzzle board. Hint: the piece on e2 can move.'),
+      findsOneWidget,
+    );
+    final blackOverlay = find.byKey(
+      const ValueKey('puzzle-hint-square-highlight'),
+    );
+    expect(blackOverlay, findsOneWidget);
+    final blackPainter =
+        tester.widget<CustomPaint>(blackOverlay).painter!
+            as HintSquareHighlightPainter;
+    expect(
+      blackPainter.squareRectFor(const Size(320, 320)),
+      const Rect.fromLTWH(120, 40, 40, 40),
+    );
+
+    await tester.pumpWidget(
+      _host(
+        orientation: PuzzleSide.white,
+        onMoveSubmitted: (_) {},
+        hintSquare: 'e2',
+      ),
+    );
+    final whitePainter =
+        tester.widget<CustomPaint>(blackOverlay).painter!
+            as HintSquareHighlightPainter;
+    expect(
+      whitePainter.squareRectFor(const Size(320, 320)),
+      const Rect.fromLTWH(160, 240, 40, 40),
+    );
+
+    await tester.pumpWidget(
+      _host(orientation: PuzzleSide.white, onMoveSubmitted: (_) {}),
+    );
+    expect(blackOverlay, findsNothing);
   });
 }

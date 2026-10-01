@@ -114,6 +114,7 @@ final class _SessionCard extends StatelessWidget {
             else ...[
               const Divider(height: 20),
               _MetricRow('Passed', '${summary.passedCount}'),
+              _MetricRow('Assisted', '${summary.assistedCount}'),
               _MetricRow('Wrong move', '${summary.wrongMoveOutcomeCount}'),
               _MetricRow('Revealed', '${summary.revealedCount}'),
               _MetricRow('Skipped', '${summary.skippedCount}'),

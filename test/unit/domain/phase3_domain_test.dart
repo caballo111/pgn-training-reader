@@ -583,6 +583,17 @@ void main() {
         ),
         isA<PuzzleAttempt>(),
       );
+      // Historical records may have been scored before hinted completions
+      // gained the Assisted outcome; reading them must preserve Passed.
+      expect(
+        _attempt(
+          status: PuzzleAttemptStatus.finalized,
+          outcome: PuzzleAttemptOutcome.passed,
+          completedAt: _end,
+          hintCount: 1,
+        ).outcome,
+        PuzzleAttemptOutcome.passed,
+      );
       expect(() => _attempt(revealed: true), throwsArgumentError);
       expect(
         () => _attempt(activeDuration: const Duration(seconds: -1)),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/time/app_clock.dart';
+import '../../../core/errors/app_failure.dart';
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/chess_content_repository.dart';
 import '../../../domain/chess_content/content_type.dart';
@@ -10,6 +11,8 @@ import '../../../domain/training/cycle.dart';
 import '../../../domain/training/lifecycle_status.dart';
 import '../../../domain/training/progress_aggregate.dart';
 import '../../../domain/training/puzzle_attempt.dart';
+import '../../../domain/training/puzzle_completion_policy.dart';
+import '../../../domain/training/puzzle_interaction_repository.dart';
 import '../../../domain/training/attempt_move.dart';
 import '../../../domain/training/training_repository.dart';
 import '../../../domain/training/training_session.dart';
@@ -62,9 +65,12 @@ final class ActiveSessionController extends ChangeNotifier
     required this.contentRepository,
     required this.clock,
     required this.evaluatorFactory,
+    this.completionPolicy = PuzzleCompletionPolicy.keyMoves,
   });
 
-  final TrainingSet trainingSet;
+  TrainingSet trainingSet;
+  final PuzzleCompletionPolicy completionPolicy;
+  PuzzleCompletionPolicy _effectivePolicy = PuzzleCompletionPolicy.allMoves;
   final TrainingSessionService sessionService;
   final TrainingRepository repository;
   final ChessContentRepository contentRepository;
@@ -79,15 +85,30 @@ final class ActiveSessionController extends ChangeNotifier
   Duration? _nonPuzzleStartedMonotonic;
   Duration _localNonPuzzleCycleTime = Duration.zero;
   bool _started = false;
+  final Set<PuzzleSolverController> _puzzleControllers = {};
   bool _transitioning = false;
+  Completer<void>? _transitionDone;
 
-  PuzzleSolverController createPuzzleController() => PuzzleSolverController(
-    repository: repository,
-    evaluatorFactory: evaluatorFactory,
-    moveRecorder: _recordMove,
-    attemptFinalizer: _finalizeAttempt,
-    activeSegmentDurationProvider: _activeAttemptDuration,
-  );
+  /// Completes after the current serialized session write finishes.
+  Future<void> whenIdle() async {
+    while (_transitioning) {
+      final pending = _transitionDone;
+      if (pending != null) await pending.future;
+    }
+  }
+
+  PuzzleSolverController createPuzzleController() {
+    final controller = PuzzleSolverController(
+      repository: repository,
+      evaluatorFactory: evaluatorFactory,
+      completionPolicy: _effectivePolicy,
+      moveRecorder: _recordMove,
+      attemptFinalizer: _finalizeAttempt,
+      activeSegmentDurationProvider: _activeAttemptDuration,
+    );
+    _puzzleControllers.add(controller);
+    return controller;
+  }
 
   Future<PuzzleAttempt> _recordMove({
     required AttemptMove move,
@@ -147,6 +168,28 @@ final class ActiveSessionController extends ChangeNotifier
         trainingSetId: trainingSet.id,
         startedAt: clock.utcNow,
       );
+      final snapshots = repository;
+      if (snapshots is CycleSnapshotRepository) {
+        final snapshot = await (snapshots as CycleSnapshotRepository)
+            .getCycleSet(cycle.id);
+        if (snapshot != null) trainingSet = snapshot;
+        final savedPolicy = await (snapshots as CycleSnapshotRepository)
+            .getCyclePolicy(cycle.id);
+        // A cycle created before snapshots retains historical All Moves scoring.
+        _effectivePolicy = savedPolicy == null
+            ? (snapshot == null
+                  ? PuzzleCompletionPolicy.allMoves
+                  : completionPolicy)
+            : PuzzleCompletionPolicy.values.byName(savedPolicy);
+        if (savedPolicy == null) {
+          await (snapshots as CycleSnapshotRepository).setCyclePolicy(
+            cycle.id,
+            _effectivePolicy.name,
+          );
+        }
+      } else {
+        _effectivePolicy = completionPolicy;
+      }
       final sessions = await repository.listSessions(cycle.id);
       final interrupted = sessions
           .where((s) => s.status == TrainingSessionStatus.active)
@@ -211,10 +254,23 @@ final class ActiveSessionController extends ChangeNotifier
         session.status != TrainingSessionStatus.active) {
       return;
     }
-    await _run(() => _loadNext(cycle, session));
+    await _run(() async {
+      final snapshots = repository;
+      if (snapshots is CycleSnapshotRepository) {
+        await (snapshots as CycleSnapshotRepository).setCycleCursor(
+          cycle.id,
+          null,
+        );
+      }
+      await _loadNext(cycle, session);
+    });
   }
 
   Future<void> pause() async {
+    await whenIdle();
+    await Future.wait([
+      for (final controller in _puzzleControllers) controller.whenIdle(),
+    ]);
     final session = _state.session;
     if (session == null || session.status != TrainingSessionStatus.active) {
       return;
@@ -352,7 +408,20 @@ final class ActiveSessionController extends ChangeNotifier
   }
 
   Future<void> _loadNext(Cycle cycle, TrainingSession session) async {
-    final item = await sessionService.selectNextItem(cycleId: cycle.id);
+    final snapshots = repository;
+    PuzzleAttempt? cursorAttempt;
+    if (snapshots is CycleSnapshotRepository) {
+      final cursor = await (snapshots as CycleSnapshotRepository)
+          .getCycleCursor(cycle.id);
+      if (cursor != null) cursorAttempt = await repository.getAttempt(cursor);
+    }
+    final cursorItem = cursorAttempt == null
+        ? null
+        : trainingSet.items
+              .where((item) => item.blockId == cursorAttempt!.blockId)
+              .firstOrNull;
+    final item =
+        cursorItem ?? await sessionService.selectNextItem(cycleId: cycle.id);
     final progress = await repository.aggregateForCycle(cycle.id);
     final allAttempts = await repository.listAttempts(cycle.id);
     final cycleTime =
@@ -394,9 +463,11 @@ final class ActiveSessionController extends ChangeNotifier
     if (item.contentType == ContentType.puzzle) {
       _nonPuzzleStartedMonotonic = null;
       final attempts = await repository.listAttempts(cycle.id);
-      attempt = attempts
-          .where((a) => a.blockId == item.blockId && a.outcome == null)
-          .firstOrNull;
+      attempt =
+          cursorAttempt ??
+          attempts
+              .where((a) => a.blockId == item.blockId && a.outcome == null)
+              .firstOrNull;
       if (attempt == null) {
         attempt = await sessionService.startAttempt(
           cycleId: cycle.id,
@@ -404,6 +475,7 @@ final class ActiveSessionController extends ChangeNotifier
           trainingSetItemId: item.id,
           startedAt: clock.utcNow,
         );
+        attempt = await repository.getAttempt(attempt.id);
         _attemptStartedMonotonic = clock.monotonicElapsed;
       } else if (attempt.status == PuzzleAttemptStatus.paused &&
           session.status == TrainingSessionStatus.active) {
@@ -411,6 +483,7 @@ final class ActiveSessionController extends ChangeNotifier
           attemptId: attempt.id,
           resumedAt: clock.utcNow,
         );
+        attempt = await repository.getAttempt(attempt.id);
         _attemptStartedMonotonic = clock.monotonicElapsed;
       } else if (attempt.status == PuzzleAttemptStatus.active &&
           _attemptStartedMonotonic == null) {
@@ -419,6 +492,12 @@ final class ActiveSessionController extends ChangeNotifier
     } else {
       _attemptStartedMonotonic = null;
       _nonPuzzleStartedMonotonic ??= clock.monotonicElapsed;
+    }
+    if (snapshots is CycleSnapshotRepository && attempt != null) {
+      await (snapshots as CycleSnapshotRepository).setCycleCursor(
+        cycle.id,
+        attempt.id,
+      );
     }
     _publish(
       ActiveSessionState(
@@ -476,6 +555,8 @@ final class ActiveSessionController extends ChangeNotifier
   Future<void> _run(Future<void> Function() work) async {
     if (_transitioning) return;
     _transitioning = true;
+    final transitionDone = Completer<void>();
+    _transitionDone = transitionDone;
     try {
       await work();
     } catch (error) {
@@ -490,11 +571,17 @@ final class ActiveSessionController extends ChangeNotifier
           progress: _state.progress,
           sessionActiveTime: _currentSessionElapsed,
           cycleActiveTime: _state.cycleActiveTime,
-          errorMessage: error.toString(),
+          errorMessage: error is AppFailure
+              ? error.message
+              : 'The session could not be saved or restored. Try again.',
         ),
       );
     } finally {
       _transitioning = false;
+      if (identical(_transitionDone, transitionDone)) {
+        _transitionDone = null;
+      }
+      transitionDone.complete();
     }
   }
 
@@ -506,6 +593,10 @@ final class ActiveSessionController extends ChangeNotifier
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    for (final controller in _puzzleControllers) {
+      controller.dispose();
+    }
+    _puzzleControllers.clear();
     super.dispose();
   }
 }

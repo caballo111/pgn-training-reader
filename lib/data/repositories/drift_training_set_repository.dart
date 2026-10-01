@@ -25,6 +25,17 @@ final class DriftTrainingSetRepository implements TrainingSetRepository {
 
   @override
   Future<List<TrainingSet>> listSets() => _guard(() async {
+    final removed = await _database
+        .customSelect(
+          "SELECT key FROM app_settings WHERE key LIKE 'removed-training-set:%'",
+        )
+        .get();
+    final removedIds = removed
+        .map(
+          (row) =>
+              row.read<String>('key').substring('removed-training-set:'.length),
+        )
+        .toSet();
     final rows =
         await (_database.select(_database.trainingSets)..orderBy([
               (set) => OrderingTerm.asc(set.name),
@@ -33,6 +44,7 @@ final class DriftTrainingSetRepository implements TrainingSetRepository {
             .get();
     final result = <TrainingSet>[];
     for (final row in rows) {
+      if (removedIds.contains(row.id)) continue;
       result.add(await _loadSet(row));
     }
     return List.unmodifiable(result);
@@ -108,6 +120,23 @@ final class DriftTrainingSetRepository implements TrainingSetRepository {
                   ),
                 );
         if (changed == 0) _missingSet();
+      });
+
+  @override
+  Future<void> removeSet({required String id, required DateTime removedAt}) =>
+      _guard(() async {
+        await _database.transaction(() async {
+          final set = await getSet(id);
+          if (set == null) _missingSet();
+          if (set!.status == TrainingSetStatus.active) {
+            await archiveSet(id: id, archivedAt: removedAt);
+          }
+          await _database.customStatement(
+            'INSERT INTO app_settings (key, value) VALUES (?, ?) '
+            'ON CONFLICT(key) DO NOTHING',
+            ['removed-training-set:$id', _micros(removedAt).toString()],
+          );
+        });
       });
 
   @override

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/chessboard/chessboard_adapter.dart';
 import '../../../shared/presentation/flip_board_button.dart';
+import '../../../shared/presentation/study_board_frame.dart';
 
 /// Read-only board presentation for the game reader.
 ///
@@ -41,48 +42,44 @@ class _ReaderBoardState extends State<ReaderBoard> {
         ? 'White to move'
         : 'Black to move';
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Semantics(
-          liveRegion: true,
-          label: sideLabel,
-          child: ExcludeSemantics(
-            child: Text(sideLabel, textAlign: TextAlign.center),
-          ),
-        ),
-        Semantics(
-          container: true,
-          label:
-              'Chessboard with files a through h and ranks 1 through 8. '
-              '$sideLabel.',
-          child: ExcludeSemantics(
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: LayoutBuilder(
-                builder: (context, constraints) => chessground.StaticChessboard(
-                  size: constraints.maxWidth,
-                  orientation: _orientation,
-                  fen: widget.board.game.fen,
-                  lastMove: widget.board.game.lastMove,
-                  settings: const chessground.StaticChessboardSettings(
-                    enableCoordinates: true,
-                    showLastMove: true,
-                  ),
+    return StudyBoardFrame(
+      sideToMove: sideLabel,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            container: true,
+            label:
+                'Chessboard with files a through h and ranks 1 through 8. '
+                '$sideLabel.',
+            child: ExcludeSemantics(
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: LayoutBuilder(
+                  builder: (context, constraints) =>
+                      chessground.StaticChessboard(
+                        size: constraints.maxWidth,
+                        orientation: _orientation,
+                        fen: widget.board.game.fen,
+                        lastMove: widget.board.game.lastMove,
+                        settings: const chessground.StaticChessboardSettings(
+                          enableCoordinates: true,
+                          showLastMove: true,
+                        ),
+                      ),
                 ),
               ),
             ),
           ),
-        ),
-        if (widget.showOrientationControl)
-          Center(
-            child: FlipBoardButton(
-              key: const ValueKey('reader-board-orientation'),
-              onPressed: _toggleOrientation,
+          if (widget.showOrientationControl)
+            Center(
+              child: FlipBoardButton(
+                key: const ValueKey('reader-board-orientation'),
+                onPressed: _toggleOrientation,
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 

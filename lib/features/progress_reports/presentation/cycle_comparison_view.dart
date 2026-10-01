@@ -58,7 +58,11 @@ final class CycleComparisonView extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               if (comparison == null)
-                const Text('Choose another cycle to compare these results.')
+                Text(
+                  state.comparisonCompatible
+                      ? 'Choose another cycle to compare these results.'
+                      : 'Selections or completion policies differ; these cycles are not directly comparable.',
+                )
               else ...[
                 Text(
                   'Change = selected cycle − comparison cycle',
@@ -72,6 +76,13 @@ final class CycleComparisonView extends StatelessWidget {
                   change: _formatPercentagePointChange(
                     comparison.accuracyPercentagePointChange,
                   ),
+                ),
+                const Divider(),
+                _ComparisonMetric(
+                  label: 'Assisted',
+                  earlier: '${comparison.earlier.assistedCount}',
+                  later: '${comparison.later.assistedCount}',
+                  change: _formatCountChange(comparison.assistedCountChange),
                 ),
                 const Divider(),
                 _ComparisonMetric(
@@ -144,6 +155,8 @@ String _cycleLabel(Cycle cycle, int index) {
 
 String _formatAccuracy(double? value) =>
     value == null ? 'Not available' : '${value.toStringAsFixed(1)}%';
+
+String _formatCountChange(int value) => '${value > 0 ? '+' : ''}$value';
 
 String _formatPercentagePointChange(double? value) {
   if (value == null) return 'Not available';

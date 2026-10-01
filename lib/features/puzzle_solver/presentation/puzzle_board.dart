@@ -19,6 +19,7 @@ final class PuzzleBoard extends StatefulWidget {
     required this.onMoveSubmitted,
     this.enabled = true,
     this.lastMoveUci,
+    this.hintSquare,
     super.key,
   });
 
@@ -42,6 +43,9 @@ final class PuzzleBoard extends StatefulWidget {
 
   /// Previous user move for highlighting, when available.
   final String? lastMoveUci;
+
+  /// Origin square emphasized by an assisted hint.
+  final String? hintSquare;
 
   @override
   State<PuzzleBoard> createState() => _PuzzleBoardState();
@@ -72,27 +76,46 @@ final class _PuzzleBoardState extends State<PuzzleBoard> {
   Widget build(BuildContext context) => Semantics(
     container: true,
     enabled: widget.enabled,
-    label: 'Puzzle board with files a through h and ranks 1 through 8.',
+    label: widget.hintSquare == null
+        ? 'Puzzle board with files a through h and ranks 1 through 8.'
+        : 'Puzzle board. Hint: the piece on ${widget.hintSquare} can move.',
     child: IgnorePointer(
       ignoring: !widget.enabled,
       child: ExcludeSemantics(
         child: AspectRatio(
           aspectRatio: 1,
-          child: LayoutBuilder(
-            builder: (context, constraints) => chessground.Chessboard(
-              size: constraints.maxWidth,
-              controller: _controller,
-              orientation: _orientation(widget.orientation),
-              settings: const chessground.ChessboardSettings(
-                enableCoordinates: true,
-                enablePremoves: false,
-                enableDrops: false,
-                showLastMove: true,
-                showValidMoves: true,
+          child: Stack(
+            children: [
+              LayoutBuilder(
+                builder: (context, constraints) => chessground.Chessboard(
+                  size: constraints.maxWidth,
+                  controller: _controller,
+                  orientation: _orientation(widget.orientation),
+                  settings: const chessground.ChessboardSettings(
+                    enableCoordinates: true,
+                    enablePremoves: false,
+                    enableDrops: false,
+                    showLastMove: true,
+                    showValidMoves: true,
+                  ),
+                  onMove: (move, {viaDragAndDrop}) =>
+                      widget.onMoveSubmitted(move.uci),
+                ),
               ),
-              onMove: (move, {viaDragAndDrop}) =>
-                  widget.onMoveSubmitted(move.uci),
-            ),
+              if (widget.hintSquare case final square?)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      key: const ValueKey('puzzle-hint-square-highlight'),
+                      painter: HintSquareHighlightPainter(
+                        square: square,
+                        blackOrientation:
+                            widget.orientation == PuzzleSide.black,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -125,4 +148,50 @@ final class _PuzzleBoardState extends State<PuzzleBoard> {
     PuzzleSide.white => chessground.PlayerSide.white,
     PuzzleSide.black => chessground.PlayerSide.black,
   };
+}
+
+final class HintSquareHighlightPainter extends CustomPainter {
+  const HintSquareHighlightPainter({
+    required this.square,
+    required this.blackOrientation,
+  });
+
+  final String square;
+  final bool blackOrientation;
+
+  Rect? squareRectFor(Size size) {
+    if (square.length != 2) return null;
+    final file = square.codeUnitAt(0) - 97;
+    final rank = int.tryParse(square[1]);
+    if (file < 0 || file > 7 || rank == null || rank < 1 || rank > 8) {
+      return null;
+    }
+    final column = blackOrientation ? 7 - file : file;
+    final row = blackOrientation ? rank - 1 : 8 - rank;
+    return Rect.fromLTWH(
+      column * size.width / 8,
+      row * size.height / 8,
+      size.width / 8,
+      size.height / 8,
+    );
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = squareRectFor(size);
+    if (rect == null) return;
+    canvas.drawRect(rect, Paint()..color = const Color(0x8867D6A0));
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = const Color(0xFF1B7A50)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(HintSquareHighlightPainter oldDelegate) =>
+      square != oldDelegate.square ||
+      blackOrientation != oldDelegate.blackOrientation;
 }

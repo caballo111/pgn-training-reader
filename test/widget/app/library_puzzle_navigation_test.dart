@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value, Variable;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,14 +12,13 @@ import 'package:pgntrainingreader/data/file_access/file_source_picker.dart';
 import 'package:pgntrainingreader/data/file_access/flutter_file_source_picker.dart';
 import 'package:pgntrainingreader/data/file_access/managed_file_source.dart';
 import 'package:pgntrainingreader/data/file_access/source_fingerprint.dart';
-import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_board.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/game_reader_page.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solving_view.dart';
 
 void main() {
   testWidgets(
-    'library practice hides answers and resumes an unfinished attempt',
+    'library casual solving avoids cycles and remembers book reading preference',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
@@ -141,7 +140,9 @@ void main() {
       expect(find.text('Black to move'), findsOneWidget);
       expect(find.textContaining('SECRET ANSWER'), findsNothing);
       expect(await db.select(db.puzzleAttempts).get(), isEmpty);
-      await tester.tap(find.text('Start or resume practice'));
+      expect(await db.select(db.trainingSets).get(), isEmpty);
+      expect(await db.select(db.cycles).get(), isEmpty);
+      await tester.tap(find.text('Solve this puzzle'));
       await tester.pumpAndSettle();
       expect(find.byType(PuzzleSolvingView), findsOneWidget);
       expect(
@@ -149,33 +150,164 @@ void main() {
         'b',
       );
       expect(find.textContaining('SECRET ANSWER'), findsNothing);
-      final attempt = (await db.select(db.puzzleAttempts).get()).single;
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      final paused = (await dependencies.trainingRepository.getAttempt(
-        attempt.id,
-      ))!;
-      expect(paused.status, PuzzleAttemptStatus.paused);
-      expect(paused.outcome, isNull);
-      await tester.tap(find.text('Start or resume practice'));
-      await tester.pumpAndSettle();
-      expect(await db.select(db.puzzleAttempts).get(), hasLength(1));
-      var board = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
-      board.onMoveSubmitted('e7e5');
-      await tester.pumpAndSettle();
-      board = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
-      board.onMoveSubmitted('e2e4');
-      await tester.pumpAndSettle();
-      board = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
-      board.onMoveSubmitted('b8c6');
-      await tester.pumpAndSettle();
+      final initialPointer = await db
+          .customSelect(
+            'SELECT value FROM app_settings WHERE key = ?',
+            variables: [Variable<String>('casual.current.block')],
+          )
+          .getSingle();
+      final pausedId = initialPointer.data['value'] as String;
+      final pausedScore = jsonDecode(
+        (await db
+                    .customSelect(
+                      'SELECT value FROM app_settings WHERE key = ?',
+                      variables: [Variable<String>('casual.score.$pausedId')],
+                    )
+                    .getSingle())
+                .data['value']
+            as String,
+      ) as Map<String, dynamic>;
       expect(
-        (await dependencies.trainingRepository.getAttempt(attempt.id))!.outcome,
-        PuzzleAttemptOutcome.passed,
+        (pausedScore['attempt'] as Map<String, dynamic>)['status'],
+        'paused',
       );
-      await tester.tap(find.text('Continue to review'));
+
+      await tester.tap(find.text('Solve this puzzle'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PuzzleSolvingView), findsOneWidget);
+      expect(
+        tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).fen.split(' ')[1],
+        'b',
+      );
+      await tester.tap(find.text('Read puzzle'));
       await tester.pumpAndSettle();
       expect(find.textContaining('SECRET ANSWER'), findsWidgets);
+      final revealedScore = jsonDecode(
+        (await db
+                    .customSelect(
+                      'SELECT value FROM app_settings WHERE key = ?',
+                      variables: [Variable<String>('casual.score.$pausedId')],
+                    )
+                    .getSingle())
+                .data['value']
+            as String,
+      ) as Map<String, dynamic>;
+      expect(
+        (revealedScore['attempt'] as Map<String, dynamic>)['outcome'],
+        'revealed',
+      );
+      await tester.tap(find.text('Solve'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      final retryPointer = await db
+          .customSelect(
+            'SELECT value FROM app_settings WHERE key = ?',
+            variables: [Variable<String>('casual.current.block')],
+          )
+          .getSingle();
+      final retryId = retryPointer.data['value'] as String;
+      expect(retryId, isNot(pausedId));
+      expect(
+        await db
+            .customSelect(
+              'SELECT key FROM app_settings WHERE key = ?',
+              variables: [Variable<String>('casual.score.$pausedId')],
+            )
+            .get(),
+        hasLength(1),
+      );
+      var board = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
+      board.onMoveSubmitted('d7d5');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Incorrect'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Solve this puzzle'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Incorrect'), findsOneWidget);
+      board = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
+      board.onMoveSubmitted('e7e5');
+      // Back during continued practice must wait for the paced opponent reply,
+      // even though the first incorrect move already finalized the score.
+      final closingPractice = tester.binding.handlePopRoute();
+      await tester.pumpAndSettle(const Duration(milliseconds: 400));
+      await closingPractice;
+      expect(find.byType(PuzzleSolvingView), findsNothing);
+      await tester.tap(find.text('Solve this puzzle'));
+      await tester.pumpAndSettle();
+      board = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
+      expect(board.fen.split(' ')[1], 'b');
+      expect(board.fen, contains('4P3'));
+      board.onMoveSubmitted('b8c6');
+      await tester.pumpAndSettle();
+      expect(await db.select(db.puzzleAttempts).get(), isEmpty);
+      expect(await db.select(db.trainingSets).get(), isEmpty);
+      expect(await db.select(db.cycles).get(), isEmpty);
+      final current = await db
+          .customSelect(
+            'SELECT value FROM app_settings WHERE key = ?',
+            variables: [Variable<String>('casual.current.block')],
+          )
+          .getSingle();
+      final attemptId = current.data['value'] as String;
+      final scoreRow = await db
+          .customSelect(
+            'SELECT value FROM app_settings WHERE key = ?',
+            variables: [Variable<String>('casual.score.$attemptId')],
+          )
+          .getSingle();
+      final score =
+          jsonDecode(scoreRow.data['value'] as String) as Map<String, dynamic>;
+      expect(
+        (score['attempt'] as Map<String, dynamic>)['outcome'],
+        'wrongMove',
+      );
+      expect(find.text('Puzzle review'), findsOneWidget);
+      await tester.tap(find.text('Read'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('SECRET ANSWER'), findsWidgets);
+      await tester.tap(find.text('Solve'));
+      await tester.pumpAndSettle();
+      expect(find.text('Puzzle review'), findsOneWidget);
+      await tester.tap(find.text('Next exercise'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('second-block'), skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.byType(PuzzleSolvingView), findsOneWidget);
+      final nextSolver = tester.widget<PuzzleSolvingView>(
+        find.byType(PuzzleSolvingView),
+      );
+      expect(
+        nextSolver.controller.currentEvaluation?.attempt.blockId,
+        'second-block',
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Read puzzles in this book'));
+      await tester.pumpAndSettle();
+      expect(find.text('Reading this puzzle without scoring.'), findsOneWidget);
+      expect(find.textContaining('SECRET ANSWER'), findsWidgets);
+      await tester.tap(find.byTooltip('Previous PGN block'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('block')), findsOneWidget);
+      expect(find.text('Reading this puzzle without scoring.'), findsOneWidget);
+      final preference = await db
+          .customSelect(
+            'SELECT value FROM app_settings WHERE key = ?',
+            variables: [Variable<String>('library.read-puzzles.source')],
+          )
+          .getSingle();
+      expect(preference.data['value'], 'read');
+      final indexedBlock = await (db.select(
+        db.pgnBlocks,
+      )..where((block) => block.id.equals('second-block'))).getSingle();
+      expect(indexedBlock.contentType, 'Puzzle');
+
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());

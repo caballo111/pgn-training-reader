@@ -13,6 +13,7 @@ import '../features/import_library/application/import_controller.dart';
 import '../features/game_reader/presentation/game_reader_page.dart';
 import '../features/training_sets/presentation/training_sets_page.dart';
 import '../domain/training/authored_line_puzzle_evaluator.dart';
+import '../domain/training/puzzle_completion_policy.dart';
 
 /// Route names used by the application shell.
 abstract final class AppRoutes {
@@ -131,11 +132,17 @@ Future<void> _openBlock(
         .getPreviousInSource(block);
     if (!context.mounted) return;
     var loading = false;
+    var startNextPuzzle = false;
+    PuzzleCompletionPolicy? nextPuzzlePolicy;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => StatefulBuilder(
           builder: (readerContext, setReaderState) {
-            Future<void> navigate(PgnBlockIndex target) async {
+            Future<void> navigate(
+              PgnBlockIndex target, {
+              bool startSolving = false,
+              PuzzleCompletionPolicy? completionPolicy,
+            }) async {
               if (loading) return;
               setReaderState(() => loading = true);
               try {
@@ -157,6 +164,8 @@ Future<void> _openBlock(
                   content = loaded;
                   nextBlock = next;
                   previousBlock = previous;
+                  startNextPuzzle = startSolving;
+                  nextPuzzlePolicy = completionPolicy;
                 });
               } catch (error) {
                 if (!readerContext.mounted) return;
@@ -187,7 +196,17 @@ Future<void> _openBlock(
               puzzleViewBuilder: (_, puzzle) => LibraryPuzzlePractice(
                 dependencies: dependencies,
                 blockId: currentBlock.id,
+                bookId: currentBlock.sourceId,
                 puzzle: puzzle,
+                startAutomatically: startNextPuzzle,
+                initialCompletionPolicy: nextPuzzlePolicy,
+                onNextPuzzle: nextBlock == null
+                    ? null
+                    : (policy) => navigate(
+                        nextBlock!,
+                        startSolving: true,
+                        completionPolicy: policy,
+                      ),
               ),
               onClassificationOverride: currentBlock.authoredContentType == null
                   ? (type) => dependencies.pgnIndexRepository

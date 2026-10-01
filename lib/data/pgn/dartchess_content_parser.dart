@@ -106,16 +106,13 @@ final class DartchessContentParser {
       );
     }
     final after = before.play(move);
-    final comments = <String>[
-      ...?child.data.startingComments,
-      ...?child.data.comments,
-    ];
     return MoveNode(
       san: child.data.san,
       uci: move.uci,
       fenBefore: before.fen,
       fenAfter: after.fen,
-      comments: comments,
+      startingComments: child.data.startingComments ?? const [],
+      comments: child.data.comments ?? const [],
       nags: child.data.nags ?? const [],
       children: child.children
           .map((next) => _node(next, after))

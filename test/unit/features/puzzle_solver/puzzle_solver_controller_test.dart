@@ -115,6 +115,8 @@ void main() {
     repository = _Repository(_attempt());
     ids = _Ids();
     controller = PuzzleSolverController(
+      automaticReplies: false,
+      automaticReplyDelay: Duration.zero,
       repository: repository,
       evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
     );
@@ -151,6 +153,8 @@ void main() {
       // Use another attempt for the terminal wrong move scenario.
       repository = _Repository(_attempt());
       controller = PuzzleSolverController(
+        automaticReplies: false,
+        automaticReplyDelay: Duration.zero,
         repository: repository,
         evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
       );
@@ -160,6 +164,93 @@ void main() {
       expect(repository.moves.single.accepted, isFalse);
       expect(repository.attempt.outcome, PuzzleAttemptOutcome.wrongMove);
       expect(controller.state!.playedMoves, isEmpty);
+    },
+  );
+
+  test('hinted completion finalizes as Assisted, not Passed', () async {
+    await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+    await controller.hint();
+    await controller.submitMove(uci: 'e2e4');
+    await controller.submitMove(uci: 'e7e5');
+
+    expect(repository.attempt.hintCount, 1);
+    expect(repository.attempt.outcome, PuzzleAttemptOutcome.assisted);
+    expect(repository.attempt.failureReason, isNull);
+    expect(controller.state!.outcome, PuzzleAttemptOutcome.assisted);
+  });
+
+  test(
+    'publishes learner move and locks input through paced opponent reply',
+    () async {
+      controller = PuzzleSolverController(
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        automaticReplyDelay: const Duration(milliseconds: 80),
+      );
+      final states = <dynamic>[];
+      controller.addStateListener(states.add);
+      await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+
+      final submitted = controller.submitMove(uci: 'e2e4');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(controller.state!.playedMoves, ['e2e4']);
+      expect(controller.canInteract, isFalse);
+      expect(states.any((state) => state.playedMoves.length == 1), isTrue);
+      await expectLater(controller.submitMove(uci: 'e7e5'), throwsStateError);
+      await controller.whenIdle();
+      await submitted;
+      expect(controller.state!.playedMoves, ['e2e4', 'e7e5']);
+      expect(controller.canInteract, isFalse); // authored line is complete
+    },
+  );
+
+  test(
+    'pause requested during reply delay cancels the automatic move',
+    () async {
+      controller = PuzzleSolverController(
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        automaticReplyDelay: const Duration(milliseconds: 80),
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+      final submitted = controller.submitMove(uci: 'e2e4');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final paused = controller.pause();
+      await submitted;
+      final state = await paused;
+      expect(state.attemptStatus, PuzzleAttemptStatus.paused);
+      expect(state.playedMoves, ['e2e4']);
+      expect(repository.moves, hasLength(1));
+    },
+  );
+
+  test(
+    'honors a durable session pause that arrives during reply delay',
+    () async {
+      controller = PuzzleSolverController(
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        automaticReplyDelay: const Duration(milliseconds: 80),
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+      final submitted = controller.submitMove(uci: 'e2e4');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      repository.attempt = PuzzleAttempt(
+        id: repository.attempt.id,
+        blockId: repository.attempt.blockId,
+        cycleId: repository.attempt.cycleId,
+        sessionId: repository.attempt.sessionId,
+        status: PuzzleAttemptStatus.paused,
+        startedAt: repository.attempt.startedAt,
+        activeDuration: repository.attempt.activeDuration,
+        wrongMoveCount: repository.attempt.wrongMoveCount,
+        hintCount: repository.attempt.hintCount,
+      );
+
+      final state = await submitted;
+      expect(state.attemptStatus, PuzzleAttemptStatus.paused);
+      expect(state.playedMoves, ['e2e4']);
+      expect(repository.moves, hasLength(1));
     },
   );
 
@@ -181,6 +272,14 @@ void main() {
       expect(repository.finalizes, 1);
     },
   );
+
+  test('disposed controller rejects interaction', () async {
+    await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+    controller.dispose();
+
+    expect(controller.canInteract, isFalse);
+    await expectLater(controller.submitMove(uci: 'e2e4'), throwsStateError);
+  });
 
   test(
     'failed terminal move write never exposes the finalized solution',
@@ -316,6 +415,7 @@ void main() {
       );
       repository = _Repository(finalized);
       controller = PuzzleSolverController(
+        automaticReplies: false,
         repository: repository,
         evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
       );

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/core/errors/app_failure.dart';
@@ -135,6 +137,101 @@ void main() {
       );
     },
   );
+
+  test('removal retains items, history, snapshots, and imported content', () async {
+    await repository.createSet(
+      _set('set', items: [_item('set', 'item', 'block-1', 0)]),
+    );
+    await repository.createSet(_set('other'));
+    await database.customStatement(
+      "INSERT INTO cycles (id, training_set_id, status, created_at_micros) VALUES ('cycle', 'set', 'completed', 1)",
+    );
+    await database.customStatement(
+      "INSERT INTO training_sessions (id, cycle_id, status, started_at_micros, study_day_micros) VALUES ('session', 'cycle', 'closed', 1, 1)",
+    );
+    await database.customStatement(
+      "INSERT INTO puzzle_attempts (id, block_id, cycle_id, session_id, status, outcome, started_at_micros, completed_at_micros) VALUES ('attempt', 'block-1', 'cycle', 'session', 'finalized', 'passed', 1, 2)",
+    );
+    await database.customStatement(
+      "INSERT INTO app_settings (key, value) VALUES ('cycle-set:cycle', 'snapshot')",
+    );
+    await repository.removeSet(id: 'set', removedAt: DateTime.utc(2026, 10));
+    expect((await repository.listSets()).map((set) => set.id), ['other']);
+    final retained = (await repository.getSet('set'))!;
+    expect(retained.status, TrainingSetStatus.archived);
+    expect(retained.items, hasLength(1));
+    expect(await database.select(database.cycles).get(), hasLength(1));
+    expect(
+      await database.select(database.trainingSessions).get(),
+      hasLength(1),
+    );
+    expect(await database.select(database.puzzleAttempts).get(), hasLength(1));
+    expect(await database.select(database.pgnBlocks).get(), hasLength(4));
+    expect(await database.select(database.pgnSources).get(), hasLength(1));
+    expect(
+      (await database
+              .customSelect(
+                "SELECT value FROM app_settings WHERE key = 'cycle-set:cycle'",
+              )
+              .getSingle())
+          .read<String>('value'),
+      'snapshot',
+    );
+    await expectLater(
+      repository.addItem(_item('set', 'new', 'block-3', 1)),
+      throwsA(isA<ValidationFailure>()),
+    );
+  });
+
+  test('removal is atomic when writing the tombstone fails', () async {
+    final original = _set('set');
+    await repository.createSet(original);
+    await database.customStatement(
+      "CREATE TRIGGER reject_removal BEFORE INSERT ON app_settings WHEN NEW.key LIKE 'removed-training-set:%' BEGIN SELECT RAISE(ABORT, 'failure'); END",
+    );
+    await expectLater(
+      repository.removeSet(id: 'set', removedAt: DateTime.utc(2026, 10)),
+      throwsA(isA<DatabaseFailure>()),
+    );
+    expect(await repository.getSet('set'), original);
+    expect(await repository.listSets(), [original]);
+  });
+
+  test('removing an archived set preserves its archive timestamp', () async {
+    await repository.createSet(_set('set'));
+    final archivedAt = DateTime.utc(2026, 9, 5);
+    await repository.archiveSet(id: 'set', archivedAt: archivedAt);
+    await repository.removeSet(id: 'set', removedAt: DateTime.utc(2026, 10));
+    await repository.removeSet(id: 'set', removedAt: DateTime.utc(2026, 10, 2));
+    expect(await repository.listSets(), isEmpty);
+    expect((await repository.getSet('set'))!.archivedAt, archivedAt);
+    await expectLater(
+      repository.removeSet(id: 'missing', removedAt: archivedAt),
+      throwsA(isA<ValidationFailure>()),
+    );
+  });
+
+  test('removal persists after reopening the database', () async {
+    await database.close();
+    final directory = await Directory.systemTemp.createTemp(
+      'training-set-removal-',
+    );
+    final file = File('${directory.path}/test.sqlite');
+    var persistent = AppDatabase(NativeDatabase(file));
+    try {
+      var sets = DriftTrainingSetRepository(persistent);
+      await sets.createSet(_set('set'));
+      await sets.removeSet(id: 'set', removedAt: DateTime.utc(2026, 10));
+      await persistent.close();
+      persistent = AppDatabase(NativeDatabase(file));
+      sets = DriftTrainingSetRepository(persistent);
+      expect(await sets.listSets(), isEmpty);
+      expect((await sets.getSet('set'))!.status, TrainingSetStatus.archived);
+    } finally {
+      await persistent.close();
+      await directory.delete(recursive: true);
+    }
+  });
 
   test(
     'rejects repeated blocks in one set and permits different sets',

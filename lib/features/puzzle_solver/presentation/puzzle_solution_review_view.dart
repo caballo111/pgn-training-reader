@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import '../../../domain/training/puzzle_attempt.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
 import '../../../shared/chessboard/chessboard_adapter.dart';
+import '../../../shared/presentation/study_layout.dart';
+import '../../../shared/presentation/study_navigation_controls.dart';
 import '../../game_reader/presentation/reader_board.dart';
 import '../application/puzzle_presentation_state.dart';
 import 'puzzle_controls.dart';
+import '../../../shared/presentation/study_move_button.dart';
 
 /// Read-only solution review. This surface accepts only the safe projection,
 /// which contains authored content only after the attempt has finalized.
@@ -14,11 +17,17 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
   const PuzzleSolutionReviewView({
     required this.presentation,
     this.onRetry,
+    this.onNext,
+    this.canAdvance = true,
+    this.isFinalExercise = false,
     super.key,
   });
 
   final PuzzlePresentationState presentation;
   final VoidCallback? onRetry;
+  final VoidCallback? onNext;
+  final bool canAdvance;
+  final bool isFinalExercise;
 
   @override
   State<PuzzleSolutionReviewView> createState() =>
@@ -28,15 +37,51 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
 final class _PuzzleSolutionReviewViewState
     extends State<PuzzleSolutionReviewView> {
   final Map<int, int> _variationChoices = {};
-  int _plyIndex = -1;
+  int _plyIndex = 0;
+  late PuzzleSide _orientation =
+      widget.presentation.boardOrientation ?? _startingOrientation;
+
+  PuzzleSide get _startingOrientation =>
+      widget.presentation.startingFen.split(' ').elementAtOrNull(1) == 'b'
+      ? PuzzleSide.black
+      : PuzzleSide.white;
 
   @override
   void didUpdateWidget(covariant PuzzleSolutionReviewView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.presentation, widget.presentation)) {
       _variationChoices.clear();
-      _plyIndex = -1;
+      _orientation =
+          widget.presentation.boardOrientation ?? _startingOrientation;
+      _initializeReachedPath();
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeReachedPath();
+  }
+
+  void _initializeReachedPath() {
+    final entries = widget.presentation.entries
+        .where((entry) => entry.accepted)
+        .toList();
+    var siblings =
+        widget.presentation.solution ?? const <PuzzlePresentationMove>[];
+    for (
+      var depth = 0;
+      depth < entries.length && siblings.isNotEmpty;
+      depth++
+    ) {
+      final choice = siblings.indexWhere(
+        (move) => move.uci == entries[depth].uci,
+      );
+      if (choice < 0) break;
+      _variationChoices[depth] = choice;
+      siblings = siblings[choice].children;
+    }
+    _plyIndex = entries.isEmpty ? -1 : entries.length - 1;
   }
 
   List<PuzzlePresentationMove> get _line {
@@ -61,17 +106,11 @@ final class _PuzzleSolutionReviewViewState
   @override
   Widget build(BuildContext context) {
     if (!widget.presentation.isSolutionVisible) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Solution review')),
-        body: const Center(child: Text('The solution is not available yet.')),
-      );
+      return const Center(child: Text('The solution is not available yet.'));
     }
     final line = _line;
     if (line.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Solution review')),
-        body: const Center(child: Text('No solution moves are available.')),
-      );
+      return const Center(child: Text('No solution moves are available.'));
     }
     _plyIndex = _plyIndex.clamp(-1, line.length - 1);
     final position = _positionAt(_plyIndex, line);
@@ -88,114 +127,119 @@ final class _PuzzleSolutionReviewViewState
           ? PuzzleSide.white
           : PuzzleSide.black,
       legalDestinations: legal,
-      orientation: PuzzleSide.white,
+      orientation: _orientation,
       lastMoveUci: selected?.uci,
     );
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Solution review')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text('Result: ${_outcomeLabel(widget.presentation)}'),
-            if (widget.presentation.comments.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text(
-                'Puzzle notes',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              for (final comment in widget.presentation.comments) Text(comment),
-            ],
-            const SizedBox(height: 16),
+    return StudyLayout(
+      board: ReaderBoard(board: board, showOrientationControl: false),
+      controls: StudyNavigationControls(
+        canPrevious: _plyIndex >= 0,
+        canNext: _plyIndex + 1 < line.length,
+        onFirst: () => setState(() => _plyIndex = -1),
+        onPrevious: () => setState(() => _plyIndex--),
+        onNext: () => setState(() => _plyIndex++),
+        onLast: () => setState(() => _plyIndex = line.length - 1),
+        onFlip: () => setState(() {
+          _orientation = _orientation == PuzzleSide.white
+              ? PuzzleSide.black
+              : PuzzleSide.white;
+        }),
+      ),
+      details: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Result: ${_outcomeLabel(widget.presentation)}'),
+          if (widget.presentation.comments.isNotEmpty) ...[
+            const SizedBox(height: 12),
             const Text(
-              'Solution line',
+              'Puzzle notes',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            Text(line.map((move) => move.san).join(' ')),
-            for (var depth = 0; depth < line.length; depth++)
-              if (_siblingsAt(depth).length > 1)
-                DropdownButton<int>(
-                  key: ValueKey('variation-$depth'),
-                  value: _variationChoices[depth] ?? 0,
-                  isExpanded: true,
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() {
-                      _variationChoices[depth] = value;
-                      _variationChoices.removeWhere((key, _) => key > depth);
-                      _plyIndex = depth;
-                    });
-                  },
-                  items: [
-                    for (
-                      var index = 0;
-                      index < _siblingsAt(depth).length;
-                      index++
-                    )
-                      DropdownMenuItem(
-                        value: index,
-                        child: Text(
-                          'Variation at move ${depth + 1}: ${_siblingsAt(depth)[index].san}',
-                        ),
-                      ),
-                  ],
-                ),
-            const SizedBox(height: 8),
-            Text(
-              selected == null
-                  ? 'Starting position'
-                  : 'Selected move: ${selected.san}',
-            ),
-            if (selected != null) ...[
-              if (selected.nags.isNotEmpty)
-                Text('Annotations: ${selected.nags.map(_nagLabel).join(', ')}'),
-              for (final comment in selected.comments) Text(comment),
-            ],
-            Semantics(
-              label: selected == null
-                  ? 'Starting position'
-                  : 'Position after ${selected.san}',
-              child: ReaderBoard(board: board, showOrientationControl: false),
-            ),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 4,
-              runSpacing: 4,
-              children: [
-                TextButton(
-                  onPressed: () => setState(() => _plyIndex = -1),
-                  child: const Text('First'),
-                ),
-                TextButton(
-                  onPressed: _plyIndex >= 0
-                      ? () => setState(() => _plyIndex--)
-                      : null,
-                  child: const Text('Previous'),
-                ),
-                Text('${_plyIndex + 1} of ${line.length}'),
-                TextButton(
-                  onPressed: _plyIndex + 1 < line.length
-                      ? () => setState(() => _plyIndex++)
-                      : null,
-                  child: const Text('Next'),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _plyIndex = line.length - 1),
-                  child: const Text('Last'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            PuzzleControls(
-              mode: PuzzleControlsMode.review,
-              onPause: () {},
-              onShowSolution: () {},
-              onSkip: () {},
-              onRetry: widget.onRetry,
-            ),
+            for (final comment in widget.presentation.comments) Text(comment),
           ],
-        ),
+          const SizedBox(height: 16),
+          const Text(
+            'Solution line',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Wrap(
+            children: [
+              for (var index = 0; index < line.length; index++)
+                StudyMoveButton(
+                  prefix: _movePrefix(line[index]),
+                  label: line[index].san,
+                  selected: _plyIndex == index,
+                  annotation: line[index].nags.isEmpty
+                      ? null
+                      : line[index].nags.map(_nagLabel).join(' '),
+                  onPressed: () => setState(() => _plyIndex = index),
+                ),
+            ],
+          ),
+          if (widget.presentation.usedFullLineFallback)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Full line used: no completion marker on this continuation.',
+              ),
+            ),
+          for (var depth = 0; depth < line.length; depth++)
+            if (_siblingsAt(depth).length > 1)
+              DropdownButton<int>(
+                key: ValueKey('variation-$depth'),
+                value: _variationChoices[depth] ?? 0,
+                isExpanded: true,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _variationChoices[depth] = value;
+                    _variationChoices.removeWhere((key, _) => key > depth);
+                    _plyIndex = depth;
+                  });
+                },
+                items: [
+                  for (
+                    var index = 0;
+                    index < _siblingsAt(depth).length;
+                    index++
+                  )
+                    DropdownMenuItem(
+                      value: index,
+                      child: Text(
+                        'Variation at move ${depth + 1}: ${_siblingsAt(depth)[index].san}',
+                      ),
+                    ),
+                ],
+              ),
+          const SizedBox(height: 8),
+          Text(
+            selected == null
+                ? 'Starting position'
+                : 'Selected move: ${selected.san}',
+          ),
+          if (selected != null) ...[
+            if (selected.nags.isNotEmpty)
+              Text('Annotations: ${selected.nags.map(_nagLabel).join(', ')}'),
+            for (final comment in selected.comments) Text(comment),
+          ],
+          Center(child: Text('${_plyIndex + 1} of ${line.length}')),
+          const SizedBox(height: 12),
+          PuzzleControls(
+            mode: PuzzleControlsMode.review,
+            onPause: () {},
+            onShowSolution: () {},
+            onSkip: () {},
+            onRetry: widget.onRetry,
+          ),
+          if (widget.onNext != null)
+            FilledButton(
+              onPressed: widget.canAdvance ? widget.onNext : null,
+              child: Text(
+                widget.isFinalExercise ? 'Finish cycle' : 'Next exercise',
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -212,6 +256,13 @@ final class _PuzzleSolutionReviewViewState
       siblings = siblings[choice].children;
     }
     return siblings;
+  }
+
+  String _movePrefix(PuzzlePresentationMove move) {
+    final fields = move.fenBefore.split(' ');
+    final number = fields.length >= 6 ? int.tryParse(fields[5]) ?? 1 : 1;
+    final isBlack = fields.length >= 2 && fields[1] == 'b';
+    return '$number${isBlack ? '...' : '.'} ';
   }
 
   chess.Chess _positionAt(int index, List<PuzzlePresentationMove> line) {
@@ -233,6 +284,7 @@ final class _PuzzleSolutionReviewViewState
   String _outcomeLabel(PuzzlePresentationState presentation) =>
       switch (presentation.outcome) {
         PuzzleAttemptOutcome.passed => 'Passed',
+        PuzzleAttemptOutcome.assisted => 'Assisted',
         PuzzleAttemptOutcome.wrongMove => 'Incorrect move',
         PuzzleAttemptOutcome.revealed => 'Solution revealed',
         PuzzleAttemptOutcome.skipped => 'Skipped',

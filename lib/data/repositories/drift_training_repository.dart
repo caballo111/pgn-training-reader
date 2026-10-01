@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 
 import '../../core/errors/app_failure.dart';
 import '../../domain/chess_content/content_type.dart';
 import '../../domain/training/attempt_move.dart';
+import '../../domain/training/puzzle_interaction_repository.dart';
+import '../../domain/training/training_set_item.dart';
 import '../../domain/training/cycle.dart';
 import '../../domain/training/lifecycle_status.dart';
 import '../../domain/training/progress_aggregate.dart';
@@ -13,7 +17,6 @@ import '../../domain/training/training_repository.dart';
 import '../../domain/training/training_session_service.dart';
 import '../../domain/training/training_session.dart';
 import '../../domain/training/training_set.dart';
-import '../../domain/training/training_set_item.dart';
 import '../../domain/training/training_set_repository.dart';
 import '../database/app_database.dart'
     hide
@@ -30,7 +33,11 @@ import 'drift_training_set_repository.dart';
 
 /// Drift persistence for training set definitions and durable lifecycle data.
 final class DriftTrainingRepository
-    implements TrainingRepository, AtomicTrainingRepository {
+    implements
+        TrainingRepository,
+        AtomicTrainingRepository,
+        PuzzleInteractionRepository,
+        CycleSnapshotRepository {
   DriftTrainingRepository(this._database)
     : _sets = DriftTrainingSetRepository(_database);
 
@@ -123,6 +130,110 @@ final class DriftTrainingRepository
     });
   });
 
+  Future<String?> _setting(String key) async {
+    final row = await _database
+        .customSelect(
+          'SELECT value FROM app_settings WHERE key = ?',
+          variables: [Variable<String>(key)],
+        )
+        .getSingleOrNull();
+    return row?.read<String>('value');
+  }
+
+  Future<void> _saveSetting(String key, String value) =>
+      _database.customStatement(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+        [key, value],
+      );
+
+  @override
+  Future<Map<String, dynamic>?> loadPuzzleInteraction(String attemptId) async {
+    final value = await _setting('puzzle:$attemptId');
+    return value == null ? null : jsonDecode(value) as Map<String, dynamic>;
+  }
+
+  @override
+  Future<void> savePuzzleInteraction(
+    String attemptId,
+    Map<String, dynamic> value,
+  ) => _saveSetting('puzzle:$attemptId', jsonEncode(value));
+
+  @override
+  Future<String?> getCyclePolicy(String cycleId) =>
+      _setting('cycle-policy:$cycleId');
+
+  @override
+  Future<void> setCyclePolicy(String cycleId, String policy) async {
+    if (policy != 'keyMoves' && policy != 'allMoves') {
+      _invalid('Unknown completion policy.');
+    }
+    final prior = await getCyclePolicy(cycleId);
+    if (prior != null && prior != policy) {
+      _invalid('A cycle completion policy cannot change.');
+    }
+    await _saveSetting('cycle-policy:$cycleId', policy);
+  }
+
+  @override
+  Future<String?> getCycleCursor(String cycleId) async {
+    final value = await _setting('cycle-cursor:$cycleId');
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  @override
+  Future<void> setCycleCursor(String cycleId, String? attemptId) =>
+      _saveSetting('cycle-cursor:$cycleId', attemptId ?? '');
+
+  @override
+  Future<TrainingSet?> getCycleSet(String cycleId) async {
+    final value = await _setting('cycle-set:$cycleId');
+    if (value == null) return null;
+    final data = jsonDecode(value) as Map<String, dynamic>;
+    return TrainingSet(
+      id: data['id'] as String,
+      name: data['name'] as String,
+      createdAt: DateTime.parse(data['createdAt'] as String),
+      updatedAt: DateTime.parse(data['updatedAt'] as String),
+      items: [
+        for (final raw in data['items'] as List)
+          TrainingSetItem(
+            id: raw['id'] as String,
+            trainingSetId: data['id'] as String,
+            blockId: raw['blockId'] as String,
+            position: raw['position'] as int,
+            contentType: ContentType.fromDatabaseValue(
+              raw['contentType'] as String,
+            ),
+            addedAt: DateTime.parse(raw['addedAt'] as String),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _snapshotSet(Cycle cycle) async {
+    final set = await getSet(cycle.trainingSetId);
+    if (set == null) return;
+    await _saveSetting(
+      'cycle-set:${cycle.id}',
+      jsonEncode({
+        'id': set.id,
+        'name': set.name,
+        'createdAt': set.createdAt.toIso8601String(),
+        'updatedAt': set.updatedAt.toIso8601String(),
+        'items': [
+          for (final item in set.items)
+            {
+              'id': item.id,
+              'blockId': item.blockId,
+              'position': item.position,
+              'contentType': item.contentType.toDatabaseValue(),
+              'addedAt': item.addedAt.toIso8601String(),
+            },
+        ],
+      }),
+    );
+  }
+
   @override
   Future<Cycle?> getCycle(String id) => _guard(() async {
     final row = await (_database.select(
@@ -146,19 +257,22 @@ final class DriftTrainingRepository
 
   @override
   Future<void> createCycle(Cycle cycle) => _guard(() async {
-    await _database
-        .into(_database.cycles)
-        .insert(
-          CyclesCompanion.insert(
-            id: cycle.id,
-            trainingSetId: cycle.trainingSetId,
-            status: cycle.status.toDatabaseValue(),
-            startedAtMicros: Value(_nullableMicros(cycle.startedAt)),
-            completedAtMicros: Value(_nullableMicros(cycle.completedAt)),
-            stoppedAtMicros: Value(_nullableMicros(cycle.stoppedAt)),
-            createdAtMicros: _micros(cycle.createdAt),
-          ),
-        );
+    await transaction(() async {
+      await _database
+          .into(_database.cycles)
+          .insert(
+            CyclesCompanion.insert(
+              id: cycle.id,
+              trainingSetId: cycle.trainingSetId,
+              status: cycle.status.toDatabaseValue(),
+              startedAtMicros: Value(_nullableMicros(cycle.startedAt)),
+              completedAtMicros: Value(_nullableMicros(cycle.completedAt)),
+              stoppedAtMicros: Value(_nullableMicros(cycle.stoppedAt)),
+              createdAtMicros: _micros(cycle.createdAt),
+            ),
+          );
+      await _snapshotSet(cycle);
+    });
   });
 
   @override
@@ -568,15 +682,12 @@ final class DriftTrainingRepository
     if (cycle == null || cycle.status != CycleStatus.active) {
       _missing('cycle_missing', 'Active training cycle not found.');
     }
-    final item =
-        await (_database.select(_database.trainingSetItems)..where(
-              (row) =>
-                  row.id.equals(trainingSetItemId) &
-                  row.trainingSetId.equals(cycle!.trainingSetId),
-            ))
-            .getSingleOrNull();
-    if (item == null ||
-        item.contentType == ContentType.puzzle.toDatabaseValue()) {
+    final set =
+        await getCycleSet(cycleId) ?? await getSet(cycle!.trainingSetId);
+    final item = set?.items
+        .where((item) => item.id == trainingSetItemId)
+        .firstOrNull;
+    if (item == null || item.contentType == ContentType.puzzle) {
       _invalid('Only a cycle-owned non-puzzle item can be completed.');
     }
     await _database
@@ -830,6 +941,7 @@ final class DriftTrainingRepository
     }
     return ProgressAggregate(
       passedCount: outcomes[PuzzleAttemptOutcome.passed]!,
+      assistedCount: outcomes[PuzzleAttemptOutcome.assisted]!,
       wrongMoveOutcomeCount: outcomes[PuzzleAttemptOutcome.wrongMove]!,
       revealedCount: outcomes[PuzzleAttemptOutcome.revealed]!,
       skippedCount: outcomes[PuzzleAttemptOutcome.skipped]!,
@@ -983,6 +1095,7 @@ final class DriftTrainingRepository
     }
     return ProgressAggregate(
       passedCount: outcomes[PuzzleAttemptOutcome.passed]!,
+      assistedCount: outcomes[PuzzleAttemptOutcome.assisted]!,
       wrongMoveOutcomeCount: outcomes[PuzzleAttemptOutcome.wrongMove]!,
       revealedCount: outcomes[PuzzleAttemptOutcome.revealed]!,
       skippedCount: outcomes[PuzzleAttemptOutcome.skipped]!,

@@ -292,55 +292,57 @@ void main() {
     );
   });
 
-  test(
-    'repeating non-puzzle completion retains original completion time',
-    () async {
-      await database
-          .into(database.pgnBlocks)
-          .insert(
-            PgnBlocksCompanion.insert(
-              id: 'instruction-block',
-              sourceId: 'source',
-              startOffset: 11,
-              endOffset: 20,
-              ordinal: 1,
-              contentType: ContentType.text.toDatabaseValue(),
-              parseStatus: 'notParsed',
-            ),
-          );
-      await database
-          .into(database.trainingSetItems)
-          .insert(
-            TrainingSetItemsCompanion.insert(
-              id: 'instruction-item',
-              trainingSetId: 'set',
-              blockId: 'instruction-block',
-              position: 1,
-              contentType: ContentType.text.toDatabaseValue(),
-              addedAtMicros: startedAt.microsecondsSinceEpoch,
-            ),
-          );
-      final firstCompletion = startedAt.add(const Duration(minutes: 1));
-      await repository.completeNonPuzzleItem(
-        cycleId: 'cycle',
-        trainingSetItemId: 'instruction-item',
-        completedAt: firstCompletion,
-      );
-      await repository.completeNonPuzzleItem(
-        cycleId: 'cycle',
-        trainingSetItemId: 'instruction-item',
-        completedAt: startedAt.add(const Duration(hours: 1)),
-      );
+  test('legacy cycle repeating non-puzzle completion retains original completion time', () async {
+    await database
+        .into(database.pgnBlocks)
+        .insert(
+          PgnBlocksCompanion.insert(
+            id: 'instruction-block',
+            sourceId: 'source',
+            startOffset: 11,
+            endOffset: 20,
+            ordinal: 1,
+            contentType: ContentType.text.toDatabaseValue(),
+            parseStatus: 'notParsed',
+          ),
+        );
+    await database
+        .into(database.trainingSetItems)
+        .insert(
+          TrainingSetItemsCompanion.insert(
+            id: 'instruction-item',
+            trainingSetId: 'set',
+            blockId: 'instruction-block',
+            position: 1,
+            contentType: ContentType.text.toDatabaseValue(),
+            addedAtMicros: startedAt.microsecondsSinceEpoch,
+          ),
+        );
+    // This fixture models a pre-snapshot cycle; later set changes are visible
+    // only for legacy cycles whose fixed definition cannot be reconstructed.
+    await database.customStatement(
+      "DELETE FROM app_settings WHERE key = 'cycle-set:cycle'",
+    );
+    final firstCompletion = startedAt.add(const Duration(minutes: 1));
+    await repository.completeNonPuzzleItem(
+      cycleId: 'cycle',
+      trainingSetItemId: 'instruction-item',
+      completedAt: firstCompletion,
+    );
+    await repository.completeNonPuzzleItem(
+      cycleId: 'cycle',
+      trainingSetItemId: 'instruction-item',
+      completedAt: startedAt.add(const Duration(hours: 1)),
+    );
 
-      final row =
-          await (database.select(database.cycleItemCompletions)..where(
-                (completion) =>
-                    completion.trainingSetItemId.equals('instruction-item'),
-              ))
-              .getSingle();
-      expect(row.completedAtMicros, firstCompletion.microsecondsSinceEpoch);
-    },
-  );
+    final row =
+        await (database.select(database.cycleItemCompletions)..where(
+              (completion) =>
+                  completion.trainingSetItemId.equals('instruction-item'),
+            ))
+            .getSingle();
+    expect(row.completedAtMicros, firstCompletion.microsecondsSinceEpoch);
+  });
 
   test(
     'session aggregates include empty sessions and retain outcome timing',

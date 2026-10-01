@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/move_node.dart';
 import '../application/reader_navigation_state.dart';
+import '../../../shared/presentation/study_move_button.dart';
 
 /// Displays all authored moves and annotations for normal reader mode.
 ///
@@ -118,6 +119,17 @@ final class _MoveBranch extends StatelessWidget {
     }
 
     void appendLine(MoveNode move, List<int> movePath) {
+      if (move.startingComments.isNotEmpty) {
+        flushMoves();
+        for (final comment in move.startingComments) {
+          sections.add(
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 10, bottom: 6),
+              child: Text(comment),
+            ),
+          );
+        }
+      }
       inlineMoves.add(_moveButton(context, move, movePath));
       if (move.comments.isNotEmpty) {
         flushMoves();
@@ -177,36 +189,16 @@ final class _MoveBranch extends StatelessWidget {
         : (movePath.length + 1) ~/ 2;
     final isBlack = fen.length >= 6 ? fen[1] == 'b' : movePath.length.isEven;
     final prefix = '$number${isBlack ? '...' : '.'}';
-    return Semantics(
+    return KeyedSubtree(
       key: isActive ? activeMoveKey : null,
-      button: true,
-      selected: isActive,
-      label: 'Move $prefix ${move.san}${isActive ? ', current position' : ''}',
-      child: TextButton(
+      child: StudyMoveButton(
+        prefix: '$prefix ',
+        label: move.san,
+        selected: isActive,
+        annotation: move.nags.isEmpty
+            ? null
+            : move.nags.map((nag) => '\$$nag').join(' '),
         onPressed: () => onSelected(_navigationAfterPath(movePath)),
-        style: TextButton.styleFrom(
-          backgroundColor: isActive
-              ? Theme.of(context).colorScheme.secondaryContainer
-              : null,
-          minimumSize: const Size(48, 44),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          tapTargetSize: MaterialTapTargetSize.padded,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('$prefix ', style: Theme.of(context).textTheme.bodySmall),
-            Text(move.san),
-            if (move.nags.isNotEmpty)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 4),
-                child: Text(
-                  move.nags.map((nag) => '\$$nag').join(' '),
-                  semanticsLabel: 'Annotations ${move.nags.join(', ')}',
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

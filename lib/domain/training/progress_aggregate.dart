@@ -10,6 +10,7 @@ import 'puzzle_attempt.dart';
 final class ProgressAggregate {
   factory ProgressAggregate({
     required int passedCount,
+    int assistedCount = 0,
     required int wrongMoveOutcomeCount,
     required int revealedCount,
     required int skippedCount,
@@ -23,6 +24,7 @@ final class ProgressAggregate {
   }) {
     final counts = <String, int>{
       'passedCount': passedCount,
+      'assistedCount': assistedCount,
       'wrongMoveOutcomeCount': wrongMoveOutcomeCount,
       'revealedCount': revealedCount,
       'skippedCount': skippedCount,
@@ -59,6 +61,7 @@ final class ProgressAggregate {
     }
     final finalizedAttemptCount =
         passedCount +
+        assistedCount +
         wrongMoveOutcomeCount +
         revealedCount +
         skippedCount +
@@ -72,6 +75,7 @@ final class ProgressAggregate {
 
     return ProgressAggregate._(
       passedCount: passedCount,
+      assistedCount: assistedCount,
       wrongMoveOutcomeCount: wrongMoveOutcomeCount,
       revealedCount: revealedCount,
       skippedCount: skippedCount,
@@ -87,6 +91,7 @@ final class ProgressAggregate {
 
   const ProgressAggregate._({
     required this.passedCount,
+    required this.assistedCount,
     required this.wrongMoveOutcomeCount,
     required this.revealedCount,
     required this.skippedCount,
@@ -100,6 +105,7 @@ final class ProgressAggregate {
   });
 
   final int passedCount;
+  final int assistedCount;
 
   /// Number of attempts finalized with the [PuzzleAttemptOutcome.wrongMove]
   /// outcome. This differs from [wrongMoveCount], which counts move errors.
@@ -131,6 +137,7 @@ final class ProgressAggregate {
       identical(this, other) ||
       other is ProgressAggregate &&
           other.passedCount == passedCount &&
+          other.assistedCount == assistedCount &&
           other.wrongMoveOutcomeCount == wrongMoveOutcomeCount &&
           other.revealedCount == revealedCount &&
           other.skippedCount == skippedCount &&
@@ -148,6 +155,7 @@ final class ProgressAggregate {
   @override
   int get hashCode => Object.hash(
     passedCount,
+    assistedCount,
     wrongMoveOutcomeCount,
     revealedCount,
     skippedCount,

@@ -28,6 +28,7 @@ enum PuzzleAttemptStatus {
 /// database contract.
 enum PuzzleAttemptOutcome {
   passed,
+  assisted,
   wrongMove,
   revealed,
   skipped,
@@ -36,6 +37,7 @@ enum PuzzleAttemptOutcome {
 
   String toDatabaseValue() => switch (this) {
     PuzzleAttemptOutcome.passed => 'Passed',
+    PuzzleAttemptOutcome.assisted => 'Assisted',
     PuzzleAttemptOutcome.wrongMove => 'WrongMove',
     PuzzleAttemptOutcome.revealed => 'Revealed',
     PuzzleAttemptOutcome.skipped => 'Skipped',
@@ -46,6 +48,7 @@ enum PuzzleAttemptOutcome {
   static PuzzleAttemptOutcome fromDatabaseValue(String value) =>
       switch (value) {
         'Passed' => PuzzleAttemptOutcome.passed,
+        'Assisted' => PuzzleAttemptOutcome.assisted,
         'WrongMove' => PuzzleAttemptOutcome.wrongMove,
         'Revealed' => PuzzleAttemptOutcome.revealed,
         'Skipped' => PuzzleAttemptOutcome.skipped,

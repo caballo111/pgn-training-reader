@@ -8,6 +8,7 @@ final class ProgressSummary {
   const ProgressSummary({
     required this.attemptedCount,
     required this.passedCount,
+    this.assistedCount = 0,
     required this.wrongMoveOutcomeCount,
     required this.revealedCount,
     required this.skippedCount,
@@ -24,6 +25,7 @@ final class ProgressSummary {
 
   final int attemptedCount;
   final int passedCount;
+  final int assistedCount;
   int get nonPassingCount => attemptedCount - passedCount;
   final int wrongMoveOutcomeCount;
   final int revealedCount;
@@ -59,6 +61,7 @@ final class ProgressComparison {
     required this.later,
     required this.attemptedCountChange,
     required this.passedCountChange,
+    this.assistedCountChange = 0,
     required this.nonPassingCountChange,
     required this.accuracyPercentagePointChange,
     required this.totalActiveTimeChange,
@@ -76,6 +79,7 @@ final class ProgressComparison {
   final ProgressSummary later;
   final int attemptedCountChange;
   final int passedCountChange;
+  final int assistedCountChange;
   final int nonPassingCountChange;
   final double? accuracyPercentagePointChange;
   final Duration totalActiveTimeChange;
@@ -94,6 +98,7 @@ abstract final class ProgressCalculator {
   static ProgressSummary calculate(ProgressAggregate aggregate) {
     final attemptedCount =
         aggregate.passedCount +
+        aggregate.assistedCount +
         aggregate.wrongMoveOutcomeCount +
         aggregate.revealedCount +
         aggregate.skippedCount +
@@ -134,6 +139,7 @@ abstract final class ProgressCalculator {
     return ProgressSummary(
       attemptedCount: attemptedCount,
       passedCount: aggregate.passedCount,
+      assistedCount: aggregate.assistedCount,
       wrongMoveOutcomeCount: aggregate.wrongMoveOutcomeCount,
       revealedCount: aggregate.revealedCount,
       skippedCount: aggregate.skippedCount,
@@ -162,6 +168,7 @@ abstract final class ProgressCalculator {
       later: after,
       attemptedCountChange: after.attemptedCount - before.attemptedCount,
       passedCountChange: after.passedCount - before.passedCount,
+      assistedCountChange: after.assistedCount - before.assistedCount,
       nonPassingCountChange: after.nonPassingCount - before.nonPassingCount,
       accuracyPercentagePointChange:
           before.accuracyPercent == null || after.accuracyPercent == null

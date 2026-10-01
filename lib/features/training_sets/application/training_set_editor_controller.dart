@@ -52,7 +52,7 @@ final class TrainingSetEditorController extends ChangeNotifier {
   }
 
   void add(PgnBlockIndex block) {
-    if (block.diagnosticSummary == 'duplicateExerciseId') {
+    if (_hasDuplicateExerciseId(block)) {
       _emit(
         TrainingSetEditorState(
           name: _state.name,
@@ -62,12 +62,15 @@ final class TrainingSetEditorController extends ChangeNotifier {
       );
       return;
     }
-    if (block.contentType == ContentType.unsupported) {
+    if (_hasUnavailableContent(block)) {
+      final message = block.parseStatus == PgnBlockParseStatus.malformed
+          ? 'Malformed content cannot be added.'
+          : 'Unsupported content cannot be added.';
       _emit(
         TrainingSetEditorState(
           name: _state.name,
           items: _state.items,
-          validationMessage: 'Unsupported content cannot be added.',
+          validationMessage: message,
         ),
       );
       return;
@@ -101,6 +104,70 @@ final class TrainingSetEditorController extends ChangeNotifier {
       ),
     );
   }
+
+  /// Adds every eligible block once and returns a summary for the builder.
+  Map<String, int> addMany(
+    Iterable<PgnBlockIndex> blocks, {
+    Set<String> unavailableBlockIds = const {},
+  }) {
+    var added = 0,
+        duplicates = 0,
+        malformed = 0,
+        unsupported = 0,
+        unavailable = 0;
+    final items = List<TrainingSetItem>.of(_state.items);
+    final blockIds = items.map((item) => item.blockId).toSet();
+    final setId = _original?.id ?? 'draft';
+    for (final block in blocks) {
+      if (blockIds.contains(block.id)) {
+        duplicates++;
+      } else if (block.parseStatus == PgnBlockParseStatus.malformed) {
+        malformed++;
+      } else if (block.contentType == ContentType.unsupported ||
+          block.parseStatus == PgnBlockParseStatus.unsupported) {
+        unsupported++;
+      } else if (_hasDuplicateExerciseId(block) ||
+          unavailableBlockIds.contains(block.id)) {
+        unavailable++;
+      } else {
+        items.add(
+          TrainingSetItem(
+            id: idGenerator.generateId(),
+            trainingSetId: setId,
+            blockId: block.id,
+            position: items.length,
+            contentType: block.contentType,
+            addedAt: clock.utcNow,
+          ),
+        );
+        blockIds.add(block.id);
+        added++;
+      }
+    }
+    _emit(
+      TrainingSetEditorState(
+        name: _state.name,
+        items: _reposition(items, setId),
+        validationMessage:
+            'Added $added; $duplicates already selected; $malformed malformed; $unsupported unsupported; $unavailable unavailable.',
+      ),
+    );
+    return {
+      'added': added,
+      'duplicates': duplicates,
+      'malformed': malformed,
+      'unsupported': unsupported,
+      'unavailable': unavailable,
+    };
+  }
+
+  static bool _hasDuplicateExerciseId(PgnBlockIndex block) =>
+      block.diagnosticSummary == 'duplicateExerciseId';
+
+  static bool _hasUnavailableContent(PgnBlockIndex block) =>
+      block.contentType == ContentType.unsupported ||
+      block.parseStatus == PgnBlockParseStatus.malformed ||
+      block.parseStatus == PgnBlockParseStatus.unsupported;
 
   void remove(String itemId) {
     final setId = _original?.id ?? 'draft';

@@ -68,7 +68,7 @@ Current implementation uses `ContentType`: `Puzzle`, `Instruction`, `Demonstrati
 
 **Invariants/relationships:** item IDs and positions are unique within the set; positions are explicit and nonnegative; items belong to this set. Contains Puzzle, Instruction, Demonstration, not Unsupported. Owns items and cycles; at most one active cycle per set.
 
-**Lifecycle/retention/deletion:** active sets can be edited/trained; archiving timestamps the set and prevents new cycles but preserves history. Delete with deliberate confirmation; where cycles/attempts exist retain archived record or tombstone and do not cascade history.
+**Lifecycle/retention/deletion:** active sets can be edited/trained; archiving timestamps the set and prevents new cycles but preserves history. Remove is available for both active and archived sets with deliberate confirmation. In one transaction, archive an active set and persist `app_settings[removed-training-set:<id>]` with its removal timestamp. Removed sets are excluded from set lists, including after restart; stable-ID lookups retain their archived definitions for history. Preserve an existing archive timestamp. Keep items, cycles, sessions, attempts, cycle snapshots, and imported content; do not cascade history. Repeating removal is idempotent.
 
 ### `TrainingSetItem`
 
@@ -80,9 +80,9 @@ Current implementation uses `ContentType`: `Puzzle`, `Instruction`, `Demonstrati
 
 ### `Cycle`
 
-**Identity/fields:** `id`, `trainingSetId`, status `pending`/`active`/`completed`/`stopped`, optional `startedAt`, `completedAt`, `stoppedAt`, `createdAt`.
+**Identity/fields:** `id`, `trainingSetId`, status `pending`/`active`/`completed`/`stopped`, optional `startedAt`, `completedAt`, `stoppedAt`, `createdAt`; immutable cycle-start snapshot of ordered set-item identities; separately persisted selected puzzle completion policy (`keyMoves` or `allMoves`); durable current attempt/item cursor.
 
-**Invariants/relationships:** belongs to one set. Active requires start; completed requires completion time; stopped requires stop time. Completion/stop times are mutually exclusive and allowed only for matching state. Partial unique index enforces at most one active cycle per set. A cycle has sessions and attempts and may span days.
+**Invariants/relationships:** belongs to one set. Active requires start; completed requires completion time; stopped requires stop time. Completion/stop times are mutually exclusive and allowed only for matching state. Partial unique index enforces at most one active cycle per set. A cycle has sessions and attempts and may span days. The cycle freezes its explicit selected item order at creation. Its selected completion policy is persisted before puzzle training begins and cannot be changed thereafter; the per-book `read`/`solve` intent is unrelated. The cursor is restored before item selection and may identify a finalized attempt whose separate practice/review interaction remains open. Cursor persistence is separate from scored move and non-puzzle completion writes; do not assume those updates share a transaction. Legacy cycles without snapshots use their historical set selection and `allMoves` policy.
 
 **Lifecycle/retention/deletion:** pending → active → completed after all items finish, or pending/active → stopped explicitly. Terminal cycles are historical; another pass creates a new record. Preserve with attempts/sessions when set is archived/deleted; delete only an empty cycle without children/history.
 
@@ -96,11 +96,11 @@ Current implementation uses `ContentType`: `Puzzle`, `Instruction`, `Demonstrati
 
 ### `PuzzleAttempt`
 
-**Identity/fields:** `id`, puzzle `blockId`, `cycleId`, `sessionId`, status `active`/`paused`/`finalized`, `startedAt`, optional `completedAt`, nonnegative `activeDuration`, `wrongMoveCount`, `hintCount`, optional outcome `passed`/`wrongMove`/`revealed`/`skipped`/`timedOut`/`abandoned`, optional reason `incorrectMove`/`illegalMove`/`timeLimitExceeded`/`userAbandoned`, `revealed`. Status database values are canonical lowercase strings and are decoded strictly.
+**Identity/fields:** `id`, puzzle `blockId`, `cycleId`, `sessionId`, status `active`/`paused`/`finalized`, `startedAt`, optional `completedAt`, nonnegative `activeDuration`, `wrongMoveCount`, `hintCount`, optional outcome `passed`/`assisted`/`wrongMove`/`revealed`/`skipped`/`timedOut`/`abandoned`, optional reason `incorrectMove`/`illegalMove`/`timeLimitExceeded`/`userAbandoned`, `revealed`. Status database values are canonical lowercase strings and are decoded strictly. `Assisted` has stable stored spelling `Assisted` and is a successful authored completion reached after one or more hints.
 
-**Invariants/relationships:** active or paused iff status is nonterminal and outcome and completion time are both absent; finalized iff status is finalized and both outcome and completion time are present. Completion cannot precede start. Belongs to one puzzle, cycle, session and owns moves/timing segments. Final result and closing segment commit atomically. A retry creates a new attempt. Failure reason is required for wrongMove/timedOut/abandoned and absent for passed/revealed/skipped. Revealed outcome requires `revealed=true`. Solution inspection after a wrong move does not convert its outcome to revealed.
+**Invariants/relationships:** active or paused iff status is nonterminal and outcome and completion time are both absent; finalized iff status is finalized and both outcome and completion time are present. Completion cannot precede start. Belongs to one puzzle, cycle, session and owns moves/timing segments. Final result and closing segment commit atomically. A retry creates a new attempt. Failure reason is required for wrongMove/timedOut/abandoned and absent for passed/assisted/revealed/skipped. Revealed outcome requires `revealed=true`. Historical `passed` attempts with a positive hint count remain readable without rewriting; new evaluator completions after hints use `assisted`. Solution inspection after a wrong move does not convert its outcome to revealed.
 
-FR-023 has precedence: any **submitted** illegal move immediately finalizes as `wrongMove` with `illegalMove`; a legal move outside current authored solution children immediately finalizes as `wrongMove` with `incorrectMove`. Count each as a wrong move. A non-submitted illegal board interaction is not an attempt move. Passing requires completing an authored terminal line without reveal.
+FR-023 has precedence: any **submitted** illegal move immediately finalizes the scored attempt as `wrongMove` with `illegalMove`; a legal move outside current authored solution children immediately finalizes it as `wrongMove` with `incorrectMove`. Count each as a wrong move. Practice remains interactive and concealed after this score finalizes; subsequent moves are stored as practice interaction without changing the finalized scored attempt. A non-submitted illegal board interaction is not an attempt move. Completing the authored endpoint is `passed` when no hint was used and `assisted` when at least one hint was used. A hint can never result in `passed`. Showing a move finalizes as `revealed` before the shared practice board advances; it cannot later pass. Review navigation is explicit.
 
 **Lifecycle/retention/deletion:** active ↔ paused as needed, then exactly one terminal outcome; process recovery resumes the same unfinished identity if safe. Finalized records are append-only from the user's perspective. Delete only for explicit user erasure, together with child records and with clear history-removal semantics.
 
@@ -122,9 +122,17 @@ FR-023 has precedence: any **submitted** illegal move immediately finalizes as `
 
 ### `ProgressAggregate`
 
-**Identity/fields:** derived immutable value scoped by caller to a set/cycle/selected attempts, with no persisted identity. Raw counts: passed, wrong-move outcomes, revealed, skipped, timed out, abandoned, individual wrong moves, hints, completed non-puzzle items; one active duration per finalized puzzle attempt; separate eligible non-puzzle active duration.
+**Identity/fields:** derived immutable value scoped by caller to a set/cycle/selected attempts, with no persisted identity. Raw counts: passed, assisted, wrong-move outcomes, revealed, skipped, timed out, abandoned, individual wrong moves, hints, completed non-puzzle items; one active duration per finalized puzzle attempt; separate eligible non-puzzle active duration. Casual interactions are stored separately and excluded.
 
-**Invariants/relationships:** all counts/durations nonnegative; attempt-duration count equals the sum of finalized outcome counts. Projection of attempt/session/item records, never a substitute. Accuracy, averages, medians and comparison are calculated outside this value. No attempts means unmeasured accuracy, not 0%.
+**Invariants/relationships:** all counts/durations nonnegative; attempt-duration count equals the sum of finalized outcome counts, including assisted. Accuracy is unassisted passed count divided by all finalized outcomes, including assisted. Projection of attempt/session/item records, never a substitute. Accuracy, averages, medians and comparison are calculated outside this value. No attempts means unmeasured accuracy, not 0%.
+
+### `BookReadingIntent`
+
+Per-book preference with values `read` and `solve`. `Read` opens puzzle content as reader content. `Solve` opens a standalone puzzle interaction unless cycle training is separately active. Standalone interactions may persist moves, hints, and reveal state in a separate store; they never create database Cycle or TrainingSession records, never show an active-time timer, and never contribute to cycle reports. The standalone controller may use synthetic cycle/session IDs to satisfy the in-memory `PuzzleAttempt` shape; those IDs are not persisted as lifecycle rows. Reading intent does not select a completion policy.
+
+### Puzzle completion policy and branch marker
+
+`PuzzleCompletionPolicy` is `keyMoves` or `allMoves`, selected per standalone solve interaction or per cycle. A cycle persists its selected policy before puzzle training and freezes it thereafter. A key-move marker is the standalone token `✔` in a move comment (token boundaries are whitespace or comment boundaries). Under `keyMoves`, a marker awards credit only when reached on the accepted branch. If that branch has no marker, completion falls back to that branch's endpoint even if another variation contains a marker. `allMoves` ignores markers and completes only at an authored terminal node. Ordinary opponent moves automatically follow the first authored child. If an opponent's available reply is marked for key-move credit, the learner must predict that reply; it is not played automatically. Existing cycles with no policy snapshot use `allMoves` for legacy behavior.
 
 **Lifecycle/retention/deletion:** recompute as required; discard freely. Recalculate after explicit transactional corrections to source history.
 
@@ -145,10 +153,35 @@ PgnSource 1 ── * PgnBlockIndex 1 ── * TrainingSetItem * ── 1 Trainin
 ## Persistence and known gaps
 
 - Database timestamps are Unix microseconds; source locators are byte offsets; durations map to integer milliseconds.
-- Classification provenance/override, per-cycle non-puzzle completion, an `ImportJob` source-revision snapshot and status enum, aggregate scope, and active non-puzzle session timing are not fully represented in T040–T048 models/current schema. Define persistence/contracts before relying on them.
+- Classification provenance/override, an `ImportJob` source-revision snapshot and status enum, aggregate scope, and active non-puzzle session timing are not fully represented in T040–T048 models/current schema. Define persistence/contracts before relying on them.
+- Cycle selection snapshots, completion policy, resume cursor, per-book reading intent, and puzzle interaction/review state are persisted as JSON or scalar values in the existing `app_settings` table; they are not relational schema constraints. Cycle-scoped non-puzzle completion is stored separately and remains cycle keyed.
 - DB/domain checks do not yet enforce every cross-record condition: one active session per cycle, one open segment per attempt, outcome/reason combinations, or consistency between source locator and current revision. Enforce transactionally or add constraints/indexes.
 - Set status defaults to `active`; set-item state defaults to `pending`. Strict enum decoding must not silently convert unknown data.
 
 ## Schema version 2 migration
 
 Phase 5 adds classification provenance and import revision snapshots through an additive migration from version 1. Existing source, index, and training rows remain intact. Existing blocks default to `inferredClassification=false`; their authored type is unknown until re-indexed. Legacy jobs cannot resume without revision snapshots.
+
+## Schema version 7 persistence
+
+Version 7 continues to use the existing `app_settings` table for interaction
+state and cycle snapshots; it adds no relational columns for these values.
+The cycle row and `cycle-set:<cycleId>` snapshot (ordered selection and each
+item's block identity/content type) are created in one transaction.
+`cycle-policy:<cycleId>` separately stores the selected, cycle-frozen
+`keyMoves` or `allMoves`; `cycle-cursor:<cycleId>` stores the current attempt
+cursor, including a finalized attempt with open practice/review interaction.
+`puzzle:<attemptId>` stores the practice interaction JSON, including its
+position, move history, per-interaction standalone policy when applicable, and
+review/concealment state. The per-book reading preference stores `read` or
+`solve`; completion policy is not persisted per book. Cursor updates are
+separate writes from score and non-puzzle completion writes. Casual `PuzzleAttempt`
+values may carry synthetic cycle/session IDs for API compatibility, but the
+casual repository writes no Cycle or TrainingSession rows and displays no
+timer. The per-book reading intent uses `library.read-puzzles.<bookId>` with
+values `read` and `solve` (`solve` is the default when no value exists).
+Standalone scores and interactions use their own `casual.*` keys and are
+excluded from scored cycle aggregates. When
+legacy records lack a cycle snapshot, use the historical/current selection
+with `allMoves`; a legacy finalized attempt without interaction state may
+enter read-only review.

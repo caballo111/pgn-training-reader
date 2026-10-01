@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pgntrainingreader/data/pgn/dartchess_content_parser.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
@@ -37,6 +38,44 @@ void main() {
       ),
     ],
   );
+
+  testWidgets('preserves comments around the final authored variation', (
+    tester,
+  ) async {
+    final parsed = const DartchessContentParser().parse(
+      '[SetUp "1"]\n'
+      '[FEN "5rk1/2N2ppp/4p3/R1b2q2/4b3/6Q1/5PPP/5RK1 b - - 0 1"]\n'
+      '1... Bxf2+ 2. Qxf2 Qxa5 3. Nxe6 Bxg2 '
+      '({Before the alternative} 3... Qa8 {After the alternative}) *',
+      contentType: ContentType.text,
+    );
+    final nxe6 =
+        parsed.rootMoves.single.children.single.children.single.children.single;
+    final alternative = nxe6.children[1];
+    expect(alternative.san, 'Qa8');
+    expect(alternative.startingComments, ['Before the alternative']);
+    expect(alternative.comments, ['After the alternative']);
+    expect(alternative.fenBefore, nxe6.fenAfter);
+    ReaderNavigationState? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MoveTreeView(
+            content: parsed,
+            navigation: ReaderNavigationState.initial(parsed),
+            onNavigationChanged: (state) => selected = state,
+          ),
+        ),
+      ),
+    );
+    final before = find.text('Before the alternative');
+    final move = find.text('Qa8');
+    final after = find.text('After the alternative');
+    expect(tester.getTopLeft(before).dy, lessThan(tester.getTopLeft(move).dy));
+    expect(tester.getTopLeft(move).dy, lessThan(tester.getTopLeft(after).dy));
+    await tester.tap(move);
+    expect(selected?.currentNode, alternative);
+  });
 
   testWidgets('shows moves, branches, comments, and NAG annotations', (
     tester,

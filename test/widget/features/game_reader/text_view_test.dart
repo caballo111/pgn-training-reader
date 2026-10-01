@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
+import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/text_view.dart';
 
 void main() {
@@ -125,14 +126,22 @@ void main() {
     );
 
     expect(find.text('White to move'), findsOneWidget);
-    await tester.tap(find.text('Rotate: Black at bottom'));
+    String orientation() => tester
+        .widget<ReaderBoard>(find.byType(ReaderBoard))
+        .board
+        .orientation
+        .name;
+    expect(orientation(), 'white');
+    await tester.tap(find.byTooltip('Flip board'));
     await tester.pumpAndSettle();
-    expect(find.text('Rotate: White at bottom'), findsOneWidget);
+    expect(find.byTooltip('Flip board'), findsOneWidget);
+    expect(orientation(), 'black');
 
     await tester.tap(find.byTooltip('Next move'));
     await tester.pumpAndSettle();
     expect(find.text('Black to move'), findsOneWidget);
-    expect(find.text('Rotate: White at bottom'), findsOneWidget);
+    expect(find.byTooltip('Flip board'), findsOneWidget);
+    expect(orientation(), 'black');
 
     await tester.tap(find.byTooltip('Last move on main line'));
     await tester.pumpAndSettle();
@@ -175,6 +184,12 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(
+      find.text('Introductory note 8.'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Introductory note 8.'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('e4'),

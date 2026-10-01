@@ -1,109 +1,116 @@
 # Puzzle Evaluation Contract
 
-This contract defines deterministic domain evaluation against a supported
-Puzzle's authored PGN move tree. It complements
-`lib/domain/training/puzzle_evaluator.dart` and the attempt models. Legal move
-checking uses the chess-rules adapter; authored acceptance uses the children
-of the current solution node. No engine-equivalence judgment is part of this
-contract.
+This contract defines authored-line evaluation and the separation between a
+cycle-scored attempt and continued practice interaction. Acceptance follows
+legal moves in the PGN tree; it never uses engine equivalence.
 
-## Preconditions
+## Inputs and policy
 
-- Initialization receives supported `Puzzle` content with a valid starting
-  position and at least one authored solution move.
-- The attempt belongs to that puzzle and is unfinished. An already finalized
-  attempt cannot be initialized for further scoring.
-- The attempt lifecycle status must be `active` or `paused` when initialized;
-  only an `active` attempt accepts a move (resume it before submission if
-  initialized while paused). Status is separate from its
-  terminal outcome: only `finalized` attempts have an outcome and completion
-  time.
-- The starting position and active side are derived from PGN/FEN and the move
-  tree, not from display metadata.
-- Submitted moves use the evaluator's UCI input format. Legal-destination
-  queries use algebraic square names.
-- Calls that require an initialized evaluator are made only after successful
-  initialization. Move submission is allowed only while the attempt status is
-  `active`.
+- Initialization requires supported Puzzle content, a valid starting
+  position, at least one authored move, and an unfinished attempt (or a
+  finalized attempt restored for read-only/continued practice).
+- A cycle attempt uses the cycle's frozen completion policy (`keyMoves` or
+  `allMoves`). A standalone solve uses the policy selected for that
+  interaction, persisted in its interaction JSON. Reading intent (`read` or
+  `solve`) does not choose a policy.
+- Submitted learner moves use UCI. The active side and position come from the
+  PGN/FEN and accepted move history.
+- Initialization exposes the current board and user/practice history, never
+  future solution moves, positions, annotations, or branch labels while the
+  presentation is concealed.
 
-## Operations and results
+## Authored branches and completion
 
-### Initialize
+Every legal child in the authored tree is an acceptable continuation. A key
+move is a node whose comment contains `✔` as a standalone token; token
+boundaries are whitespace or comment boundaries. Substrings such as `✔!` and
+`x✔` are not markers. Marker detection applies along the actually accepted
+branch, not across unrelated variations.
 
-Initialization returns an immutable state containing the current FEN, side to
-move, attempt record, and user-submitted move history. It exposes no solution
-tree or future solution moves. `state` is null before initialization;
-`finalAttempt` is null until terminal evaluation.
+- `keyMoves` completes the scored line when the user reaches a marked node on
+  the accepted branch.
+- If that accepted branch has no marker, `keyMoves` falls back to the branch's
+  authored endpoint even when another variation contains a marker.
+- `allMoves` ignores markers and completes only at an authored terminal node.
+- Ordinary opponent moves are played automatically using the first authored
+  child in source order. Show the committed learner position before a short
+  reply pause, keeping input locked until the durable transition completes.
+  Recovery may immediately apply a durably pending reply. Under `keyMoves`, when an opponent reply is marked as
+  a key move, pause for the learner to predict it; credit requires the
+  learner's correct prediction.
+- A move completing a line with no hint usage finalizes `Passed`. If one or
+  more hints were used, it finalizes `Assisted`. Both have no failure reason.
+- A hint increments the attempt hint count and may expose only the permitted
+  hint cue: highlight the origin piece square on the board, with an accessible
+  label for that granted cue. Do not replace the highlight with prose. Clear
+  it when play advances; it does not expose destination moves or annotations.
 
-### Query legal destinations
+## Move evaluation and continued practice
 
-The result is the set of legal destination squares from the requested origin
-in the current position. It answers chess legality only and does not indicate
-whether a move belongs to the authored solution. After finalization the result
-is empty. Querying before initialization is an invalid state.
+For each submitted move, check chess legality and then compare a legal move
+against children of the current authored node. Accepted moves advance the
+shared practice board. A submitted illegal move finalizes the scored attempt
+as `WrongMove` with `IllegalMove`; a legal move outside the authored children
+finalizes it as `WrongMove` with `IncorrectMove`. Record the submitted move
+and increment the wrong-move count once.
 
-### Submit a move
+That first error ends scoring for the attempt immediately. The board remains
+interactive and concealed so the learner can keep practicing. Later practice
+moves and their board position are persisted in the separate interaction
+record; they cannot mutate the finalized attempt, its outcome, failure reason,
+or metrics. Keep the first rejected move for the scored audit; additional
+incorrect practice submissions show feedback without appending rejected moves
+to the interaction notation. Accepted practice moves remain persisted.
+For a new interaction, keep solution content concealed until the
+learner completes the continued practice line or explicitly reveals the
+solution. Reaching the authored endpoint later does not change `WrongMove` to
+`Passed` or `Assisted`.
 
-For each submitted move, the evaluator first determines legality in the
-current chess position, then compares a legal move with the authored child
-nodes at the current solution node. An accepted child advances the current
-position and records the move as legal and accepted. Any authored alternate
-child is equally acceptable; child order has no correctness priority. The
-resulting attempt remains `active` unless the move ends the attempt.
+A legacy finalized attempt restored without a saved interaction/snapshot may
+enter read-only solution review immediately. This compatibility path does not
+apply to a newly scored first error with a persisted practice interaction.
+The active cycle cursor may identify a finalized attempt while that practice or
+review remains open. Restore the cursor and interaction before selecting a
+later cycle item; clear the cursor only after the explicit Next action.
 
-An accepted nonterminal move leaves the attempt unfinished. An accepted move
-that reaches an authored terminal solution finalizes `passed`, provided no
-earlier terminal result exists. A legal move absent from the authored children
-finalizes `wrong_move` with `incorrectMove`. A submitted move that is illegal
-in the current position finalizes `wrong_move` with `illegalMove`. In either
-failure case, the submitted move is retained with its legality/acceptance
-flags, the wrong-move count is incremented once, and the result cannot later
-be changed to passed. A terminal result has status `finalized` and its
-completion time is recorded in the same transition.
+An unsubmitted illegal board gesture is not an attempt move. Malformed UCI is
+input validation failure and does not finalize or record a move.
 
-FR-023 precedence: every move actually submitted to the evaluator that is
-illegal or an incorrect authored move immediately finalizes `wrong_move`.
-Whether an unsubmitted attempted board gesture is ignored is a presentation
-boundary; it cannot be used to accept a move or change attempt history.
+## Reveal, show move, and review
 
-### Reveal
+- **Show move** finalizes an unfinished scored attempt as `Revealed` before
+  advancing the shared practice board through the shown authored move. It may
+  continue the automatic authored reply. The score can never later become
+  `Passed` or `Assisted`.
+- **Reveal solution** finalizes an unfinished attempt as `Revealed` and exposes
+  the authored solution for review.
+- Skip, timeout, and abandon finalize with their respective outcomes. Their
+  established failure-reason rules remain in force.
+- Review uses the shared practice board and its current position. The user
+  navigates clickable notation with selected-move highlighting and the shared
+  first/previous/next/last icon controls used in reading. Variations and
+  annotations remain available. The user
+  navigates review explicitly and advances to the next exercise with an
+  explicit **Next** action; completion does not silently advance the cycle.
+- Showing a solution after another terminal outcome never rewrites that
+  outcome.
 
-Reveal finalizes an unfinished attempt as `revealed`, sets the reveal marker,
-and makes the authored solution available to presentation. If an attempt was
-already finalized, reveal does not replace its historical outcome. On a
-previously failed or passed attempt, presenting the solution after the
-terminal outcome does not relabel the attempt as `revealed`.
+## Persistence and recovery
 
-## State and atomicity
+Scored move recording and attempt update are atomic. A terminal move and its
+closing timing segment commit together. Continued practice for an already
+finalized attempt is written separately from scored history. If either write
+fails, publish neither an uncommitted board state nor a partial score.
 
-- State advances only along the selected accepted authored child; unrelated
-  legal moves never advance the puzzle.
-- The persistence boundary records each submitted move and its resulting
-  attempt state together through `TrainingRepository.recordSubmittedMove`.
-  For a terminal move, the move record, updated counters/status/outcome, and
-  closing timing segment (if any) commit in one transaction. For a nonterminal
-  move, status remains unfinished and no timing segment is closed. If the
-  transaction fails, move history, attempt state, and timing data all remain
-  at their prior committed values.
-- Terminal outcomes are immutable. Repeating a puzzle creates a new attempt;
-  it does not reset or overwrite the finalized attempt.
-- Solution-bearing moves, future positions, comments, NAGs, and variation
-  labels remain unavailable to puzzle presentation before a terminal outcome
-  or explicit reveal.
+Restore the saved practice cursor and interaction after interruption. A
+finalized attempt remains immutable; resume the interaction record for board
+practice. When no interaction exists for a legacy finalized record, permit
+read-only solution review without creating or rewriting a score. A retry is a
+new attempt identity and does not overwrite prior history.
 
-## Errors and recovery
+Persisting a cycle cursor is a separate operation from score finalization and
+non-puzzle completion. Those records remain correct if a later cursor write
+fails; selection/recovery must consult the currently durable cursor and
+attempt history rather than assume one shared transaction.
 
-| Condition | Contract behavior |
-|---|---|
-| Unsupported content, invalid position, or no authored solution | Reject initialization as invalid/unsupported training content; do not auto-pass or use engine equivalence. |
-| Attempt already finalized | Reject initialization/submission as an invalid state; preserve its outcome. |
-| Query or submission before initialization | Invalid state (`StateError` at this interface boundary). |
-| Move submission after finalization | Reject as invalid state; no additional move or counter is recorded. |
-| Malformed UCI input or invalid square | Reject input as validation failure; it is not a submitted legal or illegal chess move and must not be confused with FR-023's submitted illegal move. |
-| Illegal chess move in valid move notation | Finalize immediately as `wrong_move` / `illegalMove` under FR-023. |
-| Legal move not in authored children | Finalize immediately as `wrong_move` / `incorrectMove`. |
-| Persistence failure during move/finalization | `recordSubmittedMove` rolls back the move, updated attempt, and optional closing segment together; preserve the last committed attempt state. |
-
-The domain state exposed to a puzzle-solving view must not include the
-solution tree. Diagnostics and production logs must not disclose solution
-moves or comments.
+Production logs and diagnostics must not disclose solution moves or comments.

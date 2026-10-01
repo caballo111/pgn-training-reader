@@ -89,20 +89,12 @@ void main() {
           ),
         );
         expect(find.text('Read this first'), findsOneWidget);
-        expect(find.text('Inferred classification: '), findsOneWidget);
         expect(puzzleCalls, 0);
-        expect(
-          find.text(
-            '$token is an instructional placeholder. This entry has no playable moves.',
-          ),
-          findsOneWidget,
-        );
-        await tester.tap(find.byType(DropdownButton<ContentType>));
+        await tester.tap(find.byTooltip('Change content type'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Text').last);
+        await tester.tap(find.text('Study text / game'), warnIfMissed: false);
         await tester.pumpAndSettle();
         expect(saved, ContentType.text);
-        expect(find.text('Inferred classification: '), findsNothing);
         expect(find.text('Read this first'), findsOneWidget);
         expect(puzzleCalls, 0);
       },
@@ -114,7 +106,7 @@ void main() {
       MaterialApp(home: GameReaderPage(content: _content(ContentType.text))),
     );
 
-    expect(find.text('Reader test'), findsNWidgets(2));
+    expect(find.text('Reader test'), findsOneWidget);
     expect(find.text('secret solution'), findsOneWidget);
   });
 
@@ -200,16 +192,14 @@ void main() {
           ),
         ),
       );
-      final dropdown = tester.widget<DropdownButton<ContentType>>(
-        find.byType(DropdownButton<ContentType>),
+      final menu = tester.widget<PopupMenuButton<ContentType>>(
+        find.byType(PopupMenuButton<ContentType>),
       );
-      expect(dropdown.items!.map((item) => item.value), [
-        ContentType.puzzle,
-        ContentType.text,
-      ]);
-      await tester.tap(find.byType(DropdownButton<ContentType>));
+      expect(menu.enabled, isTrue);
+      await tester.tap(find.byTooltip('Change content type'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Text').last);
+      expect(find.text('Study text / game'), findsOneWidget);
+      await tester.tap(find.text('Study text / game'), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(saved, ContentType.text);
       expect(find.text('secret solution'), findsOneWidget);

@@ -8,6 +8,7 @@ import '../chess_content/move_node.dart';
 import 'attempt_move.dart';
 import 'puzzle_attempt.dart';
 import 'puzzle_evaluator.dart';
+import 'puzzle_completion_policy.dart';
 
 /// Evaluates submitted moves against the authored move tree of one puzzle.
 ///
@@ -15,10 +16,22 @@ import 'puzzle_evaluator.dart';
 /// [PuzzleEvaluationState]. Paused attempts can be initialized for restoration,
 /// but must be explicitly resumed before they accept a move.
 final class AuthoredLinePuzzleEvaluator implements PuzzleEvaluator {
-  AuthoredLinePuzzleEvaluator({AppClock? clock, IdGenerator? idGenerator})
-    : _clock = clock ?? SystemAppClock(),
-      _idGenerator = idGenerator ?? RandomIdGenerator();
+  AuthoredLinePuzzleEvaluator({
+    AppClock? clock,
+    IdGenerator? idGenerator,
+    this.completionPolicy = PuzzleCompletionPolicy.allMoves,
+  }) : _clock = clock ?? SystemAppClock(),
+       _idGenerator = idGenerator ?? RandomIdGenerator();
 
+  AuthoredLinePuzzleEvaluator withCompletionPolicy(
+    PuzzleCompletionPolicy policy,
+  ) => AuthoredLinePuzzleEvaluator(
+    clock: _clock,
+    idGenerator: _idGenerator,
+    completionPolicy: policy,
+  );
+
+  final PuzzleCompletionPolicy completionPolicy;
   final AppClock _clock;
   final IdGenerator _idGenerator;
 
@@ -162,9 +175,13 @@ final class AuthoredLinePuzzleEvaluator implements PuzzleEvaluator {
     _position = nextPosition as chess.Chess;
     _currentChoices = acceptedNode.children;
 
-    if (_currentChoices.isEmpty) {
+    if (_currentChoices.isEmpty ||
+        (completionPolicy == PuzzleCompletionPolicy.keyMoves &&
+            isCompletionMarker(acceptedNode))) {
       _finalize(
-        outcome: PuzzleAttemptOutcome.passed,
+        outcome: attempt.hintCount > 0
+            ? PuzzleAttemptOutcome.assisted
+            : PuzzleAttemptOutcome.passed,
         failureReason: null,
         revealed: false,
       );

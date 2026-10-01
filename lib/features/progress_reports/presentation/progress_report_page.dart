@@ -75,6 +75,7 @@ final class _ProgressReportPageState extends State<ProgressReportPage> {
               rows: [
                 _Metric('Attempted', '${summary.attemptedCount}'),
                 _Metric('Passed', '${summary.passedCount}'),
+                _Metric('Assisted', '${summary.assistedCount}'),
                 _Metric('Failed', '${summary.nonPassingCount}'),
                 _Metric(
                   'Accuracy',

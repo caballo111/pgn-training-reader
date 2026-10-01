@@ -8,14 +8,15 @@ import '../application/reader_navigation_state.dart';
 import 'move_tree_view.dart';
 import 'reader_board.dart';
 import '../../../shared/presentation/study_layout.dart';
-import '../../../shared/presentation/flip_board_button.dart';
+import '../../../shared/presentation/study_navigation_controls.dart';
 
 /// Readable study material. Positions and navigation appear only when the
 /// PGN supplies a board position or moves.
 final class TextView extends StatefulWidget {
-  const TextView({required this.content, super.key});
+  const TextView({required this.content, this.readPuzzle = false, super.key});
 
   final ChessContent content;
+  final bool readPuzzle;
 
   @override
   State<TextView> createState() => _TextViewState();
@@ -42,7 +43,7 @@ final class _TextViewState extends State<TextView> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.content.contentType != ContentType.text) {
+    if (widget.content.contentType != ContentType.text && !widget.readPuzzle) {
       return const Center(child: Text('This content is not text material.'));
     }
 
@@ -104,9 +105,10 @@ final class _TextViewState extends State<TextView> {
         board: _controller.current.forBoard(orientation: _orientation),
         showOrientationControl: false,
       ),
-      controls: _NavigationControls(
-        navigation: navigation,
-        hasMoves: _hasMoves,
+      controls: StudyNavigationControls(
+        showNavigation: _hasMoves,
+        canPrevious: navigation.canPrevious,
+        canNext: navigation.canNext,
         onFirst: _perform(_controller.first),
         onPrevious: _perform(_controller.previous),
         onNext: _perform(_controller.next),
@@ -134,57 +136,4 @@ final class _TextViewState extends State<TextView> {
       }
     });
   }
-}
-
-final class _NavigationControls extends StatelessWidget {
-  const _NavigationControls({
-    required this.navigation,
-    required this.onFirst,
-    required this.onPrevious,
-    required this.onNext,
-    required this.onLast,
-    required this.onFlip,
-    required this.hasMoves,
-  });
-
-  final ReaderNavigationState navigation;
-  final VoidCallback onFirst;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
-  final VoidCallback onLast;
-  final VoidCallback onFlip;
-  final bool hasMoves;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    alignment: WrapAlignment.center,
-    children: [
-      if (hasMoves) ...[
-        IconButton(
-          tooltip: 'Starting position',
-          onPressed: navigation.canPrevious ? onFirst : null,
-          icon: const Icon(Icons.first_page),
-        ),
-        IconButton(
-          tooltip: 'Previous move',
-          onPressed: navigation.canPrevious ? onPrevious : null,
-          icon: const Icon(Icons.chevron_left),
-        ),
-        IconButton(
-          tooltip: 'Next move',
-          onPressed: navigation.canNext ? onNext : null,
-          icon: const Icon(Icons.chevron_right),
-        ),
-        IconButton(
-          tooltip: 'Last move on main line',
-          onPressed: navigation.canNext ? onLast : null,
-          icon: const Icon(Icons.last_page),
-        ),
-      ],
-      FlipBoardButton(
-        key: const ValueKey('reader-board-orientation'),
-        onPressed: onFlip,
-      ),
-    ],
-  );
 }

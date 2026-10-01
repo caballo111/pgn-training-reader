@@ -39,6 +39,14 @@ final _puzzle = ChessContent(
           fenBefore: 'hidden-position',
           fenAfter: 'later-position',
           comments: const ['Secret variation label'],
+          children: [
+            MoveNode(
+              san: 'Nf3',
+              uci: 'g1f3',
+              fenBefore: 'hidden',
+              fenAfter: 'hidden',
+            ),
+          ],
         ),
       ],
     ),
@@ -89,6 +97,68 @@ final class _Repository implements TrainingRepository {
 
 void main() {
   testWidgets(
+    'renders the learner position and locks the board during reply delay',
+    (tester) async {
+      final attempt = PuzzleAttempt(
+        id: 'attempt-reply-delay',
+        blockId: 'block',
+        cycleId: 'cycle',
+        sessionId: 'session',
+        startedAt: _started,
+      );
+      final controller = PuzzleSolverController(
+        repository: _Repository(attempt),
+        evaluatorFactory: () =>
+            AuthoredLinePuzzleEvaluator(idGenerator: _Ids()),
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: attempt.id);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PuzzleSolvingView(
+              controller: controller,
+              currentExercise: 1,
+              totalExercises: 1,
+              orientation: PuzzleSide.white,
+              onPause: () {},
+            ),
+          ),
+        ),
+      );
+      await controller.hint();
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('puzzle-hint-square-highlight')),
+        findsOneWidget,
+      );
+      final before = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).fen;
+
+      final transition = controller.submitMove(uci: 'e2e4');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      final duringReply = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
+      expect(duringReply.fen, isNot(before));
+      expect(duringReply.fen.split(' ')[1], 'b');
+      expect(duringReply.enabled, isFalse);
+      expect(
+        find.byKey(const ValueKey('puzzle-hint-square-highlight')),
+        findsNothing,
+      );
+
+      await tester.pump(const Duration(milliseconds: 350));
+      await transition;
+      await tester.pump();
+      expect(
+        tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).fen.split(' ')[1],
+        'w',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
     'active view shows accepted user moves and hides puzzle answers',
     (tester) async {
       final attempt = PuzzleAttempt(
@@ -103,30 +173,35 @@ void main() {
       final controller = PuzzleSolverController(
         repository: repository,
         evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        automaticReplyDelay: Duration.zero,
       );
       await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
       await controller.submitMove(uci: 'e2e4');
 
       await tester.pumpWidget(
         MaterialApp(
-          home: PuzzleSolvingView(
-            controller: controller,
-            currentExercise: 2,
-            totalExercises: 5,
-            orientation: PuzzleSide.white,
-            onPause: () {},
+          home: Scaffold(
+            appBar: AppBar(title: const Text('Puzzle')),
+            body: PuzzleSolvingView(
+              controller: controller,
+              currentExercise: 2,
+              totalExercises: 5,
+              orientation: PuzzleSide.white,
+              onPause: () {},
+            ),
           ),
         ),
       );
       await tester.pumpAndSettle();
       final semantics = tester.ensureSemantics();
 
-      expect(find.text('e2e4'), findsOneWidget);
-      expect(find.text('Your moves'), findsOneWidget);
-      expect(find.text('Black to move'), findsOneWidget);
+      expect(find.text('1. e4'), findsOneWidget);
+      expect(find.text('1... e5 (reply)'), findsOneWidget);
+      expect(find.text('Moves played'), findsOneWidget);
+      expect(find.text('White to move'), findsOneWidget);
       for (final secret in [
         'e4',
-        'e7e5',
+        'g1f3',
         'Secret solution comment',
         'Secret variation label',
         'Secret block comment',
@@ -150,9 +225,9 @@ void main() {
           .semanticsOwner!
           .rootSemanticsNode!
           .toStringDeep();
-      expect(semanticsTree, contains('e2e4'));
+      expect(semanticsTree, contains('1. e4'));
       for (final secret in [
-        'e7e5',
+        'g1f3',
         'Secret solution comment',
         'Secret variation label',
         'Secret block comment',
@@ -187,18 +262,22 @@ void main() {
     final controller = PuzzleSolverController(
       repository: repository,
       evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: _Ids()),
+      automaticReplyDelay: Duration.zero,
     );
     await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
     var pauseNotified = false;
 
     await tester.pumpWidget(
       MaterialApp(
-        home: PuzzleSolvingView(
-          controller: controller,
-          currentExercise: 1,
-          totalExercises: 1,
-          orientation: PuzzleSide.white,
-          onPause: () => pauseNotified = true,
+        home: Scaffold(
+          appBar: AppBar(title: const Text('Puzzle')),
+          body: PuzzleSolvingView(
+            controller: controller,
+            currentExercise: 1,
+            totalExercises: 1,
+            orientation: PuzzleSide.white,
+            onPause: () => pauseNotified = true,
+          ),
         ),
       ),
     );

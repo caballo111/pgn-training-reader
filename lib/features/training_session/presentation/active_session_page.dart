@@ -28,6 +28,8 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
   PuzzlePresentationState? _review;
   final Map<String, PuzzleSolverController> _puzzleControllers = {};
   bool _leaving = false;
+  bool _allowPop = false;
+  bool _advancePending = false;
 
   @override
   void initState() {
@@ -42,160 +44,157 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
   @override
   void dispose() {
     _ticker?.cancel();
+    for (final controller in _puzzleControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => PopScope<void>(
-    canPop: false,
-    onPopInvokedWithResult: (didPop, result) async {
-      if (didPop || _leaving) return;
-      _leaving = true;
-      await widget.controller.close();
-      if (!context.mounted) return;
-      if (widget.controller.state.status ==
-          ActiveSessionStatus.recoverableFailure) {
-        _leaving = false;
-        return;
-      }
-      Navigator.of(context).pop();
+    canPop: _allowPop,
+    onPopInvokedWithResult: (didPop, result) {
+      if (!didPop) _closeAndPop();
     },
-    child: AnimatedBuilder(
-      animation: widget.controller,
-      builder: (context, _) {
-        final state = widget.controller.state;
-        final total = widget.controller.trainingSet.items.length;
-        if (state.status == ActiveSessionStatus.loading) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (state.status == ActiveSessionStatus.recoverableFailure) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Training session')),
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.sync_problem_outlined, size: 40),
-                    const SizedBox(height: 12),
-                    Text(
-                      state.errorMessage ??
-                          'The session could not be restored.',
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => widget.controller.start(),
-                      child: const Text('Try again'),
-                    ),
-                  ],
-                ),
+    child: IgnorePointer(
+      ignoring: _leaving,
+      child: AnimatedBuilder(
+        animation: widget.controller,
+        builder: (context, _) {
+          final state = widget.controller.state;
+          final total = widget.controller.trainingSet.items.length;
+          if (state.status == ActiveSessionStatus.loading) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (state.status == ActiveSessionStatus.recoverableFailure) {
+            return Scaffold(
+              appBar: AppBar(
+                leading: _backButton,
+                title: const Text('Training session'),
               ),
-            ),
-          );
-        }
-        if (state.status == ActiveSessionStatus.completed) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Cycle complete')),
-            body: const Center(
-              child: Text('You completed every item in this cycle.'),
-            ),
-          );
-        }
-        final progress = state.progress;
-        final attempted =
-            (progress?.passedCount ?? 0) +
-            (progress?.wrongMoveOutcomeCount ?? 0) +
-            (progress?.revealedCount ?? 0) +
-            (progress?.skippedCount ?? 0) +
-            (progress?.timedOutCount ?? 0) +
-            (progress?.abandonedCount ?? 0) +
-            (progress?.completedNonPuzzleItemCount ?? 0);
-        final current = state.activeItem == null
-            ? attempted
-            : state.activeItem!.position + 1;
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(widget.controller.trainingSet.name),
-            actions: [
-              if (state.status == ActiveSessionStatus.active)
-                IconButton(
-                  tooltip: 'Pause session',
-                  onPressed: widget.controller.pause,
-                  icon: const Icon(Icons.pause_circle_outline),
-                ),
-            ],
-          ),
-          body: Column(
-            children: [
-              Material(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
+              body: Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.spaceBetween,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      const Icon(Icons.sync_problem_outlined, size: 40),
+                      const SizedBox(height: 12),
                       Text(
-                        'Cycle progress: ${current.clamp(0, total)} of $total',
+                        state.errorMessage ??
+                            'The session could not be restored.',
                       ),
-                      Text('Session ${_format(state.sessionActiveTime)}'),
-                      Text('Cycle ${_format(state.cycleActiveTime)}'),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => widget.controller.start(),
+                        child: const Text('Try again'),
+                      ),
                     ],
                   ),
                 ),
               ),
-              if (state.status == ActiveSessionStatus.paused)
-                MaterialBanner(
-                  content: const Text(
-                    'Session paused. Resume when you are ready.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: widget.controller.resume,
-                      child: const Text('Resume'),
-                    ),
-                  ],
-                ),
-              Expanded(
-                child: _review != null
-                    ? Column(
-                        children: [
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _returnFromReview,
-                              child: const Text('Return to cycle'),
-                            ),
-                          ),
-                          Expanded(
-                            child: PuzzleSolutionReviewView(
-                              presentation: _review!,
-                            ),
-                          ),
-                        ],
-                      )
-                    : _content(state, current, total),
+            );
+          }
+          if (state.status == ActiveSessionStatus.completed) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Cycle complete')),
+              body: const Center(
+                child: Text('You completed every item in this cycle.'),
               ),
-              if (state.status == ActiveSessionStatus.active &&
-                  state.activeItem != null &&
-                  state.activeItem!.contentType != ContentType.puzzle)
-                SafeArea(
+            );
+          }
+          final progress = state.progress;
+          final attempted =
+              (progress?.passedCount ?? 0) +
+              (progress?.wrongMoveOutcomeCount ?? 0) +
+              (progress?.revealedCount ?? 0) +
+              (progress?.skippedCount ?? 0) +
+              (progress?.timedOutCount ?? 0) +
+              (progress?.abandonedCount ?? 0) +
+              (progress?.completedNonPuzzleItemCount ?? 0);
+          final current = state.activeItem == null
+              ? attempted
+              : state.activeItem!.position + 1;
+          return Scaffold(
+            appBar: AppBar(
+              leading: _backButton,
+              title: Text(
+                _review == null
+                    ? widget.controller.trainingSet.name
+                    : 'Solution review',
+              ),
+              actions: [
+                if (state.status == ActiveSessionStatus.active)
+                  IconButton(
+                    tooltip: 'Pause session',
+                    onPressed: widget.controller.pause,
+                    icon: const Icon(Icons.pause_circle_outline),
+                  ),
+              ],
+            ),
+            body: Column(
+              children: [
+                Material(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: FilledButton(
-                      onPressed: widget.controller.continueNonPuzzle,
-                      child: const Text('Complete item and continue'),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Cycle progress: ${current.clamp(0, total)} of $total',
+                        ),
+                        Text('Session ${_format(state.sessionActiveTime)}'),
+                        Text('Cycle ${_format(state.cycleActiveTime)}'),
+                      ],
                     ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+                if (state.status == ActiveSessionStatus.paused)
+                  MaterialBanner(
+                    content: const Text(
+                      'Session paused. Resume when you are ready.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: widget.controller.resume,
+                        child: const Text('Resume'),
+                      ),
+                    ],
+                  ),
+                Expanded(
+                  child: _review != null
+                      ? PuzzleSolutionReviewView(
+                          presentation: _review!,
+                          onNext: _nextFromReview,
+                          canAdvance:
+                              state.status == ActiveSessionStatus.active &&
+                              !_advancePending,
+                          isFinalExercise: current >= total,
+                        )
+                      : _content(state, current, total),
+                ),
+                if (state.status == ActiveSessionStatus.active &&
+                    state.activeItem != null &&
+                    state.activeItem!.contentType != ContentType.puzzle)
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: FilledButton(
+                        onPressed: widget.controller.continueNonPuzzle,
+                        child: const Text('Complete item and continue'),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
     ),
   );
 
@@ -230,9 +229,56 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     );
   }
 
-  Future<void> _returnFromReview() async {
-    setState(() => _review = null);
-    await widget.controller.advance();
+  Widget get _backButton => IconButton(
+    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+    onPressed: _closeAndPop,
+    icon: const BackButtonIcon(),
+  );
+
+  Future<void> _closeAndPop() async {
+    if (_leaving) return;
+    _leaving = true;
+    setState(() {});
+    await widget.controller.whenIdle();
+    await Future.wait([
+      ..._puzzleControllers.values.map((controller) => controller.whenIdle()),
+    ]);
+    await widget.controller.whenIdle();
+    await widget.controller.close();
+    if (!mounted) return;
+    if (widget.controller.state.status ==
+        ActiveSessionStatus.recoverableFailure) {
+      _leaving = false;
+      setState(() {});
+      return;
+    }
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).maybePop();
+    });
+  }
+
+  Future<void> _nextFromReview() async {
+    final before = widget.controller.state;
+    if (_advancePending || before.status != ActiveSessionStatus.active) return;
+    final previousItemId = before.activeItem?.id;
+    setState(() => _advancePending = true);
+    try {
+      await widget.controller.advance();
+    } catch (_) {
+      if (mounted) setState(() => _advancePending = false);
+      return;
+    }
+    if (!mounted) return;
+    final after = widget.controller.state;
+    final advanced =
+        after.status == ActiveSessionStatus.completed ||
+        (after.status == ActiveSessionStatus.active &&
+            after.activeItem?.id != previousItemId);
+    setState(() {
+      _advancePending = false;
+      if (advanced) _review = null;
+    });
   }
 
   static String _format(Duration value) {
@@ -294,8 +340,8 @@ final class _ActivePuzzleSurfaceState extends State<_ActivePuzzleSurface> {
     future: _initialization,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
-        return Center(
-          child: Text('Puzzle could not be opened: ${snapshot.error}'),
+        return const Center(
+          child: Text('Puzzle could not be opened. Try again.'),
         );
       }
       if (snapshot.connectionState != ConnectionState.done) {

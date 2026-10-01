@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../core/time/app_clock.dart';
 import '../../../core/utilities/id_generator.dart';
 import '../../../domain/library/pgn_index_repository.dart';
+import '../../../domain/library/pgn_source_repository.dart';
+import '../../../domain/training/puzzle_completion_policy.dart';
 import '../../../domain/training/training_set.dart';
+import '../../../domain/training/lifecycle_status.dart';
 import '../../../domain/training/training_set_repository.dart';
 import '../../../domain/chess_content/chess_content_repository.dart';
 import '../../../domain/training/training_repository.dart';
@@ -21,6 +24,7 @@ final class TrainingSetsPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.indexRepository,
+    this.sourceRepository,
     required this.trainingRepository,
     required this.sessionService,
     required this.contentRepository,
@@ -30,6 +34,7 @@ final class TrainingSetsPage extends StatefulWidget {
   });
   final TrainingSetRepository repository;
   final PgnIndexRepository indexRepository;
+  final PgnSourceRepository? sourceRepository;
   final TrainingRepository trainingRepository;
   final TrainingSessionService sessionService;
   final ChessContentRepository contentRepository;
@@ -43,6 +48,7 @@ final class TrainingSetsPage extends StatefulWidget {
 
 final class _TrainingSetsPageState extends State<TrainingSetsPage> {
   late Future<List<TrainingSet>> _sets = widget.repository.listSets();
+  final Set<String> _removing = {};
   void _reload() => setState(() {
     _sets = widget.repository.listSets();
   });
@@ -59,6 +65,7 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
         builder: (_) => TrainingSetEditorPage(
           controller: controller,
           indexRepository: widget.indexRepository,
+          sourceRepository: widget.sourceRepository,
         ),
       ),
     );
@@ -94,7 +101,60 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
     if (mounted) _reload();
   }
 
+  Future<void> _remove(TrainingSet set) async {
+    if (_removing.contains(set.id)) return;
+    setState(() => _removing.add(set.id));
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Remove training set?'),
+          content: Text(
+            '“${set.name}” will be removed from this list and can no longer be trained. '
+            'Your imported content and saved training history will be kept.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      await widget.repository.removeSet(
+        id: set.id,
+        removedAt: widget.clock.utcNow,
+      );
+      if (mounted) _reload();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not remove the training set. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _removing.remove(set.id));
+    }
+  }
+
   Future<void> _train(TrainingSet set) async {
+    final cycles = await widget.trainingRepository.listCycles(set.id);
+    final hasActiveCycle = cycles.any(
+      (cycle) => cycle.status == CycleStatus.active,
+    );
+    final policy = hasActiveCycle
+        ? PuzzleCompletionPolicy.allMoves
+        : await _chooseCompletionPolicy();
+    if (policy == null || !mounted) return;
     final controller = ActiveSessionController(
       trainingSet: set,
       sessionService: widget.sessionService,
@@ -102,6 +162,7 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
       contentRepository: widget.contentRepository,
       clock: widget.clock,
       evaluatorFactory: widget.evaluatorFactory,
+      completionPolicy: policy,
     );
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -111,6 +172,36 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
     controller.dispose();
     if (mounted) _reload();
   }
+
+  Future<PuzzleCompletionPolicy?> _chooseCompletionPolicy() =>
+      showDialog<PuzzleCompletionPolicy>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Choose completion policy'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () =>
+                  Navigator.pop(context, PuzzleCompletionPolicy.keyMoves),
+              child: const ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Key Moves'),
+                subtitle: Text(
+                  'Complete at an authored ✔ marker; use the full line when none exists.',
+                ),
+              ),
+            ),
+            SimpleDialogOption(
+              onPressed: () =>
+                  Navigator.pop(context, PuzzleCompletionPolicy.allMoves),
+              child: const ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('All Moves'),
+                subtitle: Text('Complete the full authored continuation.'),
+              ),
+            ),
+          ],
+        ),
+      );
 
   Future<void> _report(TrainingSet set) async {
     final controller = ProgressReportController(
@@ -174,30 +265,43 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
                       onPressed: () => _report(set),
                       icon: const Icon(Icons.assessment_outlined),
                     ),
-                    if (set.status == TrainingSetStatus.active) ...[
+                    if (set.status == TrainingSetStatus.active)
                       IconButton(
                         tooltip: 'Start or resume cycle',
-                        onPressed: () => _train(set),
+                        onPressed: _removing.contains(set.id)
+                            ? null
+                            : () => _train(set),
                         icon: const Icon(Icons.play_arrow),
-                      ),
-                      PopupMenuButton<String>(
-                        onSelected: (action) {
-                          if (action == 'edit') _edit(set);
-                          if (action == 'archive') _archive(set);
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'edit', child: Text('Edit')),
-                          PopupMenuItem(
-                            value: 'archive',
-                            child: Text('Archive'),
-                          ),
-                        ],
-                      ),
-                    ] else
+                      )
+                    else
                       const Padding(
                         padding: EdgeInsets.only(left: 8),
                         child: Text('Archived'),
                       ),
+                    PopupMenuButton<String>(
+                      enabled: !_removing.contains(set.id),
+                      onSelected: (action) {
+                        if (action == 'edit') _edit(set);
+                        if (action == 'archive') _archive(set);
+                        if (action == 'remove') _remove(set);
+                      },
+                      itemBuilder: (_) => [
+                        if (set.status == TrainingSetStatus.active) ...[
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text('Edit'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'archive',
+                            child: Text('Archive'),
+                          ),
+                        ],
+                        const PopupMenuItem(
+                          value: 'remove',
+                          child: Text('Remove'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

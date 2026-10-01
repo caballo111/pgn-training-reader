@@ -1,192 +1,132 @@
 # Training Session Contract
 
-This contract defines cycle, session, item-selection, and puzzle-attempt
-lifecycle coordination in domain terms. It complements
-`lib/domain/training/training_session_service.dart` and the cycle, session,
-item, attempt, and timing-segment models. Training records are local and
-progress-affecting writes obey FR-039 atomicity. Its persistence boundary is
-`lib/domain/training/training_repository.dart`.
+This contract defines book reading intent, standalone solving, cycle
+snapshots, item selection, session timing, and scored attempt lifecycle. It
+complements the domain training service and repository boundaries.
 
-## Preconditions
+## Reading intent and score boundary
 
-- A new cycle can start only for an existing, active training set containing
-  supported items. An archived, missing, empty, or otherwise untrainable set
-  cannot start a cycle.
-- A set has at most one active cycle. A second `startOrResumeCycle` call
-  returns/resumes that existing active cycle; it does not create a duplicate.
-- Opening a session requires an active cycle and no other active session for
-  that cycle. `studyDay` is a history-grouping value, not a duration input.
-- Pausing requires an active session. If it owns an active attempt, the caller
-  supplies that open segment's nonnegative monotonic duration; otherwise the
-  active-attempt duration is null. Resuming requires a paused session.
-  Recovery requires an interrupted active session and closes work at the last
-  durable lifecycle boundary.
-- Item selection requires a known active cycle. Item order is the explicit
-  set order. Instructions and demonstrations are traversed but do not create
-  scored puzzle attempts.
-- Pause requires an unfinished attempt with an open active segment and a
-  non-negative monotonic segment duration. Resume requires an unfinished
-  paused attempt. Finalization requires an unfinished attempt and
-  non-negative duration for any open segment.
-- Attempt lifecycle status is one of `active`, `paused`, or `finalized`.
-  Creation/resume is `active`; pause changes it to `paused`; resume changes it
-  back to `active`; exactly one terminal outcome changes it to `finalized`.
-  The outcome (`passed`, `wrong_move`, and so on) is separate from this
-  lifecycle status. A finalized attempt cannot return to either unfinished
-  status.
-- Wall-clock timestamps are for audit/history. Active durations come from a
-  monotonic clock and exclude paused, inactive, suspended, closed, and
-  between-session time.
+Each book has a reading intent: `read` or `solve`. `Read` opens the puzzle as
+reader content. `Solve` opens a standalone interaction unless the user
+separately starts or resumes a cycle. Standalone puzzle moves, hints, and
+reveals are stored in a separate interaction history. They never
+create database Cycle or TrainingSession rows, show an active-time timer, or
+appear in cycle aggregates. The standalone controller may construct an in-memory
+attempt with synthetic cycle/session IDs to reuse puzzle interaction APIs;
+those IDs are not persisted as lifecycle records. Standalone progress stays
+separate in its solving flow. Reading intent does not choose completion policy
+or make a standalone solve cycle-scored. Cycle scoring requires an active cycle
+and a puzzle selected by that cycle.
 
-## Operations and results
+## Start or resume a cycle
 
-### Start or resume a cycle
+Removing a set archives it and records a durable removal marker atomically.
+Visible set lists exclude removed definitions, while stable-ID lookups retain
+them for historical relationships. Removed sets cannot be edited or used to
+start/resume training through the set list. No cycle, session, attempt, snapshot,
+or imported content is deleted. Already archived sets keep their archive time.
 
-Returns the active cycle if one exists for the set. Otherwise creates and
-returns a new cycle with the supplied wall-clock start time. Completed or
-stopped cycles remain historical records; beginning another pass creates a
-new cycle identity.
+A new cycle requires an active, nonempty, trainable set. At creation,
+transactionally snapshot the explicit ordered selection as `(set item
+identity, block identity, content type)`. Persist the selected completion
+policy (`keyMoves` or `allMoves`) separately before puzzle training begins;
+after that initial write the policy cannot change. The reading intent is
+independent. Later set edits do not rewrite an existing cycle selection or
+policy. A legacy cycle without a snapshot uses `allMoves` and the retained
+set definition as a compatibility fallback. Its original membership cannot be
+reconstructed reliably, so comparisons with unknown snapshots are disabled. A standalone solve interaction selects and persists its
+own policy in that interaction record.
 
-### Open and close a session
+At most one active cycle exists per set. Starting/resuming returns that cycle
+when present; otherwise it creates a new identity and item-selection snapshot.
+Completed or stopped cycles remain historical. The cursor identifies the
+current attempt/item, including finalized attempts with an open practice or
+review interaction. Cursor writes are separate from corresponding score or
+item-completion writes. On resume, restore the durable cursor before selecting
+any later item. The cursor may refer to an active/paused attempt or a finalized
+attempt whose practice/review interaction remains open. Reopen that attempt and
+its interaction first; after explicit Next clears the cursor, select the next
+pending snapshotted item in order. Do not filter finalized cursor attempts out
+as if they were completed navigation.
 
-Opening creates an active session with start time and study day. Closing an
-active or paused session records its end time and returns the closed session.
-Before closing, any active attempt must be paused or finalized so its current
-timing segment is closed. Session wall-clock duration is never counted as
-puzzle-solving time.
+The selected cycle completion policy is written before puzzle training and is
+immutable thereafter. A different selection applies to standalone solve
+interactions or a newly started cycle only.
 
-### Pause, resume, and recover a session
+## Sessions and active time
 
-Pausing changes an active session to `paused`. If the session has an active
-attempt, the same durable transition closes its open timing segment, adds the
-given monotonic duration to the attempt, and changes the attempt status to
-`paused`. The duration is null only when no attempt is active. Resuming changes
-the session to `active`; if it contains an unfinished paused attempt, that
-attempt returns to `active` with a new timing segment. The resume result
-contains the session and that segment, or null for the segment when there is
-no paused attempt.
+Opening a session requires an active cycle and no other active session for
+that cycle. Session `studyDay` groups history only. Active durations use a
+monotonic clock and exclude pauses, inactive/background time, process gaps,
+and time between sessions.
 
-Recovery ends an interrupted active session with `recovered` status. It pauses
-unfinished work and closes the active segment at the last persisted lifecycle
-boundary. Unmeasurable time after that boundary is excluded. A later session
-can resume the same unfinished attempt with a fresh segment.
+Pausing closes the current timing segment and retains attempt identity.
+Resuming opens a new segment. Process recovery closes work at the last durable
+lifecycle boundary and excludes unknown elapsed time. Closing a session first
+pauses or finalizes any active attempt. Session transitions and their timing
+changes commit atomically.
 
-### Select the next item
+## Select and complete cycle items
 
-Returns an unfinished exercise first, otherwise the next pending item in
-explicit set order, or null when every item is complete. Puzzle completion is
-determined by this cycle's attempt history; instruction and demonstration
-completion is tracked by durable cycle-scoped completion records. Selection
-alone creates no attempt and does not count non-puzzle content as a scored
-result.
+Selection follows the cycle's snapshotted explicit order. Restore the durable
+cursor before selecting the next pending item. Puzzle completion is derived
+from cycle attempt history. Instruction and Demonstration items
+have durable completion keyed by cycle and item; they do not create scored
+attempts or affect puzzle accuracy. Non-puzzle completion is idempotent. Its
+cursor update is a separate write; do not assume both writes share one
+transaction.
 
-### Start a puzzle attempt
+Cycle completion requires traversal of every snapshotted item, durable
+completion for each non-puzzle item, and at least one finalized scored attempt
+for every required puzzle. Completion does not create or rewrite attempt
+history.
 
-Starting requires a Puzzle item belonging to the active cycle's set, an
-active session belonging to that cycle, and no unfinished attempt for that
-item in the cycle. It creates an `active` attempt and its first open timing
-segment atomically. A retry after an earlier finalized attempt receives a new
-attempt identity; it does not overwrite history.
+## Scored attempts
 
-### Complete a non-puzzle item
+Starting a puzzle attempt requires its item in the active cycle snapshot, an
+active session, and no unfinished attempt for that item. It creates a new
+attempt and timing segment atomically. A retry after finalization receives a
+new attempt identity.
 
-Completing an Instruction or Demonstration records durable completion keyed
-by cycle ID and training-set-item ID. Completion is idempotent for the same
-cycle/item pair, does not mutate the shared set item, and does not create a
-scored attempt. The supplied completion time is retained for history. The
-operation rejects Puzzle items or items outside the cycle's set.
+Each submitted move is evaluated against legal chess moves and authored
+children. The first incorrect or illegal submission finalizes the scored
+attempt as `WrongMove` with its reason and wrong-move count. Practice remains
+interactive and concealed afterward; its later board interactions are stored
+outside the immutable score. Reaching the solution later cannot turn that
+score into a pass.
 
-### Pause and resume an attempt
+Completing the snapshotted policy endpoint finalizes `Passed` when no hint was
+used, or `Assisted` after one or more hints. Showing a move finalizes
+`Revealed` before advancing the shared practice board. Reveal, skip, timeout,
+and abandon are distinct terminal outcomes. A terminal score and its timing
+closure commit together and remain append-only.
 
-Pause closes the current timing segment, adds its monotonic duration to the
-attempt total, and retains the same unfinished attempt identity. Resume starts
-a new timing segment and returns that segment. The gap between segments is
-excluded. Process recovery must use the last persisted lifecycle boundary;
-unknown time after that boundary is not counted.
+Review uses the shared practice board. The learner chooses review navigation
+and advances to another item only with an explicit **Next** action.
 
-### Finalize an attempt
+## Atomicity, retention, and failures
 
-Finalization accepts one terminal outcome: `passed`, `wrong_move`, `revealed`,
-`skipped`, `timed_out`, or `abandoned`. It records completion time, outcome,
-active duration, failure reason, and reveal status, and closes any open timing
-segment in the same transaction. `wrong_move`, `timed_out`, and `abandoned`
-require a failure reason; other outcomes omit it. `revealed` requires
-`revealed = true`. For an incorrect or illegal submitted move, the evaluator
-must first determine `wrong_move` with `incorrectMove` or `illegalMove`
-respectively under FR-023; session finalization must not override it with a
-later pass, skip, or reveal outcome.
-
-The attempt lifecycle status becomes `finalized` at the same commit as its
-outcome and completion time. Before that commit, an attempt is `active` or
-`paused` and has no outcome or completion time.
-
-### Complete a cycle
-
-Completing requires an active cycle, every required ordered item traversed,
-durable completion for each Instruction and Demonstration, and at least one
-finalized attempt for each required Puzzle. It records the cycle completion
-time and `completed` status without creating an attempt. Cycle completion
-does not rewrite or remove its session or attempt history.
-
-## Atomicity, retention, and lifecycle
-
-- Starting a cycle, changing progress, closing a segment, and finalizing an
-  attempt are atomic. In particular, final attempt state and its closing
-  timing segment commit together; a failed commit leaves no partial result
-  represented as complete.
-- Pausing a session with an active attempt commits the session transition,
-  attempt pause, and segment closure together. Resuming commits the session
-  transition and any new attempt segment together. Recovery commits the
-  recovered session and safe attempt/segment boundary together. Completing a
-  non-puzzle item and completing a cycle persist their progress transitions;
-  repeated completion of the same cycle/item is idempotent.
-- Starting a puzzle attempt commits its active attempt and initial open timing
-  segment together. It is rejected when another unfinished attempt already
-  exists for that item in the cycle.
-- A cycle may span any number of sessions and calendar days. Completing an
-  item does not require completing the entire cycle in one session.
-- Paused/resumed work transitions between `active` and `paused` while retaining
-  attempt identity. Explicit retry creates a new attempt linked to the same
-  exercise/cycle and never overwrites history.
-- Finalized attempts are append-only from the user's perspective. Removing a
-  set item or losing its source does not delete prior attempts.
-- A cycle completes only after all required ordered items have been traversed
-  and every required scored item has a finalized outcome. Instruction and
-  demonstration traversal contributes cycle completion, not puzzle accuracy.
-- Closing, backgrounding, suspension, or process termination closes or safely
-  recovers active timing. Unknown elapsed wall-clock time is excluded.
-
-The repository returns `null` for missing record lookups, keeps list results
-in deterministic order, creates cycle/session/attempt records only with their
-stable identities, and updates only mutable lifecycle fields. It rejects
-duplicate IDs and a second active cycle for a set. Attempt moves are immutable
-once recorded and use unique increasing ordinals. Closing a timing segment
-updates that segment and the unfinished attempt's accumulated active duration
-atomically. Finalizing persists the immutable attempt and, when present, its
-last timing segment in one transaction. Raw aggregates preserve per-attempt
-durations; metrics are calculated by a domain calculator, not by persistence.
-Submitted moves are recorded with the resulting attempt state through one
-atomic repository operation; cycle-scoped non-puzzle completion is durable
-and queryable by stable item ID.
-
-## Errors and recovery
-
-| Condition | Contract behavior |
-|---|---|
-| Set missing, archived, or untrainable | Reject cycle start with a validation/domain failure; create no cycle. |
-| Cycle missing or not active | Reject session opening/item selection as invalid or not found; do not create progress. |
-| Another active session exists for the cycle | Reject the second open; preserve the existing session. |
-| Session missing/terminal or end time precedes start | Reject close; retain prior session state. |
-| Pause of a missing or non-active session; resume of a non-paused session | Reject the lifecycle transition and retain the current session/attempt state. |
-| Session recovery requested for a missing or non-active session | Reject recovery; do not fabricate a lifecycle boundary. |
-| Non-puzzle completion references a puzzle or item outside the cycle's set | Reject; create no completion and no attempt. |
-| Cycle completion requested while any required item is pending or any puzzle lacks a finalized attempt | Reject; leave the active cycle unchanged. |
-| Puzzle attempt start references a non-puzzle item, mismatched session/cycle, or an item with an unfinished attempt | Reject; create neither attempt nor timing segment. |
-| Attempt missing, finalized, or in wrong lifecycle state | Reject start/pause/resume/finalize; never mutate a finalized historical attempt. |
-| Negative active duration or inconsistent outcome metadata | Reject input validation; commit no attempt or timing changes. |
-| Storage failure during a progress transition | Roll back all parts of that transition; preserve prior committed cycles, sessions, attempts, and segments. |
-| Process interruption during an open segment | Recover at the last durable boundary, exclude unmeasurable time, and leave the attempt resumable or explicitly abandonable. |
-
-Typed failures crossing application layers use the safe `AppFailure` hierarchy
-(for example, validation and database failures). Error messages must not
-include raw PGN, solution moves, private paths, or content URIs.
+- Cycle creation and ordered selection snapshot commit together. The cycle
+  policy is persisted in a later, separate write before puzzle training.
+- Attempt creation and its first timing segment commit together.
+- Submitted move and resulting scored state commit together; a terminal move
+  also closes its timing segment in the same transaction.
+- Non-puzzle completion is durably recorded and idempotent; its later cursor
+  update is a separate write.
+- Session pause/resume/recovery commits session, attempt, and segment changes
+  together.
+- Before closing a session or leaving its page, wait for in-flight session and
+  puzzle-controller writes to become idle, then close. Do not discard pending
+  writes during navigation or disposal.
+- Standalone interaction persistence is separate and cannot update cycle
+  aggregates.
+- Cursor writes are separate from attempt scoring and non-puzzle completion.
+  The application waits for pending controller writes to become idle before
+  closing a session or leaving its page, then performs the close transition.
+- Failed writes leave the prior committed state visible. Never publish an
+  uncommitted cursor, interaction, outcome, or duration.
+- Missing, archived, or untrainable set; mismatched item/session/cycle;
+  unfinished duplicate attempt; negative duration; and invalid lifecycle
+  transition are rejected without partial progress.
+- Removing a set item or losing its source does not remove cycle snapshots or
+  historical attempts. Show unavailable content with its history retained.

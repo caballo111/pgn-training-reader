@@ -4,6 +4,7 @@ import 'package:pgntrainingreader/domain/training/progress_calculator.dart';
 
 ProgressAggregate _aggregate({
   int passed = 0,
+  int assisted = 0,
   int wrongMoveOutcome = 0,
   int revealed = 0,
   int skipped = 0,
@@ -16,6 +17,7 @@ ProgressAggregate _aggregate({
   Duration nonPuzzleDuration = Duration.zero,
 }) => ProgressAggregate(
   passedCount: passed,
+  assistedCount: assisted,
   wrongMoveOutcomeCount: wrongMoveOutcome,
   revealedCount: revealed,
   skippedCount: skipped,
@@ -89,6 +91,38 @@ void main() {
       expect(summary.hintCount, 3);
       expect(summary.completedNonPuzzleItemCount, 2);
       expect(summary.totalActiveTime, const Duration(seconds: 28));
+    });
+
+    test(
+      'assisted attempts are distinct and included in accuracy denominator',
+      () {
+        final summary = ProgressCalculator.calculate(
+          _aggregate(
+            passed: 1,
+            assisted: 1,
+            durations: [const Duration(seconds: 2), const Duration(seconds: 4)],
+          ),
+        );
+
+        expect(summary.attemptedCount, 2);
+        expect(summary.passedCount, 1);
+        expect(summary.assistedCount, 1);
+        expect(summary.nonPassingCount, 1);
+        expect(summary.accuracyPercent, 50);
+        expect(summary.averageAttemptActiveTime, const Duration(seconds: 3));
+      },
+    );
+
+    test('cycle comparison reports assisted count change', () {
+      final comparison = ProgressCalculator.compare(
+        _aggregate(passed: 1, durations: [Duration.zero]),
+        _aggregate(assisted: 2, durations: [Duration.zero, Duration.zero]),
+      );
+
+      expect(comparison.earlier.assistedCount, 0);
+      expect(comparison.later.assistedCount, 2);
+      expect(comparison.assistedCountChange, 2);
+      expect(comparison.later.accuracyPercent, 0);
     });
 
     test(

@@ -12,6 +12,7 @@ final class PuzzleHeader extends StatelessWidget {
     required this.currentExercise,
     required this.totalExercises,
     required this.evaluation,
+    this.showSideToMove = true,
     super.key,
   }) : assert(currentExercise > 0),
        assert(totalExercises > 0),
@@ -25,6 +26,7 @@ final class PuzzleHeader extends StatelessWidget {
 
   /// Active evaluator snapshot; its position determines the side label.
   final PuzzleEvaluationState evaluation;
+  final bool showSideToMove;
 
   @override
   Widget build(BuildContext context) {
@@ -46,15 +48,16 @@ final class PuzzleHeader extends StatelessWidget {
           value: '$currentExercise of $totalExercises',
           child: LinearProgressIndicator(value: progress),
         ),
-        const SizedBox(height: 8),
-        Semantics(
-          label: sideLabel,
-          excludeSemantics: true,
-          child: Text(
-            sideLabel,
-            style: Theme.of(context).textTheme.titleMedium,
+        if (showSideToMove) const SizedBox(height: 8),
+        if (showSideToMove)
+          Semantics(
+            label: sideLabel,
+            excludeSemantics: true,
+            child: Text(
+              sideLabel,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
-        ),
       ],
     );
   }

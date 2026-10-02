@@ -75,13 +75,14 @@ final class LibraryController extends ChangeNotifier {
 
   void updateQuery(LibraryQuery query) => _replaceQuery(query);
 
-  Future<void> refresh() async {
+  Future<void> refresh({bool preserveLoadedPages = false}) async {
     _debounce?.cancel();
+    final minimumItems = preserveLoadedPages ? _state.items.length : 0;
     final generation = ++_generation;
     _set(
       _state.copyWith(status: LibraryLoadStatus.loading, errorMessage: null),
     );
-    await _fetchFirst(generation);
+    await _fetchFirst(generation, minimumItems: minimumItems);
   }
 
   /// Records that a source's stored content is unavailable while retaining
@@ -164,19 +165,26 @@ final class LibraryController extends ChangeNotifier {
     }
   }
 
-  Future<void> _fetchFirst(int generation) async {
+  Future<void> _fetchFirst(int generation, {int minimumItems = 0}) async {
     try {
-      final page = await indexRepository.search(
-        filter: _state.query.toIndexFilter(),
-        sort: _state.query.repositorySort,
-        limit: _state.query.pageSize,
-      );
-      if (!_current(generation)) return;
-      _nextOffset = page.nextOffset;
+      final items = <PgnBlockIndex>[];
+      int? nextOffset = 0;
+      do {
+        final page = await indexRepository.search(
+          filter: _state.query.toIndexFilter(),
+          sort: _state.query.repositorySort,
+          offset: nextOffset!,
+          limit: _state.query.pageSize,
+        );
+        if (!_current(generation)) return;
+        items.addAll(page.items);
+        nextOffset = page.nextOffset;
+      } while (nextOffset != null && items.length < minimumItems);
+      _nextOffset = nextOffset;
       _set(
         _state.copyWith(
-          items: page.items,
-          hasMore: page.nextOffset != null,
+          items: List.unmodifiable(items),
+          hasMore: nextOffset != null,
           status: LibraryLoadStatus.ready,
           loadingMore: false,
           errorMessage: null,

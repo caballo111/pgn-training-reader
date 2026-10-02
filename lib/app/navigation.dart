@@ -217,7 +217,8 @@ Future<void> _openBlock(
         ),
       ),
     );
-    await libraryController.load();
+    if (!context.mounted) return;
+    await libraryController.refresh(preserveLoadedPages: true);
   } on AppFailure catch (failure) {
     if (!context.mounted) return;
     if (_isMissingSource(failure)) {

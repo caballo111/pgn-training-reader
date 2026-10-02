@@ -11,14 +11,24 @@ final class PgnTrainingReaderApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PGN Training Reader',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+    return ListenableBuilder(
+      listenable: dependencies.themeController,
+      builder: (context, child) => MaterialApp(
+        title: 'PGN Training Reader',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        ),
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.teal,
+            brightness: Brightness.dark,
+          ),
+        ),
+        themeMode: dependencies.themeController.mode,
+        initialRoute: AppRoutes.library,
+        onGenerateRoute: (settings) =>
+            onGenerateAppRoute(settings, dependencies: dependencies),
       ),
-      initialRoute: AppRoutes.library,
-      onGenerateRoute: (settings) =>
-          onGenerateAppRoute(settings, dependencies: dependencies),
     );
   }
 }

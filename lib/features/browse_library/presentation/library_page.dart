@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/theme_controller.dart';
 import '../../../domain/chess_content/pgn_block_index.dart';
 import '../../../domain/chess_content/pgn_source.dart';
 import '../application/library_controller.dart';
@@ -11,6 +12,7 @@ final class LibraryPage extends StatefulWidget {
   const LibraryPage({
     super.key,
     required this.controller,
+    this.themeController,
     this.onImport,
     this.onRepairSource,
     this.onReindexSource,
@@ -18,6 +20,7 @@ final class LibraryPage extends StatefulWidget {
     this.onOpen,
   });
   final LibraryController controller;
+  final ThemeController? themeController;
   final VoidCallback? onImport;
   final ValueChanged<PgnSource>? onRepairSource;
   final ValueChanged<PgnSource>? onReindexSource;
@@ -64,6 +67,43 @@ final class _LibraryPageState extends State<LibraryPage> {
       appBar: AppBar(
         title: const Text('Library'),
         actions: [
+          if (widget.themeController case final themeController?)
+            ListenableBuilder(
+              listenable: themeController,
+              builder: (context, child) => PopupMenuButton<ThemeMode>(
+                key: const Key('library-appearance'),
+                tooltip: 'Appearance',
+                icon: Icon(switch (themeController.mode) {
+                  ThemeMode.dark => Icons.dark_mode_outlined,
+                  ThemeMode.light => Icons.light_mode_outlined,
+                  ThemeMode.system => Icons.brightness_auto_outlined,
+                }),
+                onSelected: (mode) async {
+                  try {
+                    await themeController.setMode(mode);
+                  } catch (_) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Could not save appearance preference.'),
+                      ),
+                    );
+                  }
+                },
+                itemBuilder: (context) => [
+                  for (final (mode, label) in const [
+                    (ThemeMode.dark, 'Dark'),
+                    (ThemeMode.light, 'Light'),
+                    (ThemeMode.system, 'Follow system'),
+                  ])
+                    CheckedPopupMenuItem(
+                      value: mode,
+                      checked: themeController.mode == mode,
+                      child: Text(label),
+                    ),
+                ],
+              ),
+            ),
           if (widget.onImport != null)
             IconButton(
               tooltip: 'Import PGN',

@@ -22,6 +22,7 @@ import '../domain/training/training_repository.dart';
 import '../domain/training/training_session_service.dart';
 import '../domain/training/training_session_service_impl.dart';
 import '../features/import_library/application/import_controller.dart';
+import 'theme_controller.dart';
 
 /// Application-level composition root for foundational abstractions.
 ///
@@ -33,13 +34,16 @@ final class AppDependencies {
     IdGenerator? idGenerator,
     AppLogger? logger,
     this.databaseFactory,
+    ThemeController? themeController,
   }) : clock = clock ?? SystemAppClock(),
+       themeController = themeController ?? ThemeController(),
        idGenerator = idGenerator ?? RandomIdGenerator(),
        logger = logger ?? const StructuredAppLogger(_discardLogRecord);
 
   final AppClock clock;
   final IdGenerator idGenerator;
   final AppLogger logger;
+  final ThemeController themeController;
 
   final AppDatabase Function()? databaseFactory;
   AppDatabase? _database;

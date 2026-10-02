@@ -59,6 +59,7 @@ Route<dynamic> onGenerateAppRoute(
     settings: settings,
     builder: (context) => LibraryPage(
       controller: libraryController,
+      themeController: dependencies.themeController,
       onImport: () async {
         await Navigator.of(context).pushNamed(AppRoutes.import);
         if (context.mounted) await libraryController.load();

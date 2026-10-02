@@ -1,0 +1,160 @@
+# syntax=docker/sandbox-kit:3
+# Run from the repository root with a NEW sandbox name:
+# sbx run docker/sbx-kit-codex:latest --name pgn-training-reader --kit ./.sbx/flutter-android
+# ARM64: Flutter, JDK and native ADB. x86-64: full Android SDK as well.
+# Installation happens once per sandbox and downloads several GB.
+# On x86-64, installation accepts Android SDK licenses; review them before use.
+schemaVersion: "3"
+kind: mixin
+displayName: Flutter and Android
+description: Flutter, JDK 21, host ADB access, and the Android SDK on x86-64.
+
+args:
+  flutterVersion:
+    default: "3.47.5"
+    pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+  commandLineToolsVersion:
+    default: "13114758"
+    pattern: '^[0-9]+$'
+  androidApi:
+    default: "36"
+    pattern: '^[0-9]+$'
+  buildToolsVersion:
+    default: "36.0.0"
+    pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+  ndkVersion:
+    default: "28.2.13676358"
+    pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+  androidHome:
+    default: /home/agent/android-sdk
+    enum: [/home/agent/android-sdk]
+    env: ANDROID_HOME
+  androidSdkRoot:
+    default: /home/agent/android-sdk
+    enum: [/home/agent/android-sdk]
+    env: ANDROID_SDK_ROOT
+  javaHome:
+    default: /opt/flutter-android-java
+    enum: [/opt/flutter-android-java]
+    env: JAVA_HOME
+  adbServerSocket:
+    default: tcp:host.docker.internal:5037
+    pattern: '^tcp:[A-Za-z0-9.-]+:[0-9]+$'
+    env: ADB_SERVER_SOCKET
+
+# SDK versions are chosen at sandbox creation by the install hooks below.
+# Omit optional provides metadata: published provides must have build-time
+# versions and cannot reference these create-time arguments.
+
+capabilities:
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - localhost:5037
+          - github.com:443
+          - codeload.github.com:443
+          - storage.googleapis.com:443
+          - pub.dev:443
+          - dl.google.com:443
+          - maven.google.com:443
+          - repo.maven.apache.org:443
+          - repo1.maven.org:443
+          - plugins.gradle.org:443
+          - plugins-artifacts.gradle.org:443
+          - services.gradle.org:443
+          - downloads.gradle.org:443
+          - release-assets.githubusercontent.com:443
+          - deb.debian.org:80
+          - deb.debian.org:443
+          - security.debian.org:80
+          - security.debian.org:443
+          - dhi.io:80
+          - dhi.io:443
+          - archive.ubuntu.com:80
+          - security.ubuntu.com:80
+          - ports.ubuntu.com:80
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        - user: "0"
+          env: [HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy]
+          description: Install native Flutter prerequisites, ADB, and JDK 21
+          command: |
+            set -eu
+            case "$(uname -m)" in
+              x86_64|aarch64|arm64) ;;
+              *) echo "Unsupported sandbox architecture: $(uname -m)" >&2; exit 1 ;;
+            esac
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              ca-certificates curl git unzip xz-utils zip openjdk-21-jdk-headless \
+              libglu1-mesa libstdc++6 adb
+            task_java_arch=$(dpkg --print-architecture)
+            ln -sfn "/usr/lib/jvm/java-21-openjdk-$task_java_arch" /opt/flutter-android-java
+            mkdir -p /home/agent/android-sdk
+            chown agent:agent /home/agent/android-sdk
+            ln -sf /home/agent/flutter/bin/flutter /usr/local/bin/flutter
+            ln -sf /home/agent/flutter/bin/dart /usr/local/bin/dart
+            if [ "$(uname -m)" = x86_64 ]; then
+              ln -sf /home/agent/android-sdk/platform-tools/adb /usr/local/bin/adb
+              ln -sf /home/agent/android-sdk/cmdline-tools/pinned/bin/sdkmanager /usr/local/bin/sdkmanager
+            else
+              ln -sf /usr/bin/adb /usr/local/bin/adb
+            fi
+        - user: agent
+          env: [ANDROID_HOME, ANDROID_SDK_ROOT, JAVA_HOME, HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy]
+          description: Install pinned Flutter; install Android SDK and accept licenses on x86-64
+          command: |
+            set -eu
+            task_flutter_dir=/home/agent/flutter
+            test -x "$JAVA_HOME/bin/java"
+            test -x /usr/bin/adb
+            if [ ! -d "$task_flutter_dir/.git" ]; then
+              git clone --depth 1 --branch '${{ kit.args.flutterVersion }}' \
+                https://github.com/flutter/flutter.git "$task_flutter_dir"
+            fi
+            test "$(git -C "$task_flutter_dir" describe --tags --exact-match)" = '${{ kit.args.flutterVersion }}'
+            flutter config --no-analytics --jdk-dir "$JAVA_HOME"
+            if [ "$(uname -m)" != x86_64 ]; then
+              flutter precache --web
+              flutter --version
+              adb version
+              echo "ARM64 setup complete: Flutter analysis/tests and native ADB are available. Run Android builds and flutter run on the Mac; Linux Android build tools require x86-64."
+              exit 0
+            fi
+            if [ ! -x "$ANDROID_HOME/cmdline-tools/pinned/bin/sdkmanager" ]; then
+              task_download_dir=$(mktemp -d)
+              trap 'rm -rf "$task_download_dir"' EXIT
+              curl --fail --location --retry 3 \
+                'https://dl.google.com/android/repository/commandlinetools-linux-${{ kit.args.commandLineToolsVersion }}_latest.zip' \
+                -o "$task_download_dir/tools.zip"
+              unzip -q "$task_download_dir/tools.zip" -d "$task_download_dir"
+              mkdir -p "$ANDROID_HOME/cmdline-tools"
+              mv "$task_download_dir/cmdline-tools" "$ANDROID_HOME/cmdline-tools/pinned"
+            fi
+            # POSIX sh reports sdkmanager's status; yes may exit on SIGPIPE.
+            yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses
+            sdkmanager --sdk_root="$ANDROID_HOME" \
+              "platform-tools" \
+              'platforms;android-${{ kit.args.androidApi }}' \
+              'build-tools;${{ kit.args.buildToolsVersion }}' \
+              'ndk;${{ kit.args.ndkVersion }}' \
+              'cmake;3.22.1'
+            flutter config --no-analytics --android-sdk "$ANDROID_HOME" --jdk-dir "$JAVA_HOME"
+            flutter precache --android
+            flutter --version
+  - type: com.docker.sandbox/agent-context@1
+    config:
+      content: |
+        Flutter is installed at /home/agent/flutter. Use flutter pub get,
+        flutter analyze, and flutter test inside the sandbox.
+        Check uname -m before Android work. On x86_64, the Android SDK is installed
+        at /home/agent/android-sdk and flutter build apk is available.
+        On ARM64, native ADB and JDK are installed, but the Android SDK is not:
+        run Android builds and flutter run on the Mac. Do not attempt to execute
+        the Mac's SDK binaries inside Linux or claim Android builds work on ARM64. ADB_SERVER_SOCKET connects the Linux
+        ADB client to the Mac's localhost ADB server through host.docker.internal.
+        The user must start adb on the host. Check adb devices -l and flutter devices.
+        Do not start an emulator in this sandbox. Hot reload can require additional
+        host Dart VM service ports and network policy rules.

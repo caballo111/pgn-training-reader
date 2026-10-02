@@ -36,6 +36,51 @@ void main() {
     expect(find.text('No matching PGN content.'), findsOneWidget);
   });
 
+  testWidgets('compact filters apply only on confirmation and can be cleared', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = LibraryController(
+      indexRepository: _Index(),
+      sourceRepository: _Sources(),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: LibraryPage(controller: controller)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Section'), findsNothing);
+    expect(
+      tester.getTopLeft(find.byKey(const Key('library-item-game-1'))).dy,
+      lessThan(180),
+    );
+
+    await tester.tap(find.byKey(const Key('library-filters')));
+    await tester.pumpAndSettle();
+    final section = find.widgetWithText(TextField, 'Section');
+    await tester.enterText(section, 'Endgames');
+    expect(controller.state.query.section, isNull);
+    await tester.ensureVisible(find.text('Apply filters'));
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(controller.state.query.section, 'Endgames');
+    expect(find.byTooltip('Filters (1 active)'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-filters')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(section).controller!.text, isEmpty);
+    await tester.ensureVisible(find.text('Apply filters'));
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(controller.state.query.section, isNull);
+    expect(find.byTooltip('Filters'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('missing source disables opening and offers relink', (
     tester,
   ) async {

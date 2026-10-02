@@ -17,75 +17,95 @@ final class LibraryFilterControls extends StatelessWidget {
   final ValueChanged<LibraryQuery> onChanged;
 
   @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 12,
-    runSpacing: 8,
-    children: [
-      _dropdown<ContentType?>(
-        label: 'Content type',
-        value: query.contentType,
-        entries: const [null, ...ContentType.values],
-        title: (value) =>
-            value == null ? 'All content types' : _title(value.name),
-        changed: (value) => onChanged(
-          value == null
-              ? query.copyWith(clearContentType: true)
-              : query.copyWith(contentType: value),
-        ),
-      ),
-      _textFilter(
-        'Section',
-        query.section,
-        (v) => onChanged(query.copyWith(section: v, clearSection: v.isEmpty)),
-      ),
-      _textFilter(
-        'Theme',
-        query.theme,
-        (v) => onChanged(query.copyWith(theme: v, clearTheme: v.isEmpty)),
-      ),
-      _textFilter(
-        'Difficulty',
-        query.difficulty,
-        (v) => onChanged(
-          query.copyWith(difficulty: v, clearDifficulty: v.isEmpty),
-        ),
-      ),
-      _textFilter(
-        'Result',
-        query.result,
-        (v) => onChanged(query.copyWith(result: v, clearResult: v.isEmpty)),
-      ),
-      _dropdown<String?>(
-        label: 'Source',
-        value: query.sourceId,
-        entries: [null, ...sources.map((source) => source.id)],
-        title: (id) => id == null
-            ? 'All sources'
-            : sources.firstWhere((s) => s.id == id).displayName,
-        changed: (id) => onChanged(
-          id == null
-              ? query.copyWith(clearSourceId: true)
-              : query.copyWith(sourceId: id),
-        ),
-      ),
-    ],
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final fieldWidth = constraints.maxWidth < 480
+          ? constraints.maxWidth
+          : (constraints.maxWidth - 12) / 2;
+      return Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          _dropdown<ContentType?>(
+            width: fieldWidth,
+            label: 'Content type',
+            value: query.contentType,
+            entries: const [null, ...ContentType.values],
+            title: (value) =>
+                value == null ? 'All content types' : _title(value.name),
+            changed: (value) => onChanged(
+              value == null
+                  ? query.copyWith(clearContentType: true)
+                  : query.copyWith(contentType: value),
+            ),
+          ),
+          _textFilter(
+            fieldWidth,
+            'Section',
+            query.section,
+            (v) =>
+                onChanged(query.copyWith(section: v, clearSection: v.isEmpty)),
+          ),
+          _textFilter(
+            fieldWidth,
+            'Theme',
+            query.theme,
+            (v) => onChanged(query.copyWith(theme: v, clearTheme: v.isEmpty)),
+          ),
+          _textFilter(
+            fieldWidth,
+            'Difficulty',
+            query.difficulty,
+            (v) => onChanged(
+              query.copyWith(difficulty: v, clearDifficulty: v.isEmpty),
+            ),
+          ),
+          _textFilter(
+            fieldWidth,
+            'Result',
+            query.result,
+            (v) => onChanged(query.copyWith(result: v, clearResult: v.isEmpty)),
+          ),
+          _dropdown<String?>(
+            width: fieldWidth,
+            label: 'Source',
+            value: query.sourceId,
+            entries: [null, ...sources.map((source) => source.id)],
+            title: (id) => id == null
+                ? 'All sources'
+                : sources.firstWhere((s) => s.id == id).displayName,
+            changed: (id) => onChanged(
+              id == null
+                  ? query.copyWith(clearSourceId: true)
+                  : query.copyWith(sourceId: id),
+            ),
+          ),
+        ],
+      );
+    },
   );
 
   Widget _textFilter(
+    double width,
     String label,
     String? value,
     ValueChanged<String> changed,
-  ) => _TextFilter(label: label, value: value, onChanged: changed);
+  ) => SizedBox(
+    width: width,
+    child: _TextFilter(label: label, value: value, onChanged: changed),
+  );
 
   Widget _dropdown<T>({
+    required double width,
     required String label,
     required T value,
     required List<T> entries,
     required String Function(T) title,
     required ValueChanged<T> changed,
   }) => SizedBox(
-    width: 190,
+    width: width,
     child: DropdownButtonFormField<T>(
+      key: ValueKey((label, value)),
       initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(labelText: label, isDense: true),
@@ -147,7 +167,6 @@ final class _TextFilterState extends State<_TextFilter> {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 170,
     child: TextField(
       controller: _controller,
       decoration: InputDecoration(labelText: widget.label, isDense: true),

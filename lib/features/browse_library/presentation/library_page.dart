@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../domain/chess_content/pgn_block_index.dart';
 import '../../../domain/chess_content/pgn_source.dart';
 import '../application/library_controller.dart';
+import '../application/library_query.dart';
 import 'library_filter_controls.dart';
 
 /// Searchable, bounded view of indexed PGN blocks.
@@ -81,22 +82,39 @@ final class _LibraryPageState extends State<LibraryPage> {
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
+            child: Row(
               children: [
-                TextField(
-                  key: const Key('library-search'),
-                  decoration: const InputDecoration(
-                    labelText: 'Search library',
-                    prefixIcon: Icon(Icons.search),
+                Expanded(
+                  child: TextField(
+                    key: const Key('library-search'),
+                    decoration: InputDecoration(
+                      hintText: 'Search library',
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerLow,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    textInputAction: TextInputAction.search,
+                    onChanged: widget.controller.setSearchText,
                   ),
-                  textInputAction: TextInputAction.search,
-                  onChanged: widget.controller.setSearchText,
                 ),
-                const SizedBox(height: 12),
-                LibraryFilterControls(
-                  query: state.query,
-                  sources: state.sources,
-                  onChanged: widget.controller.updateQuery,
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  key: const Key('library-filters'),
+                  tooltip: _filterCount(state.query) == 0
+                      ? 'Filters'
+                      : 'Filters (${_filterCount(state.query)} active)',
+                  onPressed: _showFilters,
+                  icon: Badge(
+                    isLabelVisible: _filterCount(state.query) > 0,
+                    label: Text('${_filterCount(state.query)}'),
+                    child: const Icon(Icons.tune),
+                  ),
                 ),
               ],
             ),
@@ -104,6 +122,88 @@ final class _LibraryPageState extends State<LibraryPage> {
           Expanded(child: _body(state)),
         ],
       ),
+    );
+  }
+
+  int _filterCount(LibraryQuery query) =>
+      [
+            query.contentType,
+            query.section,
+            query.theme,
+            query.difficulty,
+            query.result,
+            query.sourceId,
+          ]
+          .where((value) => value != null && value.toString().trim().isNotEmpty)
+          .length;
+
+  Future<void> _showFilters() async {
+    FocusScope.of(context).unfocus();
+    var draft = widget.controller.state.query;
+    final sources = widget.controller.state.sources;
+    final result = await showModalBottomSheet<LibraryQuery>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Filter library',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => setSheetState(() {
+                        draft = draft.copyWith(
+                          clearContentType: true,
+                          clearSection: true,
+                          clearTheme: true,
+                          clearDifficulty: true,
+                          clearResult: true,
+                          clearSourceId: true,
+                        );
+                      }),
+                      child: const Text('Clear filters'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                LibraryFilterControls(
+                  query: draft,
+                  sources: sources,
+                  onChanged: (query) => setSheetState(() => draft = query),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context, draft),
+                    child: const Text('Apply filters'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted || result == null) return;
+    // Keep search text current if it changed while the sheet was open.
+    widget.controller.updateQuery(
+      result.copyWith(searchText: widget.controller.state.query.searchText),
     );
   }
 

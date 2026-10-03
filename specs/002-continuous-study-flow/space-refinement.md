@@ -107,6 +107,7 @@ section/active time without duplicating tooltip text.
 Existing widget expectations were updated for the new turn tooltips, board
 position descriptions, and app-bar controls. No tests were added or run in
 this pass. The earlier full-suite results in validation.md describe the
-previous UI revision. New visual snapshots and Android/iOS device acceptance
-remain pending; no fresh runtime or accessibility-device verification is
-claimed.
+previous UI revision. A later authorized golden refresh regenerated all four
+phone snapshots and passed the focused suite's five tests, both during update
+and again in comparison mode; see validation.md. Android/iOS physical and
+accessibility-device acceptance remain pending.

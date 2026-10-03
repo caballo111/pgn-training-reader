@@ -99,6 +99,7 @@ with an explicit mode callback rather than separate mode-aware and legacy
 builder paths. Scoring, lifecycle handling and progression remain in their
 existing owners.
 
-Validation: static analysis and diff checks only. Existing expectations were
-updated; no tests were added or run. Golden snapshots and Android/iOS visual
-acceptance remain pending for this revision.
+Initial validation used static analysis and diff checks only. A subsequent
+authorized refresh regenerated the four phone goldens; all five focused
+tests passed during update and again against the saved references. No tests
+were added. Android/iOS physical visual acceptance remains pending.

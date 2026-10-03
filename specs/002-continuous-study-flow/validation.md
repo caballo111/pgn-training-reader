@@ -67,6 +67,21 @@ plus this feature was used to validate controller, reader, and integration
 behavior. Final checks ran against the shared workspace after those compile
 blockers cleared. Host benchmark results do not establish Android performance.
 
+## Golden refresh after layout refinements — 2026-10-02
+
+Regenerated all four puzzle phone reference images for the current shared
+board/footer controls and review layout. The focused suite passed all five
+tests with `--update-goldens`, then passed all five again without that flag.
+The existing raster tolerance was retained. Large-text and failed-review
+images were visually inspected; obsolete generated failure images were
+removed. This run does not replace the earlier full-suite baseline or physical
+device acceptance.
+
+```sh
+flutter test --no-pub --update-goldens test/widget/features/puzzle_solver/puzzle_phone_golden_test.dart
+flutter test --no-pub test/widget/features/puzzle_solver/puzzle_phone_golden_test.dart
+```
+
 ## Pending physical acceptance (CS-T12)
 
 No physical phone or original reported study material was available here.

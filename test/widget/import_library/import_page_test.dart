@@ -351,6 +351,11 @@ final class _Target implements ManagedCopyTarget {
 
 final class _SourceRepository implements PgnSourceRepository {
   @override
+  Future<void> remove({required String id, required DateTime removedAt}) async {
+    throw UnsupportedError('Removal is outside this import test fake.');
+  }
+
+  @override
   Future<PgnSource?> getById(String id) async => null;
 
   @override

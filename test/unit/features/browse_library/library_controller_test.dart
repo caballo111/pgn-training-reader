@@ -146,6 +146,11 @@ final class _Sources implements PgnSourceRepository {
   }
 
   @override
+  Future<void> remove({required String id, required DateTime removedAt}) async {
+    values = values.where((source) => source.id != id).toList();
+  }
+
+  @override
   Future<void> updateAfterVerifiedRelink({
     required PgnSource source,
     required String expectedFingerprint,

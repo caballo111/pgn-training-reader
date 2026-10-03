@@ -252,6 +252,18 @@ final class DriftTrainingSetRepository implements TrainingSetRepository {
         message: 'The selected library content is no longer available.',
       );
     }
+    final source = await (_database.select(
+      _database.pgnSources,
+    )..where((row) => row.id.equals(block.sourceId))).getSingleOrNull();
+    if (source == null ||
+        source.importState == 'deleted' ||
+        source.importState == 'sourceMissing' ||
+        source.importState == 'sourceChanged') {
+      throw const ValidationFailure(
+        code: 'training_set_source_unavailable',
+        message: 'This book is unavailable for new training set items.',
+      );
+    }
     final contentType = ContentType.fromDatabaseValue(block.contentType);
     if (contentType == ContentType.unsupported ||
         contentType != item.contentType) {

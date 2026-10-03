@@ -9,24 +9,27 @@ import 'package:pgntrainingreader/features/browse_library/application/library_co
 import 'package:pgntrainingreader/features/browse_library/presentation/library_page.dart';
 
 void main() {
-  testWidgets('shows indexed results and import action accessibly', (
+  testWidgets('shows indexed results and manage library action accessibly', (
     tester,
   ) async {
     final controller = LibraryController(
       indexRepository: _Index(),
       sourceRepository: _Sources(),
     );
-    var imports = 0;
+    var manages = 0;
     await tester.pumpWidget(
       MaterialApp(
-        home: LibraryPage(controller: controller, onImport: () => imports++),
+        home: LibraryPage(
+          controller: controller,
+          onManageLibrary: () => manages++,
+        ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Carlsen — Anand'), findsOneWidget);
-    expect(find.byTooltip('Import PGN'), findsOneWidget);
-    await tester.tap(find.byTooltip('Import PGN'));
-    expect(imports, 1);
+    expect(find.byTooltip('Manage library'), findsOneWidget);
+    await tester.tap(find.byTooltip('Manage library'));
+    expect(manages, 1);
     await tester.enterText(
       find.byKey(const Key('library-search')),
       'unmatched',
@@ -223,6 +226,9 @@ final class _Sources implements PgnSourceRepository {
   Future<void> create(PgnSource source) async {}
   @override
   Future<void> update(PgnSource source) async {}
+
+  @override
+  Future<void> remove({required String id, required DateTime removedAt}) async {}
 
   @override
   Future<void> updateAfterVerifiedRelink({

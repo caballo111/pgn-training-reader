@@ -30,3 +30,12 @@ remove managed content and history; reimporting a book cannot reconstruct scores
 Android OS backup behavior is separate from an implemented portable app backup.
 Set removal preserves history/content and is confirmed; it is not a data wipe.
 Do not promise history portability until the deferred feature is implemented.
+
+**Manage library** supports adding another PGN and deliberately removing a
+book. Removal keeps a deleted source record, indexed identities, training
+sets, cycle snapshots, and attempts so historical references are preserved.
+The book becomes unavailable for reading or new training selections. Only its
+app-managed copy is deleted; the original selected file is untouched. If
+managed-copy cleanup fails, the book stays removed and cleanup can be retried.
+Re-importing creates a new source identity and does not restore old scores or
+cycle content. Book renaming and restoration are deferred.

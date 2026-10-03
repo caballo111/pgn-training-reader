@@ -5,6 +5,7 @@ import '../../domain/chess_content/pgn_source.dart';
 import '../../domain/library/pgn_source_repository.dart';
 import '../database/app_database.dart' hide PgnSource;
 import '../database/app_database.dart' as db show PgnSource;
+import '../pgn/pgn_source_operation_registry.dart';
 
 /// Drift-backed source metadata repository.
 final class DriftPgnSourceRepository implements PgnSourceRepository {
@@ -28,7 +29,10 @@ final class DriftPgnSourceRepository implements PgnSourceRepository {
               (source) => OrderingTerm.asc(source.id),
             ]))
             .get();
-    return rows.map(_fromRow).toList(growable: false);
+    return rows
+        .where((row) => row.importState != 'deleted')
+        .map(_fromRow)
+        .toList(growable: false);
   });
 
   @override
@@ -48,6 +52,13 @@ final class DriftPgnSourceRepository implements PgnSourceRepository {
         throw const DatabaseFailure(
           code: 'source_not_found',
           message: 'The source is no longer registered. Select it again.',
+        );
+      }
+      if (old.importState == 'deleted') {
+        throw const DatabaseFailure(
+          code: 'source_deleted',
+          message:
+              'This book was removed from the library and cannot be restored.',
         );
       }
 
@@ -79,6 +90,7 @@ final class DriftPgnSourceRepository implements PgnSourceRepository {
         _database.pgnSources,
       )..where((row) => row.id.equals(source.id))).getSingleOrNull();
       if (old == null ||
+          old.importState == 'deleted' ||
           old.fingerprint != expectedFingerprint ||
           old.importState != 'sourceMissing') {
         throw const DatabaseFailure(
@@ -104,6 +116,61 @@ final class DriftPgnSourceRepository implements PgnSourceRepository {
             ..where((row) => row.id.equals(source.id)))
           .write(_toCompanion(restored));
     });
+  });
+
+  @override
+  Future<void> remove({
+    required String id,
+    required DateTime removedAt,
+  }) => _guard(() async {
+    if (!PgnSourceOperationRegistry.tryBeginRemoval(_database, id)) {
+      throw const DatabaseFailure(
+        code: 'source_import_active',
+        message: 'Wait for this book to finish indexing before removing it.',
+      );
+    }
+    try {
+      await _database.transaction(() async {
+        final source = await (_database.select(
+          _database.pgnSources,
+        )..where((row) => row.id.equals(id))).getSingleOrNull();
+        if (source == null) {
+          throw const DatabaseFailure(
+            code: 'source_not_found',
+            message: 'This book is no longer available in the library.',
+          );
+        }
+        if (source.importState == 'deleted') return;
+        final activeJobs =
+            await (_database.select(_database.importJobs)..where(
+                  (job) =>
+                      job.sourceId.equals(id) & job.status.equals('indexing'),
+                ))
+                .get();
+        if (activeJobs.isNotEmpty) {
+          throw const DatabaseFailure(
+            code: 'source_import_active',
+            message:
+                'Wait for this book to finish indexing before removing it.',
+          );
+        }
+        await (_database.update(
+          _database.pgnSources,
+        )..where((row) => row.id.equals(id))).write(
+          PgnSourcesCompanion(
+            importState: const Value('deleted'),
+            updatedAtMicros: Value(_toMicros(removedAt)!),
+          ),
+        );
+        await _database.customStatement(
+          'INSERT INTO app_settings (key, value) VALUES (?, ?) '
+          'ON CONFLICT(key) DO NOTHING',
+          ['managed-pgn-cleanup:$id', 'pending'],
+        );
+      });
+    } finally {
+      PgnSourceOperationRegistry.endRemoval(_database, id);
+    }
   });
 
   static Future<T> _guard<T>(Future<T> Function() operation) async {

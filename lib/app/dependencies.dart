@@ -16,8 +16,10 @@ import '../data/repositories/drift_training_set_repository.dart';
 import '../domain/training/training_set_repository.dart';
 import '../data/repositories/drift_training_repository.dart';
 import '../data/repositories/drift_chess_content_repository.dart';
+import '../data/repositories/drift_library_lifecycle_service.dart';
 import '../domain/chess_content/chess_content_repository.dart';
 import '../domain/library/pgn_source_repository.dart';
+import '../domain/library/library_lifecycle_service.dart';
 import '../domain/training/training_repository.dart';
 import '../domain/training/training_session_service.dart';
 import '../domain/training/training_session_service_impl.dart';
@@ -53,6 +55,7 @@ final class AppDependencies {
   TrainingSessionService? _trainingSessionService;
   ChessContentRepository? _chessContentRepository;
   PgnSourceRepository? _pgnSourceRepository;
+  LibraryLifecycleService? _libraryLifecycleService;
   bool _restoreAttempted = false;
 
   /// Opened lazily so creating app dependencies performs no platform I/O.
@@ -78,6 +81,13 @@ final class AppDependencies {
 
   PgnSourceRepository get pgnSourceRepository =>
       _pgnSourceRepository ??= DriftPgnSourceRepository(database);
+
+  LibraryLifecycleService get libraryLifecycleService =>
+      _libraryLifecycleService ??= DriftLibraryLifecycleService(
+        database: database,
+        sourceRepository: pgnSourceRepository,
+        managedFileSource: _fileSource,
+      );
 
   ChessContentRepository get chessContentRepository =>
       _chessContentRepository ??= DriftChessContentRepository(
@@ -124,11 +134,15 @@ final class AppDependencies {
       final jobs =
           await (db.select(db.importJobs)
                 ..where(
-                  (job) => job.status.isIn(const [
-                    'cancelled',
-                    'failed',
-                    'indexing',
-                  ]),
+                  (job) =>
+                      job.status.isIn(const [
+                        'cancelled',
+                        'failed',
+                        'indexing',
+                      ]) &
+                      const CustomExpression<bool>(
+                        "import_jobs.source_id IN (SELECT id FROM pgn_sources WHERE import_state != 'deleted')",
+                      ),
                 )
                 ..orderBy([(job) => OrderingTerm.desc(job.startedAtMicros)])
                 ..limit(1))
@@ -136,7 +150,7 @@ final class AppDependencies {
       if (jobs.isEmpty) return;
       final job = jobs.single;
       final source = await DriftPgnSourceRepository(db).getById(job.sourceId);
-      if (source == null) return;
+      if (source == null || source.importState == 'deleted') return;
       controller.restoreResumableImport(
         source: source,
         jobId: job.id,

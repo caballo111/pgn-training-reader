@@ -66,6 +66,12 @@ final class DriftChessContentRepository implements ChessContentRepository {
         message: 'The PGN source is unavailable.',
       );
     }
+    if (source.importState == 'deleted') {
+      throw const FileFailure(
+        code: 'source_deleted',
+        message: 'This book was removed from the library. Add it again to study its content; saved training history is preserved.',
+      );
+    }
     if (source.importState == 'sourceChanged') {
       throw const FileFailure(
         code: 'source_changed',

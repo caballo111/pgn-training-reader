@@ -10,6 +10,7 @@ import '../domain/chess_content/pgn_block_index.dart';
 import '../domain/chess_content/content_type.dart';
 import '../features/browse_library/application/library_controller.dart';
 import '../features/browse_library/presentation/library_page.dart';
+import '../features/browse_library/presentation/manage_library_page.dart';
 import '../features/import_library/presentation/import_page.dart';
 import '../features/import_library/application/import_controller.dart';
 import '../features/game_reader/presentation/game_reader_page.dart';
@@ -20,6 +21,7 @@ import '../domain/training/authored_line_puzzle_evaluator.dart';
 abstract final class AppRoutes {
   static const library = '/';
   static const import = '/import';
+  static const manageLibrary = '/manage-library';
   static const trainingSets = '/training-sets';
 }
 
@@ -32,6 +34,21 @@ Route<dynamic> onGenerateAppRoute(
     return MaterialPageRoute<void>(
       settings: settings,
       builder: (_) => ImportPage(controller: dependencies.importController),
+    );
+  }
+  if (settings.name == AppRoutes.manageLibrary) {
+    return MaterialPageRoute<void>(
+      settings: settings,
+      builder: (routeContext) => ManageLibraryPage(
+        sourceRepository: dependencies.pgnSourceRepository,
+        onAddBook: () async {
+          await Navigator.of(routeContext).pushNamed(AppRoutes.import);
+        },
+        removeBook: dependencies.libraryLifecycleService.removeBook,
+        pendingCleanupSourceIds:
+            dependencies.libraryLifecycleService.pendingCleanupSourceIds,
+        retryCleanup: dependencies.libraryLifecycleService.retryCleanup,
+      ),
     );
   }
   if (settings.name == AppRoutes.trainingSets) {
@@ -61,8 +78,9 @@ Route<dynamic> onGenerateAppRoute(
     builder: (context) => LibraryPage(
       controller: libraryController,
       themeController: dependencies.themeController,
-      onImport: () async {
-        await Navigator.of(context).pushNamed(AppRoutes.import);
+      onImport: () => Navigator.of(context).pushNamed(AppRoutes.import),
+      onManageLibrary: () async {
+        await Navigator.of(context).pushNamed(AppRoutes.manageLibrary);
         if (context.mounted) await libraryController.load();
       },
       onRepairSource: (source) => _relinkSource(

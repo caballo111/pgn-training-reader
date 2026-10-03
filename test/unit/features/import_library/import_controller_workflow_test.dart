@@ -480,6 +480,11 @@ final class _MemorySourceRepository implements PgnSourceRepository {
   @override
   Future<List<PgnSource>> list() async => [...existing, ...sources];
   @override
+  Future<void> remove({required String id, required DateTime removedAt}) async {
+    throw UnsupportedError('Removal is outside this import test fake.');
+  }
+
+  @override
   Future<void> update(PgnSource source) async {
     sources.removeWhere((current) => current.id == source.id);
     sources.add(source);

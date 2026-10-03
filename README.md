@@ -8,6 +8,11 @@ moves/variations, or solve concealed puzzles. Build ordered sets across books,
 resume cycles across days, and review transparent accuracy and active-time
 reports. Casual book practice stays separate from cycle scoring.
 
+Use **Manage library** to add PGN books or delete a book from the active
+library. Deletion removes the app's managed copy and preserves saved training
+history and set/cycle references; the original selected PGN is untouched.
+Re-adding a deleted book creates a new library identity.
+
 Content categories are **Puzzle** and **Text**. Legacy `Instruction` and
 `Demonstration` tags map to Text; text study does not create puzzle scores.
 Unknown types and unsupported chess variants are diagnosed. Original PGN bytes,
@@ -32,6 +37,7 @@ fvm flutter test --no-pub test
 - [Privacy and local storage](docs/privacy-and-data.md)
 - [Release review and pending acceptance](specs/001-pgn-training-reader/release-review.md)
 - [Future product ideas](specs/backlog.md)
+- [Library management specification and compatibility](specs/003-manage-library/spec.md)
 
 Core workflows need no server or account. Training-history backup/export and
 restore (Phase 15) are deferred. Stockfish, engine-equivalent puzzle validation,

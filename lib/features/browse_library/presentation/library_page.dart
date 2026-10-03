@@ -14,6 +14,7 @@ final class LibraryPage extends StatefulWidget {
     required this.controller,
     this.themeController,
     this.onImport,
+    this.onManageLibrary,
     this.onRepairSource,
     this.onReindexSource,
     this.onTrainingSets,
@@ -22,6 +23,7 @@ final class LibraryPage extends StatefulWidget {
   final LibraryController controller;
   final ThemeController? themeController;
   final VoidCallback? onImport;
+  final VoidCallback? onManageLibrary;
   final ValueChanged<PgnSource>? onRepairSource;
   final ValueChanged<PgnSource>? onReindexSource;
   final VoidCallback? onTrainingSets;
@@ -104,11 +106,11 @@ final class _LibraryPageState extends State<LibraryPage> {
                 ],
               ),
             ),
-          if (widget.onImport != null)
+          if (widget.onManageLibrary != null)
             IconButton(
-              tooltip: 'Import PGN',
-              onPressed: widget.onImport,
-              icon: const Icon(Icons.file_open_outlined),
+              tooltip: 'Manage library',
+              onPressed: widget.onManageLibrary,
+              icon: const Icon(Icons.library_books_outlined),
             ),
           if (widget.onTrainingSets != null)
             IconButton(
@@ -364,12 +366,12 @@ final class _LibraryPageState extends State<LibraryPage> {
         const Icon(Icons.menu_book_outlined, size: 48),
         const SizedBox(height: 12),
         const Text('No matching PGN content.'),
-        if (widget.onImport != null) ...[
+        if (widget.onManageLibrary != null) ...[
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: widget.onImport,
-            icon: const Icon(Icons.file_open_outlined),
-            label: const Text('Import PGN'),
+            onPressed: widget.onManageLibrary,
+            icon: const Icon(Icons.library_books_outlined),
+            label: const Text('Manage library'),
           ),
         ],
       ],

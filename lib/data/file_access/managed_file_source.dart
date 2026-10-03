@@ -291,6 +291,52 @@ final class ManagedFileSource implements FileSource {
     }
   }
 
+  /// Deletes one app-owned managed copy identified by its opaque token.
+  /// External references and caller-supplied paths are never accepted.
+  Future<void> deleteManagedCopy(String token) async {
+    if (!RegExp(r'^[a-f0-9]{32}$').hasMatch(token)) {
+      throw const FileFailure(
+        code: 'managed_reference_invalid',
+        message: 'The saved local copy reference is invalid.',
+      );
+    }
+    try {
+      final documents = await _directoryProvider();
+      final managed = Directory(p.join(documents.path, _directoryName));
+      if (!await managed.exists()) return;
+      final resolvedRoot = await managed.resolveSymbolicLinks();
+      final resolvedDocuments = await documents.resolveSymbolicLinks();
+      final expectedRoot = p.normalize(
+        p.join(resolvedDocuments, _directoryName),
+      );
+      if (p.normalize(resolvedRoot) != expectedRoot) {
+        throw const FileFailure(
+          code: 'managed_root_invalid',
+          message: 'The saved local copy is outside app-managed storage.',
+        );
+      }
+      final file = File(p.join(resolvedRoot, '$token.pgn'));
+      // File.delete removes a symlink itself rather than following its target.
+      if (await file.exists() || await Link(file.path).exists()) {
+        await file.delete();
+      }
+    } on FileFailure {
+      rethrow;
+    } on FileSystemException {
+      throw const FileFailure(
+        code: 'managed_cleanup_failed',
+        message:
+            'The saved local copy could not be deleted. Retry cleanup later.',
+      );
+    } catch (_) {
+      throw const FileFailure(
+        code: 'managed_cleanup_failed',
+        message:
+            'The saved local copy could not be deleted. Retry cleanup later.',
+      );
+    }
+  }
+
   static String _newToken() {
     final random = Random.secure();
     return List<int>.generate(

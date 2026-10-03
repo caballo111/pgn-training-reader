@@ -9,7 +9,7 @@ abstract interface class PgnSourceRepository {
   /// Returns the source with [id], or `null` when it is not registered.
   Future<PgnSource?> getById(String id);
 
-  /// Returns registered sources in a stable order.
+  /// Returns registered sources in a stable order, excluding deleted books.
   ///
   /// Implementations use a deterministic order (for example, display name and
   /// then ID); callers must not rely on database insertion order.
@@ -38,4 +38,10 @@ abstract interface class PgnSourceRepository {
     required PgnSource source,
     required String expectedFingerprint,
   });
+
+  /// Hides a source from active library lists while retaining its row and all
+  /// dependent indexed and training history. Repeating removal is safe.
+  /// Active imports prevent removal. Deleted sources remain available through
+  /// [getById] and cannot be restored through metadata updates or relinking.
+  Future<void> remove({required String id, required DateTime removedAt});
 }

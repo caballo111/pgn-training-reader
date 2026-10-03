@@ -3,9 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show OrderingTerm;
-import 'package:drift/drift.dart' show Value;
-import 'package:drift/drift.dart' show Variable;
+import 'package:drift/drift.dart' show OrderingTerm, Value, Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/core/errors/app_failure.dart';
@@ -25,7 +23,7 @@ import 'package:pgntrainingreader/features/import_library/application/import_rec
 
 void main() {
   test(
-    'app dependencies discover a durable resumable import from the DB',
+    'discovery skips newer deleted jobs and restores the latest active import',
     () async {
       final database = AppDatabase(NativeDatabase.memory());
       addTearDown(database.close);
@@ -57,6 +55,33 @@ void main() {
               bytesProcessed: const Value(2048),
               safeCheckpoint: const Value(2048),
               startedAtMicros: now,
+            ),
+          );
+      await database
+          .into(database.pgnSources)
+          .insert(
+            PgnSourcesCompanion.insert(
+              id: 'deleted-source',
+              displayName: 'removed.pgn',
+              accessMode: 'ExternalReference',
+              externalReference: const Value('content://removed'),
+              scannerVersion: 1,
+              importState: 'deleted',
+              createdAtMicros: now,
+              updatedAtMicros: now + 1,
+            ),
+          );
+      await database
+          .into(database.importJobs)
+          .insert(
+            ImportJobsCompanion.insert(
+              id: 'newer-deleted-job',
+              sourceId: 'deleted-source',
+              status: 'cancelled',
+              blocksIndexed: const Value(2),
+              bytesProcessed: const Value(10),
+              safeCheckpoint: const Value(10),
+              startedAtMicros: now + 1,
             ),
           );
 

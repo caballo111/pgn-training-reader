@@ -17,6 +17,7 @@ import '../file_access/managed_file_source.dart';
 import '../file_access/source_fingerprint.dart';
 import 'content_classifier.dart';
 import 'exercise_identity.dart';
+import 'pgn_source_operation_registry.dart';
 import 'pgn_header_reader.dart';
 import 'scanner/pgn_boundary_scanner.dart';
 
@@ -43,12 +44,6 @@ final class DriftPgnImportService implements PgnImportService {
   final FileSource fileSource;
   final IdGenerator idGenerator;
   final AppClock clock;
-  static final Expando<Set<String>> _activeSourcesByDatabase =
-      Expando<Set<String>>('active PGN imports');
-
-  Set<String> get _activeSources =>
-      _activeSourcesByDatabase[database] ??= <String>{};
-
   @override
   PgnImportOperation start(PgnImportRequest request) {
     final operation = _ImportOperation();
@@ -123,7 +118,7 @@ final class DriftPgnImportService implements PgnImportService {
     skipped = resumeJob?.blocksSkipped ?? 0;
     int? totalBytes;
     var reindexing = reindex;
-    if (!_activeSources.add(sourceId)) {
+    if (!PgnSourceOperationRegistry.tryBeginImport(database, sourceId)) {
       await operation.fail(
         jobId,
         PgnImportResumeDisposition.restart,
@@ -152,11 +147,26 @@ final class DriftPgnImportService implements PgnImportService {
         );
         return;
       }
+      if (source.importState == 'deleted') {
+        await operation.fail(
+          jobId,
+          PgnImportResumeDisposition.restart,
+          'This book was removed from the library and cannot be indexed.',
+          emitDiagnostic: false,
+        );
+        return;
+      }
       // A new re-index request after an interrupted re-index starts a clean
       // scan from the original baseline. Resume, in contrast, keeps the
       // existing staged candidate rows and job ID.
       if (reindex && resumeJob == null && source.importState == 'reindexing') {
-        await database.transaction(() async {
+        final started = await database.transaction(() async {
+          final currentSource = await (database.select(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+          if (currentSource == null || currentSource.importState == 'deleted') {
+            return false;
+          }
           await database.customStatement(
             "DELETE FROM pgn_blocks WHERE source_id = ? AND reindex_job_id IS NOT NULL "
             "AND reindex_job_id NOT LIKE 'baseline:%'",
@@ -167,15 +177,28 @@ final class DriftPgnImportService implements PgnImportService {
             "WHERE source_id = ? AND reindex_job_id LIKE 'baseline:%'",
             [sourceId],
           );
-          await (database.update(
-            database.pgnSources,
-          )..where((row) => row.id.equals(sourceId))).write(
-            PgnSourcesCompanion(
-              importState: const Value('indexed'),
-              updatedAtMicros: Value(_nowMicros()),
-            ),
-          );
+          await (database.update(database.pgnSources)..where(
+                (row) =>
+                    row.id.equals(sourceId) &
+                    row.importState.isNotValue('deleted'),
+              ))
+              .write(
+                PgnSourcesCompanion(
+                  importState: const Value('indexed'),
+                  updatedAtMicros: Value(_nowMicros()),
+                ),
+              );
+          return true;
         });
+        if (!started) {
+          await operation.fail(
+            jobId,
+            PgnImportResumeDisposition.restart,
+            'This book was removed from the library and cannot be indexed.',
+            emitDiagnostic: false,
+          );
+          return;
+        }
       } else {
         reindexing = reindexing || source.importState == 'reindexing';
       }
@@ -191,14 +214,17 @@ final class DriftPgnImportService implements PgnImportService {
             .get();
         reindexing = reindexing || hasBaseline.isNotEmpty;
         if (reindexing && source.importState != 'reindexing') {
-          await (database.update(
-            database.pgnSources,
-          )..where((row) => row.id.equals(sourceId))).write(
-            PgnSourcesCompanion(
-              importState: const Value('reindexing'),
-              updatedAtMicros: Value(_nowMicros()),
-            ),
-          );
+          await (database.update(database.pgnSources)..where(
+                (row) =>
+                    row.id.equals(sourceId) &
+                    row.importState.isNotValue('deleted'),
+              ))
+              .write(
+                PgnSourcesCompanion(
+                  importState: const Value('reindexing'),
+                  updatedAtMicros: Value(_nowMicros()),
+                ),
+              );
         }
       }
       if (resumeJob == null && !reindexing) {
@@ -327,7 +353,13 @@ final class DriftPgnImportService implements PgnImportService {
             .getSingle();
         final oldMaxOrdinal = maxOrdinalRows.read<int>('max_ordinal');
         final ordinalOffset = oldMaxOrdinal + totalBytes + 1;
-        await database.transaction(() async {
+        final started = await database.transaction(() async {
+          final currentSource = await (database.select(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+          if (currentSource == null || currentSource.importState == 'deleted') {
+            return false;
+          }
           await database.customStatement(
             "DELETE FROM pgn_blocks WHERE source_id = ? AND reindex_job_id IS NOT NULL "
             "AND reindex_job_id NOT LIKE 'baseline:%'",
@@ -366,17 +398,17 @@ final class DriftPgnImportService implements PgnImportService {
                   sourceSizeBytes: Value(totalBytes),
                 ),
               );
+          return true;
         });
-      } else if (source.fingerprint == null && !reindexing) {
-        await (database.update(
-          database.pgnSources,
-        )..where((row) => row.id.equals(sourceId))).write(
-          PgnSourcesCompanion(
-            fingerprint: Value(fingerprint),
-            sizeBytes: Value(totalBytes),
-            scannerVersion: const Value(scannerVersion),
-          ),
-        );
+        if (!started) {
+          await operation.fail(
+            jobId,
+            PgnImportResumeDisposition.restart,
+            'This book was removed from the library and cannot be indexed.',
+            emitDiagnostic: false,
+          );
+          return;
+        }
       }
       if (resumeJob == null && !reindexing) {
         final existingCount =
@@ -393,29 +425,76 @@ final class DriftPgnImportService implements PgnImportService {
           );
           return;
         }
-        await database
-            .into(database.importJobs)
-            .insert(
-              ImportJobsCompanion.insert(
-                id: jobId,
-                sourceId: sourceId,
-                status: 'indexing',
-                startedAtMicros: _nowMicros(),
-                sourceFingerprint: Value(fingerprint),
+        final started = await database.transaction(() async {
+          final currentSource = await (database.select(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+          if (currentSource == null || currentSource.importState == 'deleted') {
+            return false;
+          }
+          if (currentSource.fingerprint == null) {
+            await (database.update(
+              database.pgnSources,
+            )..where((row) => row.id.equals(sourceId))).write(
+              PgnSourcesCompanion(
+                fingerprint: Value(fingerprint),
+                sizeBytes: Value(totalBytes),
                 scannerVersion: const Value(scannerVersion),
-                sourceSizeBytes: Value(totalBytes),
               ),
             );
+          }
+          await database
+              .into(database.importJobs)
+              .insert(
+                ImportJobsCompanion.insert(
+                  id: jobId,
+                  sourceId: sourceId,
+                  status: 'indexing',
+                  startedAtMicros: _nowMicros(),
+                  sourceFingerprint: Value(fingerprint),
+                  scannerVersion: const Value(scannerVersion),
+                  sourceSizeBytes: Value(totalBytes),
+                ),
+              );
+          return true;
+        });
+        if (!started) {
+          await operation.fail(
+            jobId,
+            PgnImportResumeDisposition.restart,
+            'This book was removed from the library and cannot be indexed.',
+            emitDiagnostic: false,
+          );
+          return;
+        }
       } else if (resumeJob != null) {
-        await (database.update(
-          database.importJobs,
-        )..where((row) => row.id.equals(jobId))).write(
-          const ImportJobsCompanion(
-            status: Value('indexing'),
-            cancellationRequested: Value(false),
-            finishedAtMicros: Value(null),
-          ),
-        );
+        final resumed = await database.transaction(() async {
+          final currentSource = await (database.select(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+          if (currentSource == null || currentSource.importState == 'deleted') {
+            return false;
+          }
+          await (database.update(
+            database.importJobs,
+          )..where((row) => row.id.equals(jobId))).write(
+            const ImportJobsCompanion(
+              status: Value('indexing'),
+              cancellationRequested: Value(false),
+              finishedAtMicros: Value(null),
+            ),
+          );
+          return true;
+        });
+        if (!resumed) {
+          await operation.fail(
+            jobId,
+            PgnImportResumeDisposition.restart,
+            'This book was removed from the library and cannot be indexed.',
+            emitDiagnostic: false,
+          );
+          return;
+        }
       }
 
       if (operation.isCancelled) {
@@ -666,6 +745,12 @@ final class DriftPgnImportService implements PgnImportService {
             .take(diagnosticRoom)
             .toList(growable: false);
         await database.transaction(() async {
+          final currentSource = await (database.select(
+            database.pgnSources,
+          )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+          if (currentSource == null || currentSource.importState == 'deleted') {
+            throw const _SourceRemovedDuringImport();
+          }
           for (final item in batchBlocks) {
             final b = item.index;
             await database
@@ -888,25 +973,35 @@ final class DriftPgnImportService implements PgnImportService {
           operation.emitDiagnostic(unresolved);
         }
       }
-      await (database.update(
-        database.importJobs,
-      )..where((r) => r.id.equals(jobId))).write(
-        ImportJobsCompanion(
-          status: const Value('completed'),
-          finishedAtMicros: Value(_nowMicros()),
-          bytesProcessed: Value(bytesRead),
-          safeCheckpoint: Value(bytesRead),
-        ),
-      );
-      await (database.update(
-        database.pgnSources,
-      )..where((r) => r.id.equals(sourceId))).write(
-        PgnSourcesCompanion(
-          importState: const Value('indexed'),
-          safeCheckpoint: Value(bytesRead),
-          updatedAtMicros: Value(_nowMicros()),
-        ),
-      );
+      final finalized = await database.transaction(() async {
+        final currentSource = await (database.select(
+          database.pgnSources,
+        )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+        if (currentSource == null || currentSource.importState == 'deleted') {
+          return false;
+        }
+        await (database.update(
+          database.importJobs,
+        )..where((r) => r.id.equals(jobId))).write(
+          ImportJobsCompanion(
+            status: const Value('completed'),
+            finishedAtMicros: Value(_nowMicros()),
+            bytesProcessed: Value(bytesRead),
+            safeCheckpoint: Value(bytesRead),
+          ),
+        );
+        await (database.update(
+          database.pgnSources,
+        )..where((r) => r.id.equals(sourceId))).write(
+          PgnSourcesCompanion(
+            importState: const Value('indexed'),
+            safeCheckpoint: Value(bytesRead),
+            updatedAtMicros: Value(_nowMicros()),
+          ),
+        );
+        return true;
+      });
+      if (!finalized) throw const _SourceRemovedDuringImport();
       operation.complete(
         PgnImportResult(
           jobId: jobId,
@@ -918,6 +1013,17 @@ final class DriftPgnImportService implements PgnImportService {
         bytesRead: bytesRead,
         totalBytes: totalBytes,
         safeCheckpoint: bytesRead,
+      );
+    } on _SourceRemovedDuringImport {
+      operation.complete(
+        PgnImportResult(
+          jobId: jobId,
+          phase: PgnImportPhase.failed,
+          indexedBlockCount: indexed,
+          diagnosticCount: diagnostics,
+          resumeDisposition: PgnImportResumeDisposition.restart,
+        ),
+        safeCheckpoint: safeCheckpoint,
       );
     } catch (error) {
       final isFileFailure = error is FileFailure;
@@ -962,6 +1068,13 @@ final class DriftPgnImportService implements PgnImportService {
             message: message,
           );
           await database.transaction(() async {
+            final currentSource = await (database.select(
+              database.pgnSources,
+            )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+            if (currentSource == null ||
+                currentSource.importState == 'deleted') {
+              return;
+            }
             if (savedJob.diagnosticCount < _maximumDiagnostics) {
               await database
                   .into(database.importDiagnostics)
@@ -1015,7 +1128,7 @@ final class DriftPgnImportService implements PgnImportService {
         emitDiagnostic: emitFailureDiagnostic,
       );
     } finally {
-      _activeSources.remove(sourceId);
+      PgnSourceOperationRegistry.endImport(database, sourceId);
     }
   }
 
@@ -1216,6 +1329,12 @@ final class DriftPgnImportService implements PgnImportService {
     bool isReindexing = false,
   }) async {
     await database.transaction(() async {
+      final currentSource = await (database.select(
+        database.pgnSources,
+      )..where((row) => row.id.equals(sourceId))).getSingleOrNull();
+      if (currentSource == null || currentSource.importState == 'deleted') {
+        return;
+      }
       await (database.update(
         database.importJobs,
       )..where((r) => r.id.equals(jobId))).write(
@@ -1257,6 +1376,10 @@ final class _PendingBlock {
   final String exerciseId;
   final String? authoredExerciseId;
   final String? fallbackIdentityKey;
+}
+
+final class _SourceRemovedDuringImport implements Exception {
+  const _SourceRemovedDuringImport();
 }
 
 PgnBlockIndex _withDuplicateSummary(PgnBlockIndex b) => PgnBlockIndex(

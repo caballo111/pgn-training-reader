@@ -13,6 +13,11 @@ final class PuzzleHeader extends StatelessWidget {
     required this.totalExercises,
     required this.evaluation,
     this.showSideToMove = true,
+    this.showProgress = true,
+    this.sectionLabel,
+    this.blockLabel,
+    this.contextTitle,
+    this.modeLabel,
     super.key,
   }) : assert(currentExercise > 0),
        assert(totalExercises > 0),
@@ -27,6 +32,11 @@ final class PuzzleHeader extends StatelessWidget {
   /// Active evaluator snapshot; its position determines the side label.
   final PuzzleEvaluationState evaluation;
   final bool showSideToMove;
+  final bool showProgress;
+  final String? contextTitle;
+  final String? sectionLabel;
+  final String? blockLabel;
+  final String? modeLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -41,13 +51,21 @@ final class PuzzleHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(progressLabel, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 4),
-        Semantics(
-          label: 'Exercise progress',
-          value: '$currentExercise of $totalExercises',
-          child: LinearProgressIndicator(value: progress),
-        ),
+        if (contextTitle != null)
+          Text(contextTitle!, style: Theme.of(context).textTheme.titleSmall),
+        if (sectionLabel != null || blockLabel != null)
+          Text([?sectionLabel, ?blockLabel].join(' · ')),
+        if (modeLabel != null)
+          Text(modeLabel!, style: Theme.of(context).textTheme.bodySmall),
+        if (showProgress && totalExercises > 1) ...[
+          Text(progressLabel, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Semantics(
+            label: 'Exercise progress',
+            value: '$currentExercise of $totalExercises',
+            child: LinearProgressIndicator(value: progress),
+          ),
+        ],
         if (showSideToMove) const SizedBox(height: 8),
         if (showSideToMove)
           Semantics(

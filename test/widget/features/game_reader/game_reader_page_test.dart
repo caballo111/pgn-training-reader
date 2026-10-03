@@ -38,8 +38,8 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.byTooltip('Previous PGN block'));
-    await tester.tap(find.byTooltip('Next PGN block'));
+    await tester.tap(find.text('Previous block'));
+    await tester.tap(find.text('Next block'));
     expect(previous, 1);
     expect(next, 1);
     await tester.pumpWidget(
@@ -50,18 +50,14 @@ void main() {
         ),
       ),
     );
-    for (final label in ['Previous PGN block', 'Next PGN block']) {
-      expect(
-        tester
-            .widget<IconButton>(
-              find.byWidgetPredicate(
-                (widget) => widget is IconButton && widget.tooltip == label,
-              ),
-            )
-            .onPressed,
-        isNull,
-      );
-    }
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Previous block'))
+          .onPressed,
+      isNull,
+    );
+    expect(find.text('Next block'), findsNothing);
+    expect(find.text('Back to book'), findsOneWidget);
   });
 
   for (final token in ['Z0', '--']) {
@@ -81,7 +77,7 @@ void main() {
               onClassificationOverride: (type) async {
                 saved = type;
               },
-              puzzleViewBuilder: (_, _) {
+              puzzleViewBuilder: (_, _, _) {
                 puzzleCalls++;
                 return const Text('Solver');
               },
@@ -115,7 +111,13 @@ void main() {
       MaterialApp(home: GameReaderPage(content: _content(ContentType.text))),
     );
 
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('secret solution'), findsOneWidget);
   });
 
@@ -127,7 +129,7 @@ void main() {
       MaterialApp(
         home: GameReaderPage(
           content: puzzle,
-          puzzleViewBuilder: (context, content) {
+          puzzleViewBuilder: (context, content, _) {
             received = content;
             return const Text('Injected puzzle solver');
           },
@@ -154,7 +156,7 @@ void main() {
       MaterialApp(
         home: GameReaderPage(
           content: puzzle,
-          puzzleViewBuilder: (context, content) => const Text('Puzzle view'),
+          puzzleViewBuilder: (context, content, _) => const Text('Puzzle view'),
         ),
       ),
     );

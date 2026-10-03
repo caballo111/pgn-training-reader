@@ -409,8 +409,10 @@ And the user receives an actionable recovery path rather than silent data loss.
   wrong-move count MUST be retained independently of aggregate metrics.
   Practice MUST remain interactive and concealed, and later moves MUST NOT
   change that finalized score. Retain the first rejected move for the scored
-  audit; additional incorrect practice moves MUST show feedback without
-  appending more rejected notation entries.
+  audit. Every distinct later rejection MUST be retained in separate practice
+  history, deduplicated by attempt, authored position, and UCI across all prior
+  rejections. Repeated rejections still show feedback without duplicate entries.
+  See feature 002 for continuous reading, solving, review, and control placement.
 - **FR-024**: Completing the selected authored endpoint without reveal MUST
   produce `passed` if no hint was used and `assisted` if any hint was used.
   Revealing, skipping, timing out, and abandoning MUST produce distinct

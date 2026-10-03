@@ -58,6 +58,11 @@ final class PuzzleSolverController {
   PuzzleAttempt? _attempt;
   List<AttemptMove> _moves = const [];
   List<PuzzlePlayedMove> _entries = const [];
+  List<PuzzleRejection> _rejections = const [];
+  PuzzleRejection? _rejectedMove;
+  List<int>? _reviewPath;
+  PuzzleSide? _reviewOrientation;
+  Future<void> _reviewPathWrites = Future<void>.value();
   PuzzleEvaluationState? _evaluation;
   PuzzlePresentationState? _presentation;
   PuzzleCompletionPolicy _policy = PuzzleCompletionPolicy.allMoves;
@@ -69,8 +74,18 @@ final class PuzzleSolverController {
   final Set<void Function(PuzzlePresentationState)> _stateListeners = {};
   Completer<void>? _transitionDone;
 
-  /// Completes after the current durable puzzle transition finishes.
+  /// Completes after transitions and queued review-cursor writes finish.
   Future<void> whenIdle() async {
+    while (true) {
+      await _whenTransitionIdle();
+      final pendingCursorWrite = _reviewPathWrites;
+      await pendingCursorWrite;
+      await _whenTransitionIdle();
+      if (identical(pendingCursorWrite, _reviewPathWrites)) return;
+    }
+  }
+
+  Future<void> _whenTransitionIdle() async {
     while (_transitionInProgress) {
       final pending = _transitionDone;
       if (pending != null) await pending.future;
@@ -94,6 +109,51 @@ final class PuzzleSolverController {
   }
 
   PuzzleEvaluationState? get currentEvaluation => _evaluation;
+  List<int>? get reviewPath =>
+      _reviewPath == null ? null : List.unmodifiable(_reviewPath!);
+  PuzzleSide? get reviewOrientation => _reviewOrientation;
+  Future<void> setReviewPath(List<int> path) {
+    if (_disposed) {
+      return Future.error(StateError('This puzzle controller is disposed.'));
+    }
+    final puzzle = _puzzle;
+    if (puzzle == null) {
+      return Future.error(
+        StateError('Initialize the puzzle controller first.'),
+      );
+    }
+    try {
+      _validateReviewPath(puzzle, path);
+    } on ArgumentError catch (error, stackTrace) {
+      return Future.error(error, stackTrace);
+    }
+    _reviewPath = List.unmodifiable(path);
+    final write = _reviewPathWrites.catchError((Object _) {}).then((_) async {
+      await _whenTransitionIdle();
+      await _save(_data());
+    });
+    _reviewPathWrites = write;
+    return write;
+  }
+
+  Future<void> setReviewOrientation(PuzzleSide orientation) {
+    if (_disposed) {
+      return Future.error(StateError('This puzzle controller is disposed.'));
+    }
+    if (_puzzle == null) {
+      return Future.error(
+        StateError('Initialize the puzzle controller first.'),
+      );
+    }
+    _reviewOrientation = orientation;
+    final write = _reviewPathWrites.catchError((Object _) {}).then((_) async {
+      await _whenTransitionIdle();
+      await _save(_data());
+    });
+    _reviewPathWrites = write;
+    return write;
+  }
+
   bool get canInteract =>
       _evaluation != null &&
       !_disposed &&
@@ -131,6 +191,10 @@ final class PuzzleSolverController {
     if (attempt == null) throw StateError('Puzzle attempt was not found.');
     final moves = await repository.listAttemptMoves(attemptId);
     final data = await _load(attemptId);
+    final version = data?['version'] as int? ?? 1;
+    if (version > 2 || version < 1) {
+      throw StateError('Unsupported puzzle interaction version: $version.');
+    }
     _puzzle = puzzle;
     _attempt = attempt;
     _moves = List.unmodifiable(moves);
@@ -149,7 +213,35 @@ final class PuzzleSolverController {
               PuzzlePlayedMove.fromJson(Map<String, dynamic>.from(raw as Map)),
           ])
         : _entriesFromHistory(puzzle, moves);
-    _review = data?['review'] as bool? ?? (attempt.outcome != null);
+    _rejections = data?['rejections'] != null
+        ? List.unmodifiable([
+            for (final raw in data!['rejections'] as List)
+              PuzzleRejection.fromJson(Map<String, dynamic>.from(raw as Map)),
+          ])
+        : _rejectionsFromEntries(puzzle, _entries);
+    final storedReviewPath = data?['reviewPath'];
+    if (storedReviewPath == null) {
+      _reviewPath = null;
+    } else {
+      final candidate = [
+        for (final index in storedReviewPath as List) index as int,
+      ];
+      _reviewPath = _isValidReviewPath(puzzle, candidate)
+          ? List.unmodifiable(candidate)
+          : null;
+    }
+    _reviewOrientation = data?['reviewOrientation'] == null
+        ? null
+        : PuzzleSide.values.byName(data!['reviewOrientation'] as String);
+    _rejectedMove = null;
+    final phaseValue = data?['phase'] as String?;
+    final storedPhase = phaseValue == null
+        ? null
+        : PuzzleInteractionPhase.values.byName(phaseValue);
+    _review =
+        storedPhase == PuzzleInteractionPhase.review ||
+        (storedPhase == null &&
+            (data?['review'] as bool? ?? (attempt.outcome != null)));
     _hintRequests = data?['hintRequests'] as int? ?? attempt.hintCount;
     _hintSquare = data?['hintSquare'] as String?;
     _feedback = data?['feedback'] as String?;
@@ -269,13 +361,33 @@ final class PuzzleSolverController {
       actor: actor,
       accepted: accepted,
     );
-    final suppressRepeatedWrongPractice =
-        _attempt!.outcome == PuzzleAttemptOutcome.wrongMove &&
-        !accepted &&
-        (actor == 'learner' || actor == 'prediction');
-    final entries = suppressRepeatedWrongPractice
-        ? _entries
-        : List<PuzzlePlayedMove>.unmodifiable([..._entries, event]);
+    final rejected = accepted
+        ? null
+        : _makeRejection(uci: uci, actor: actor, position: position);
+    final previousRejection = rejected == null
+        ? null
+        : _rejections
+              .where((known) => _sameRejection(known, rejected))
+              .firstOrNull;
+    final isDistinctRejection = rejected != null && previousRejection == null;
+    final entries = accepted || isDistinctRejection
+        ? List<PuzzlePlayedMove>.unmodifiable([..._entries, event])
+        : _entries;
+    final rejections = isDistinctRejection
+        ? List<PuzzleRejection>.unmodifiable([
+            ..._rejections,
+            PuzzleRejection(
+              ordinal: _rejections.length + 1,
+              uci: rejected.uci,
+              san: rejected.san,
+              authoredPath: rejected.authoredPath,
+              fenBefore: rejected.fenBefore,
+              actor: rejected.actor,
+              legal: rejected.legal,
+              submittedAt: rejected.submittedAt,
+            ),
+          ])
+        : _rejections;
     final complete =
         accepted &&
         (node.children.isEmpty ||
@@ -292,6 +404,7 @@ final class PuzzleSolverController {
         await _save(
           _data(
             entries: entries,
+            rejections: rejections,
             review: complete,
             hintSquare: null,
             clearHint: true,
@@ -322,6 +435,7 @@ final class PuzzleSolverController {
       await _save(
         _data(
           entries: entries,
+          rejections: rejections,
           review: complete,
           hintSquare: null,
           clearHint: true,
@@ -331,6 +445,19 @@ final class PuzzleSolverController {
       );
     }
     _entries = entries;
+    _rejections = rejections;
+    _rejectedMove = rejected == null
+        ? null
+        : PuzzleRejection(
+            ordinal: previousRejection?.ordinal ?? _rejections.length,
+            uci: rejected.uci,
+            san: rejected.san,
+            authoredPath: rejected.authoredPath,
+            fenBefore: rejected.fenBefore,
+            actor: rejected.actor,
+            legal: rejected.legal,
+            submittedAt: rejected.submittedAt,
+          );
     _attempt = attempt;
     _moves = List.unmodifiable(moves);
     _review = complete;
@@ -543,6 +670,9 @@ final class PuzzleSolverController {
       evaluation: _evaluation!,
       solutionVisibleOverride: _review,
       entries: _entries,
+      rejections: _rejections,
+      rejectedMove: _rejectedMove,
+      phase: _interactionPhase,
       learnerSide: _learner,
       isPredictingReply: _predicting,
       hintSquare: _hintSquare,
@@ -589,6 +719,7 @@ final class PuzzleSolverController {
 
   Map<String, dynamic> _data({
     List<PuzzlePlayedMove>? entries,
+    List<PuzzleRejection>? rejections,
     bool? review,
     String? hintSquare,
     String? feedback,
@@ -597,15 +728,53 @@ final class PuzzleSolverController {
     bool clearHint = false,
     bool clearFeedback = false,
   }) => {
-    'version': 1,
+    'version': 2,
+    'phase': _phaseFor(review ?? _review, rejections ?? _rejections).name,
     'policy': _policy.name,
     'review': review ?? _review,
     'entries': [for (final entry in entries ?? _entries) entry.toJson()],
+    'rejections': [
+      for (final rejection in rejections ?? _rejections) rejection.toJson(),
+    ],
+    'reviewPath': _reviewPath,
+    'reviewOrientation': _reviewOrientation?.name,
     'hintRequests': hintRequests ?? _hintRequests,
     'hintSquare': clearHint ? null : hintSquare ?? _hintSquare,
     'feedback': clearFeedback ? null : feedback ?? _feedback,
     'orientation': (orientation ?? _orientation)?.name,
   };
+
+  PuzzleInteractionPhase get _interactionPhase =>
+      _phaseFor(_review, _rejections);
+
+  PuzzleInteractionPhase _phaseFor(
+    bool review,
+    List<PuzzleRejection> rejections,
+  ) => review
+      ? PuzzleInteractionPhase.review
+      : rejections.isNotEmpty
+      ? PuzzleInteractionPhase.failedPractice
+      : PuzzleInteractionPhase.solving;
+
+  void _validateReviewPath(ChessContent puzzle, List<int> path) {
+    if (!_isValidReviewPath(puzzle, path)) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'Path is outside the solution tree.',
+      );
+    }
+  }
+
+  bool _isValidReviewPath(ChessContent puzzle, List<int> path) {
+    var choices = puzzle.rootMoves;
+    for (final index in path) {
+      if (index < 0 || index >= choices.length) return false;
+      choices = choices[index].children;
+    }
+    return true;
+  }
+
   Future<T> _atomic<T>(Future<T> Function() action) {
     final storage = repository;
     return storage is AtomicTrainingRepository
@@ -665,6 +834,92 @@ final class PuzzleSolverController {
     }
     return entries;
   }
+
+  List<PuzzleRejection> _rejectionsFromEntries(
+    ChessContent puzzle,
+    List<PuzzlePlayedMove> entries,
+  ) {
+    var position = chess.Chess.fromSetup(
+      chess.Setup.parseFen(puzzle.startingFen),
+    );
+    var choices = puzzle.rootMoves;
+    final path = <String>[];
+    final result = <PuzzleRejection>[];
+    for (final entry in entries) {
+      if (entry.accepted) {
+        final node = choices
+            .where((candidate) => candidate.uci == entry.uci)
+            .firstOrNull;
+        final move = chess.Move.parse(entry.uci);
+        if (node == null || move == null || !position.isLegal(move)) {
+          throw StateError('Cannot restore puzzle interaction.');
+        }
+        position = position.play(move) as chess.Chess;
+        path.add(node.uci.toLowerCase());
+        choices = node.children;
+        continue;
+      }
+      final record = _makeRejection(
+        uci: entry.uci,
+        actor: entry.actor == 'automatic' ? 'prediction' : entry.actor,
+        position: position,
+        path: path,
+        san: entry.san,
+      );
+      if (!result.any((known) => _sameRejection(known, record))) {
+        result.add(
+          PuzzleRejection(
+            ordinal: result.length + 1,
+            uci: record.uci,
+            san: record.san,
+            authoredPath: record.authoredPath,
+            fenBefore: record.fenBefore,
+            actor: record.actor,
+            legal: record.legal,
+            // Version 1 did not retain submission timestamps.
+          ),
+        );
+      }
+    }
+    return List.unmodifiable(result);
+  }
+
+  PuzzleRejection _makeRejection({
+    required String uci,
+    required String actor,
+    required chess.Chess position,
+    List<String>? path,
+    String? san,
+  }) {
+    final move = chess.Move.parse(uci);
+    final legal = move != null && position.isLegal(move);
+    return PuzzleRejection(
+      ordinal: 0,
+      uci: uci.toLowerCase(),
+      san: san ?? (legal ? position.makeSan(move).$2 : null),
+      authoredPath:
+          path ??
+          [
+            for (final entry in _entries.where((entry) => entry.accepted))
+              entry.uci.toLowerCase(),
+          ],
+      fenBefore: position.fen,
+      actor: actor,
+      legal: legal,
+      submittedAt: DateTime.now().toUtc(),
+    );
+  }
+
+  bool _sameRejection(PuzzleRejection a, PuzzleRejection b) =>
+      a.uci.toLowerCase() == b.uci.toLowerCase() &&
+      _samePath(a.authoredPath, b.authoredPath);
+
+  bool _samePath(List<String> a, List<String> b) =>
+      a.length == b.length &&
+      List.generate(
+        a.length,
+        (index) => index,
+      ).every((index) => a[index].toLowerCase() == b[index].toLowerCase());
 
   chess.Chess _replay(ChessContent puzzle, List<PuzzlePlayedMove> entries) {
     var position = chess.Chess.fromSetup(

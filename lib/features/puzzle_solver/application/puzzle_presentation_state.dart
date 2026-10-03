@@ -4,6 +4,8 @@ import '../../../domain/chess_content/move_node.dart';
 import '../../../domain/training/puzzle_attempt.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
 
+enum PuzzleInteractionPhase { solving, failedPractice, review }
+
 /// Safe, immutable data for presenting one puzzle attempt.
 ///
 /// While the attempt is unfinished, this projection contains only the current
@@ -21,6 +23,9 @@ final class PuzzlePresentationState {
     required List<PuzzlePresentationMove>? solution,
     required List<String> comments,
     this.entries = const [],
+    this.rejections = const [],
+    this.rejectedMove,
+    this.phase = PuzzleInteractionPhase.solving,
     this.learnerSide = PuzzleSide.white,
     this.isPredictingReply = false,
     this.hintSquare,
@@ -39,6 +44,9 @@ final class PuzzlePresentationState {
     required PuzzleEvaluationState evaluation,
     bool? solutionVisibleOverride,
     List<PuzzlePlayedMove> entries = const [],
+    List<PuzzleRejection> rejections = const [],
+    PuzzleRejection? rejectedMove,
+    PuzzleInteractionPhase? phase,
     PuzzleSide? learnerSide,
     bool isPredictingReply = false,
     String? hintSquare,
@@ -56,14 +64,28 @@ final class PuzzlePresentationState {
       );
     }
 
-    // A paused attempt is unfinished too. Only a terminal evaluation makes
-    // authored content available to review presentation.
+    // Scoring may already be finalized after the first wrong move while the
+    // learner continues practicing. An explicit active phase must keep all
+    // authored text/tree content concealed, even for that recorded failure.
+    final isStillPracticing =
+        phase == PuzzleInteractionPhase.solving ||
+        phase == PuzzleInteractionPhase.failedPractice;
     final solutionVisible =
-        solutionVisibleOverride ??
-        (evaluation.isFinalized || evaluation.solutionRevealed);
+        !isStillPracticing &&
+        (solutionVisibleOverride ??
+            (evaluation.isFinalized || evaluation.solutionRevealed));
     return PuzzlePresentationState._(
       currentFen: evaluation.currentFen,
       entries: List.unmodifiable(entries),
+      rejections: List.unmodifiable(rejections),
+      rejectedMove: rejectedMove,
+      phase:
+          phase ??
+          (solutionVisible
+              ? PuzzleInteractionPhase.review
+              : evaluation.attempt.outcome == PuzzleAttemptOutcome.wrongMove
+              ? PuzzleInteractionPhase.failedPractice
+              : PuzzleInteractionPhase.solving),
       learnerSide:
           learnerSide ??
           (puzzle.startingFen.split(' ')[1] == 'b'
@@ -128,6 +150,13 @@ final class PuzzlePresentationState {
   final List<String> comments;
 
   final List<PuzzlePlayedMove> entries;
+
+  /// Distinct rejected submissions, deduplicated by authored path and UCI.
+  final List<PuzzleRejection> rejections;
+
+  /// Most recent rejected gesture, including repeats, for immediate feedback.
+  final PuzzleRejection? rejectedMove;
+  final PuzzleInteractionPhase phase;
   final PuzzleSide learnerSide;
   final bool isPredictingReply;
   final String? hintSquare;
@@ -138,6 +167,61 @@ final class PuzzlePresentationState {
   final int hintCount;
 
   bool get isSolutionVisible => solution != null;
+}
+
+/// Durable, distinct rejected move history for one attempt.
+final class PuzzleRejection {
+  PuzzleRejection({
+    required this.ordinal,
+    required this.uci,
+    required List<String> authoredPath,
+    required this.fenBefore,
+    required this.actor,
+    required this.legal,
+    this.san,
+    this.submittedAt,
+    String? id,
+  }) : authoredPath = List.unmodifiable(authoredPath),
+       id = id ?? 'rejection-$ordinal';
+
+  final String id;
+  final int ordinal;
+  final String uci;
+  final String? san;
+  final List<String> authoredPath;
+  final String fenBefore;
+  final String actor;
+  final bool legal;
+  final DateTime? submittedAt;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'ordinal': ordinal,
+    'uci': uci,
+    'san': san,
+    'authoredPath': authoredPath,
+    'fenBefore': fenBefore,
+    'actor': actor,
+    'legal': legal,
+    'submittedAt': submittedAt?.toIso8601String(),
+  };
+
+  factory PuzzleRejection.fromJson(Map<String, dynamic> data) =>
+      PuzzleRejection(
+        id: data['id'] as String?,
+        ordinal: data['ordinal'] as int,
+        uci: data['uci'] as String,
+        san: data['san'] as String?,
+        authoredPath: [
+          for (final move in data['authoredPath'] as List) move as String,
+        ],
+        fenBefore: data['fenBefore'] as String,
+        actor: data['actor'] as String,
+        legal: data['legal'] as bool,
+        submittedAt: data['submittedAt'] == null
+            ? null
+            : DateTime.parse(data['submittedAt'] as String),
+      );
 }
 
 /// A solution-tree node exposed only by a finalized presentation state.

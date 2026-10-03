@@ -347,20 +347,28 @@ void main() {
       expect(failed.entries.last.actor, 'prediction');
       expect(failed.entries.last.accepted, isFalse);
       expect(failed.entries, hasLength(2));
+      expect(failed.rejections, hasLength(1));
 
       final scoredMoveCount = repository.moves.length;
-      final persistedEntryCount =
-          repository.interactions['attempt']!['entries'].length as int;
-      final repeated = await controller.submitMove(uci: 'd7d6');
-      expect(repeated.feedback, contains('Incorrect'));
-      expect(repeated.entries, hasLength(2));
-      expect(repeated.entries.last.actor, 'prediction');
-      expect(repeated.entries.last.accepted, isFalse);
+      final scoredAttempt = repository.attempt;
+      final secondDistinct = await controller.submitMove(uci: 'd7d6');
+      expect(secondDistinct.feedback, contains('Incorrect'));
+      expect(secondDistinct.entries, hasLength(3));
+      expect(secondDistinct.rejections, hasLength(2));
+      expect(secondDistinct.entries.last.actor, 'prediction');
+      expect(secondDistinct.entries.last.accepted, isFalse);
+      expect(repository.attempt, same(scoredAttempt));
       expect(repository.moves, hasLength(scoredMoveCount));
-      expect(
-        repository.interactions['attempt']!['entries'],
-        hasLength(persistedEntryCount),
-      );
+      expect(repository.interactions['attempt']!['entries'], hasLength(3));
+
+      final repeated = await controller.submitMove(uci: 'd7d5');
+      expect(repeated.feedback, contains('Incorrect'));
+      expect(repeated.entries, hasLength(3));
+      expect(repeated.rejections, hasLength(2));
+      expect(repeated.rejectedMove!.uci, 'd7d5');
+      expect(repository.attempt, same(scoredAttempt));
+      expect(repository.moves, hasLength(scoredMoveCount));
+      expect(repository.interactions['attempt']!['entries'], hasLength(3));
     },
   );
 

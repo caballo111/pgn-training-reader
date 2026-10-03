@@ -58,7 +58,10 @@ void main() {
       );
       expect(find.text('Read this lesson.'), findsOneWidget);
       expect(
-        find.text('White to move'),
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.label == 'White to move',
+        ),
         hasPosition ? findsOneWidget : findsNothing,
       );
       expect(find.byTooltip('Next move'), findsNothing);
@@ -80,7 +83,13 @@ void main() {
       ),
     );
 
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Model game: open with the king pawn.'), findsOneWidget);
     expect(find.text('White claims the center.'), findsOneWidget);
     expect(find.text('\$1'), findsOneWidget);
@@ -88,11 +97,23 @@ void main() {
 
     await tester.tap(find.text('e4'));
     await tester.pumpAndSettle();
-    expect(find.text('Black to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'Black to move',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('c5'));
     await tester.pumpAndSettle();
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('The Sicilian Defense.'), findsOneWidget);
   });
 
@@ -125,7 +146,13 @@ void main() {
       ),
     );
 
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
     String orientation() => tester
         .widget<ReaderBoard>(find.byType(ReaderBoard))
         .board
@@ -139,21 +166,45 @@ void main() {
 
     await tester.tap(find.byTooltip('Next move'));
     await tester.pumpAndSettle();
-    expect(find.text('Black to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'Black to move',
+      ),
+      findsOneWidget,
+    );
     expect(find.byTooltip('Flip board'), findsOneWidget);
     expect(orientation(), 'black');
 
     await tester.tap(find.byTooltip('Last move on main line'));
     await tester.pumpAndSettle();
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byTooltip('Previous move'));
     await tester.pumpAndSettle();
-    expect(find.text('Black to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'Black to move',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byTooltip('Starting position'));
     await tester.pumpAndSettle();
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('fits a narrow phone with enlarged text and long comments', (

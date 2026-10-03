@@ -43,7 +43,7 @@ void main() {
         MaterialApp(
           home: GameReaderPage(
             content: _content(type),
-            puzzleViewBuilder: (context, content) {
+            puzzleViewBuilder: (context, content, _) {
               puzzleBuilderCalls++;
               return _RecordingPuzzleView(writer: writer);
             },
@@ -75,7 +75,7 @@ void main() {
       MaterialApp(
         home: GameReaderPage(
           content: _content(ContentType.puzzle),
-          puzzleViewBuilder: (context, content) {
+          puzzleViewBuilder: (context, content, _) {
             puzzleBuilderCalls++;
             return _RecordingPuzzleView(writer: writer);
           },

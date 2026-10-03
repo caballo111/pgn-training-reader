@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'dependencies.dart';
 import 'library_puzzle_practice.dart';
+import 'study_presentation_store.dart';
 import '../core/errors/app_failure.dart';
 import '../domain/chess_content/pgn_block_index.dart';
+import '../domain/chess_content/content_type.dart';
 import '../features/browse_library/application/library_controller.dart';
 import '../features/browse_library/presentation/library_page.dart';
 import '../features/import_library/presentation/import_page.dart';
@@ -13,7 +15,6 @@ import '../features/import_library/application/import_controller.dart';
 import '../features/game_reader/presentation/game_reader_page.dart';
 import '../features/training_sets/presentation/training_sets_page.dart';
 import '../domain/training/authored_line_puzzle_evaluator.dart';
-import '../domain/training/puzzle_completion_policy.dart';
 
 /// Route names used by the application shell.
 abstract final class AppRoutes {
@@ -132,41 +133,70 @@ Future<void> _openBlock(
     var previousBlock = await dependencies.pgnIndexRepository
         .getPreviousInSource(block);
     if (!context.mounted) return;
+    String? revisionFor(String sourceId) => libraryController.state.sources
+        .where((source) => source.id == sourceId)
+        .firstOrNull
+        ?.fingerprint;
+    var readingPresentation = await StudyPresentationStore(
+      dependencies.database,
+      block.id,
+    ).load();
+    if (readingPresentation['sourceRevision'] != revisionFor(block.sourceId)) {
+      readingPresentation = {
+        'version': 1,
+        'sourceRevision': revisionFor(block.sourceId),
+      };
+    }
+    if (!context.mounted) return;
     var loading = false;
-    var startNextPuzzle = false;
-    PuzzleCompletionPolicy? nextPuzzlePolicy;
+    String? openingFailure;
+    var practiceKey = GlobalKey<LibraryPuzzlePracticeState>();
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => StatefulBuilder(
           builder: (readerContext, setReaderState) {
-            Future<void> navigate(
-              PgnBlockIndex target, {
-              bool startSolving = false,
-              PuzzleCompletionPolicy? completionPolicy,
-            }) async {
+            Future<void> navigate(PgnBlockIndex target) async {
               if (loading) return;
               setReaderState(() => loading = true);
               try {
-                final loaded = await dependencies.chessContentRepository
-                    .getById(target.id);
-                if (loaded == null) {
-                  throw const ValidationFailure(
-                    code: 'library_item_missing',
-                    message: 'This library item is no longer available.',
+                await practiceKey.currentState?.prepareToLeave();
+                var loaded = content;
+                String? failure;
+                try {
+                  loaded = await dependencies.chessContentRepository.getById(
+                    target.id,
                   );
+                  if (loaded == null) {
+                    failure = 'This library item is no longer available.';
+                  }
+                } on AppFailure catch (error) {
+                  failure = error.message;
                 }
+                if (failure != null) loaded = content;
                 final next = await dependencies.pgnIndexRepository
                     .getNextInSource(target);
                 final previous = await dependencies.pgnIndexRepository
                     .getPreviousInSource(target);
+                var readerSettings = await StudyPresentationStore(
+                  dependencies.database,
+                  target.id,
+                ).load();
+                if (readerSettings['sourceRevision'] !=
+                    revisionFor(target.sourceId)) {
+                  readerSettings = {
+                    'version': 1,
+                    'sourceRevision': revisionFor(target.sourceId),
+                  };
+                }
                 if (!readerContext.mounted) return;
                 setReaderState(() {
                   block = target;
+                  readingPresentation = readerSettings;
                   content = loaded;
+                  openingFailure = failure;
                   nextBlock = next;
                   previousBlock = previous;
-                  startNextPuzzle = startSolving;
-                  nextPuzzlePolicy = completionPolicy;
+                  practiceKey = GlobalKey<LibraryPuzzlePracticeState>();
                 });
               } catch (error) {
                 if (!readerContext.mounted) return;
@@ -187,31 +217,92 @@ Future<void> _openBlock(
             return GameReaderPage(
               key: ValueKey(currentBlock.id),
               content: content!,
+              unavailableMessage: openingFailure,
+              initialReaderState: readingPresentation['reader'] is Map
+                  ? Map<String, dynamic>.from(
+                      readingPresentation['reader'] as Map,
+                    )
+                  : null,
+              onSaveReaderState: (value) async {
+                final snapshot = {...readingPresentation, 'reader': value};
+                await StudyPresentationStore(
+                  dependencies.database,
+                  currentBlock.id,
+                ).save(snapshot);
+                readingPresentation = snapshot;
+              },
+              onRetryContent: openingFailure == null
+                  ? null
+                  : () => unawaited(navigate(currentBlock)),
+              bookName:
+                  libraryController.state.sources
+                      .where((source) => source.id == currentBlock.sourceId)
+                      .firstOrNull
+                      ?.displayName ??
+                  'Book',
+              section: currentBlock.section,
+              blockNumber: currentBlock.ordinal + 1,
               showBlockNavigation: true,
+              onBookSettings: openingFailure == null
+                  ? () => unawaited(
+                      practiceKey.currentState?.openBookSettings() ??
+                          Future<void>.value(),
+                    )
+                  : null,
               onPreviousBlock: loading || previousBlock == null
                   ? null
                   : () => unawaited(navigate(previousBlock!)),
               onNextBlock: loading || nextBlock == null
                   ? null
                   : () => unawaited(navigate(nextBlock!)),
-              puzzleViewBuilder: (_, puzzle) => LibraryPuzzlePractice(
-                dependencies: dependencies,
-                blockId: currentBlock.id,
-                bookId: currentBlock.sourceId,
-                puzzle: puzzle,
-                startAutomatically: startNextPuzzle,
-                initialCompletionPolicy: nextPuzzlePolicy,
-                onNextPuzzle: nextBlock == null
-                    ? null
-                    : (policy) => navigate(
-                        nextBlock!,
-                        startSolving: true,
-                        completionPolicy: policy,
-                      ),
-              ),
-              onClassificationOverride: currentBlock.authoredContentType == null
-                  ? (type) => dependencies.pgnIndexRepository
-                        .overrideClassification(currentBlock.id, type)
+              puzzleViewBuilder: (_, puzzle, onModeChanged) =>
+                  LibraryPuzzlePractice(
+                    key: practiceKey,
+                    dependencies: dependencies,
+                    blockId: currentBlock.id,
+                    bookId: currentBlock.sourceId,
+                    sourceRevision: libraryController.state.sources
+                        .where((source) => source.id == currentBlock.sourceId)
+                        .firstOrNull
+                        ?.fingerprint,
+                    showSettingsButton: false,
+                    showModeInBody: false,
+                    onModeChanged: onModeChanged,
+                    puzzle: puzzle,
+                    onPreviousBlock: previousBlock == null
+                        ? null
+                        : () => navigate(previousBlock!),
+                    onNextPuzzle: nextBlock == null
+                        ? null
+                        : (_) => navigate(nextBlock!),
+                  ),
+              onClassificationOverride:
+                  openingFailure == null &&
+                      currentBlock.authoredContentType == null
+                  ? (type) async {
+                      if (type == ContentType.text) {
+                        await practiceKey.currentState?.prepareForReading();
+                      } else {
+                        await practiceKey.currentState?.prepareToLeave();
+                      }
+                      final store = StudyPresentationStore(
+                        dependencies.database,
+                        currentBlock.id,
+                      );
+                      var presentation = await store.load();
+                      if (type == ContentType.puzzle &&
+                          practiceKey.currentState == null) {
+                        presentation = {...presentation, 'exposed': true};
+                        await store.save(presentation);
+                      }
+                      await dependencies.pgnIndexRepository
+                          .overrideClassification(currentBlock.id, type);
+                      if (readerContext.mounted) {
+                        setReaderState(() {
+                          readingPresentation = presentation;
+                        });
+                      }
+                    }
                   : null,
             );
           },

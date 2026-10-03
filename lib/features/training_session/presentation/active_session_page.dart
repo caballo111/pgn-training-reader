@@ -12,6 +12,7 @@ import '../../../features/puzzle_solver/presentation/puzzle_solving_view.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
 import '../../../features/puzzle_solver/presentation/puzzle_solution_review_view.dart';
 import '../application/active_session_controller.dart';
+import '../../../shared/presentation/study_mode.dart';
 
 /// Shows a cycle's current indexed content and its explicit lifecycle controls.
 final class ActiveSessionPage extends StatefulWidget {
@@ -117,75 +118,147 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
           final current = state.activeItem == null
               ? attempted
               : state.activeItem!.position + 1;
+          final section = state.content?.headers['X-Section']?.trim();
+          final mode = _review != null
+              ? StudyMode.review
+              : state.activeItem?.contentType == ContentType.puzzle
+              ? StudyMode.solving
+              : StudyMode.reading;
+          final subtitle = [
+            'Cycle training',
+            'Item ${current.clamp(0, total)} of $total',
+            if (section?.isNotEmpty == true) section!,
+          ].join(' · ');
+          final sessionTime = _format(state.sessionActiveTime);
+          final cycleTime = _format(state.cycleActiveTime);
+          final modeLabel = state.status == ActiveSessionStatus.paused
+              ? '${mode.label} · paused'
+              : mode.label;
+          final accessibleMetadata = [
+            widget.controller.trainingSet.name,
+            subtitle,
+            modeLabel,
+            'Session active time $sessionTime',
+            'Cycle active time $cycleTime',
+          ].join('. ');
           return Scaffold(
             appBar: AppBar(
               leading: _backButton,
-              title: Text(
-                _review == null
-                    ? widget.controller.trainingSet.name
-                    : 'Solution review',
+              toolbarHeight: MediaQuery.textScalerOf(context).scale(1) >= 1.5
+                  ? 80
+                  : null,
+              title: Semantics(
+                container: true,
+                explicitChildNodes: true,
+                header: true,
+                label: widget.controller.trainingSet.name,
+                child: Tooltip(
+                  message: accessibleMetadata,
+                  excludeFromSemantics: true,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ExcludeSemantics(
+                              child: Text(
+                                widget.controller.trainingSet.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            flex: 2,
+                            fit: FlexFit.loose,
+                            child: Semantics(
+                              label: 'Study mode',
+                              value: modeLabel,
+                              excludeSemantics: true,
+                              child: Text(
+                                modeLabel,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Semantics(
+                            label: 'Session active time',
+                            value: sessionTime,
+                            child: ExcludeSemantics(
+                              child: Text(
+                                sessionTime,
+                                maxLines: 1,
+                                softWrap: false,
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Tooltip(
+                        message: 'Cycle active time $cycleTime',
+                        excludeFromSemantics: true,
+                        child: Semantics(
+                          label: 'Cycle progress, section, and active time',
+                          value: '$subtitle. Cycle active time $cycleTime',
+                          excludeSemantics: true,
+                          child: Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               actions: [
-                if (state.status == ActiveSessionStatus.active)
+                if (state.status == ActiveSessionStatus.active &&
+                    _review == null)
                   IconButton(
                     tooltip: 'Pause session',
-                    onPressed: widget.controller.pause,
+                    onPressed: _pauseSession,
                     icon: const Icon(Icons.pause_circle_outline),
+                  ),
+                if (state.status == ActiveSessionStatus.paused)
+                  IconButton(
+                    tooltip: 'Resume session',
+                    onPressed: widget.controller.resume,
+                    icon: const Icon(Icons.play_circle_outline),
                   ),
               ],
             ),
             body: Column(
               children: [
-                Material(
-                  color: Theme.of(context).colorScheme.surfaceContainerLow,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Cycle progress: ${current.clamp(0, total)} of $total',
-                        ),
-                        Semantics(
-                          label: 'Session active time',
-                          value: _format(state.sessionActiveTime),
-                          child: ExcludeSemantics(
-                            child: Text(
-                              'Session ${_format(state.sessionActiveTime)}',
-                            ),
-                          ),
-                        ),
-                        Semantics(
-                          label: 'Cycle active time',
-                          value: _format(state.cycleActiveTime),
-                          child: ExcludeSemantics(
-                            child: Text(
-                              'Cycle ${_format(state.cycleActiveTime)}',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (state.status == ActiveSessionStatus.paused)
-                  MaterialBanner(
-                    content: const Text(
-                      'Session paused. Resume when you are ready.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: widget.controller.resume,
-                        child: const Text('Resume'),
-                      ),
-                    ],
-                  ),
                 Expanded(
                   child: _review != null
                       ? PuzzleSolutionReviewView(
                           presentation: _review!,
+                          initialPath:
+                              _puzzleControllers[state.attempt?.id]?.reviewPath,
+                          onPathChanged: (path) =>
+                              _saveReviewPath(state.attempt?.id, path),
+                          initialOrientation:
+                              _puzzleControllers[state.attempt?.id]
+                                  ?.reviewOrientation,
+                          onOrientationChanged: (orientation) =>
+                              _saveReviewOrientation(
+                                state.attempt?.id,
+                                orientation,
+                              ),
+                          nextLabel: current >= total
+                              ? 'Finish cycle'
+                              : 'Next exercise',
                           onNext: _nextFromReview,
                           canAdvance:
                               state.status == ActiveSessionStatus.active &&
@@ -245,22 +318,71 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     );
   }
 
+  Future<void> _saveReviewPath(String? attemptId, List<int> path) async {
+    try {
+      await _puzzleControllers[attemptId]?.setReviewPath(path);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Review position could not be saved.'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _saveReviewPath(attemptId, path),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Widget get _backButton => IconButton(
     tooltip: MaterialLocalizations.of(context).backButtonTooltip,
     onPressed: _closeAndPop,
     icon: const BackButtonIcon(),
   );
 
+  Future<void> _saveReviewOrientation(
+    String? attemptId,
+    PuzzleSide orientation,
+  ) async {
+    try {
+      await _puzzleControllers[attemptId]?.setReviewOrientation(orientation);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Review orientation could not be saved.'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _saveReviewOrientation(attemptId, orientation),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _closeAndPop() async {
     if (_leaving) return;
     _leaving = true;
     setState(() {});
-    await widget.controller.whenIdle();
-    await Future.wait([
-      ..._puzzleControllers.values.map((controller) => controller.whenIdle()),
-    ]);
-    await widget.controller.whenIdle();
-    await widget.controller.close();
+    try {
+      await widget.controller.whenIdle();
+      await _settlePuzzleControllers();
+      await widget.controller.whenIdle();
+      await widget.controller.close();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _leaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Session could not be saved. Retry before leaving.'),
+          ),
+        );
+      }
+      return;
+    }
     if (!mounted) return;
     if (widget.controller.state.status ==
         ActiveSessionStatus.recoverableFailure) {
@@ -274,15 +396,48 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     });
   }
 
+  Future<void> _settlePuzzleControllers() async {
+    for (final controller in _puzzleControllers.values) {
+      final path = controller.reviewPath;
+      if (path != null) await controller.setReviewPath(path);
+      final orientation = controller.reviewOrientation;
+      if (orientation != null) {
+        await controller.setReviewOrientation(orientation);
+      }
+      await controller.whenIdle();
+    }
+  }
+
+  Future<void> _pauseSession() async {
+    try {
+      await _settlePuzzleControllers();
+      await widget.controller.pause();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session could not be paused. Retry.')),
+        );
+      }
+    }
+  }
+
   Future<void> _nextFromReview() async {
     final before = widget.controller.state;
     if (_advancePending || before.status != ActiveSessionStatus.active) return;
     final previousItemId = before.activeItem?.id;
     setState(() => _advancePending = true);
     try {
+      await _settlePuzzleControllers();
       await widget.controller.advance();
     } catch (_) {
-      if (mounted) setState(() => _advancePending = false);
+      if (mounted) {
+        setState(() => _advancePending = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Review could not be saved. Retry to continue.'),
+          ),
+        );
+      }
       return;
     }
     if (!mounted) return;
@@ -366,6 +521,8 @@ final class _ActivePuzzleSurfaceState extends State<_ActivePuzzleSurface> {
       final turn = widget.content.startingFen.split(' ').elementAtOrNull(1);
       return PuzzleSolvingView(
         controller: widget.controller,
+        showProgress: false,
+        modeLabel: null,
         currentExercise: widget.currentItem,
         totalExercises: widget.totalItems,
         orientation: turn == 'b' ? PuzzleSide.black : PuzzleSide.white,

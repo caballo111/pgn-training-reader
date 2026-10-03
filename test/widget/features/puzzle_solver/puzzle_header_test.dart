@@ -86,4 +86,31 @@ void main() {
     );
     semantics.dispose();
   });
+
+  testWidgets('shows safe source context without casual one-of-one progress', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PuzzleHeader(
+            currentExercise: 1,
+            totalExercises: 1,
+            evaluation: _evaluation(PuzzleSide.white),
+            showProgress: false,
+            contextTitle: 'Endgame Basics',
+            sectionLabel: 'Rook endings',
+            blockLabel: 'Block 8',
+            modeLabel: 'Casual practice',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Endgame Basics'), findsOneWidget);
+    expect(find.text('Rook endings · Block 8'), findsOneWidget);
+    expect(find.text('Casual practice'), findsOneWidget);
+    expect(find.textContaining('Exercise'), findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
 }

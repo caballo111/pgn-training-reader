@@ -5,10 +5,11 @@ import '../../../domain/training/puzzle_attempt.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
 import '../../../shared/chessboard/chessboard_adapter.dart';
 import '../../../shared/presentation/study_layout.dart';
+import '../../../shared/presentation/study_block_navigation.dart';
 import '../../../shared/presentation/study_navigation_controls.dart';
 import '../../game_reader/presentation/reader_board.dart';
 import '../application/puzzle_presentation_state.dart';
-import 'puzzle_controls.dart';
+import 'puzzle_attempt_variations.dart';
 import '../../../shared/presentation/study_move_button.dart';
 
 /// Read-only solution review. This surface accepts only the safe projection,
@@ -18,16 +19,37 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
     required this.presentation,
     this.onRetry,
     this.onNext,
+    this.onPrevious,
+    this.showBlockNavigation = false,
     this.canAdvance = true,
     this.isFinalExercise = false,
+    this.nextLabel,
+    this.showRetry = true,
+    this.initialPath,
+    this.onPathChanged,
+    this.initialOrientation,
+    this.onOrientationChanged,
     super.key,
   });
 
   final PuzzlePresentationState presentation;
   final VoidCallback? onRetry;
   final VoidCallback? onNext;
+  final VoidCallback? onPrevious;
+  final bool showBlockNavigation;
   final bool canAdvance;
   final bool isFinalExercise;
+
+  /// Overrides the cycle-oriented default label for an owning study context.
+  final String? nextLabel;
+  final bool showRetry;
+
+  /// Selected authored branch, as child indices from the root.
+  /// Null restores the accepted path; an empty path restores the start.
+  final List<int>? initialPath;
+  final ValueChanged<List<int>>? onPathChanged;
+  final PuzzleSide? initialOrientation;
+  final ValueChanged<PuzzleSide>? onOrientationChanged;
 
   @override
   State<PuzzleSolutionReviewView> createState() =>
@@ -37,9 +59,13 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
 final class _PuzzleSolutionReviewViewState
     extends State<PuzzleSolutionReviewView> {
   final Map<int, int> _variationChoices = {};
+  final Map<int, GlobalKey> _moveKeys = {};
+  final ScrollController _detailsController = ScrollController();
   int _plyIndex = 0;
   late PuzzleSide _orientation =
-      widget.presentation.boardOrientation ?? _startingOrientation;
+      widget.initialOrientation ??
+      widget.presentation.boardOrientation ??
+      _startingOrientation;
 
   PuzzleSide get _startingOrientation =>
       widget.presentation.startingFen.split(' ').elementAtOrNull(1) == 'b'
@@ -52,7 +78,9 @@ final class _PuzzleSolutionReviewViewState
     if (!identical(oldWidget.presentation, widget.presentation)) {
       _variationChoices.clear();
       _orientation =
-          widget.presentation.boardOrientation ?? _startingOrientation;
+          widget.initialOrientation ??
+          widget.presentation.boardOrientation ??
+          _startingOrientation;
       _initializeReachedPath();
     }
   }
@@ -63,7 +91,20 @@ final class _PuzzleSolutionReviewViewState
     _initializeReachedPath();
   }
 
+  @override
+  void dispose() {
+    _detailsController.dispose();
+    super.dispose();
+  }
+
   void _initializeReachedPath() {
+    if (widget.initialPath != null) {
+      for (var i = 0; i < widget.initialPath!.length; i++) {
+        _variationChoices[i] = widget.initialPath![i];
+      }
+      _plyIndex = widget.initialPath!.length - 1;
+      return;
+    }
     final entries = widget.presentation.entries
         .where((entry) => entry.accepted)
         .toList();
@@ -132,56 +173,63 @@ final class _PuzzleSolutionReviewViewState
     );
 
     return StudyLayout(
-      board: ReaderBoard(board: board, showOrientationControl: false),
+      controlCount: 6,
+      controlTrailingWidth: 48,
+      board: ReaderBoard(
+        board: board,
+        showOrientationControl: false,
+        positionLabel: selected == null
+            ? 'Starting position.'
+            : 'Position after ${_movePrefix(selected)}${selected.san}.'
+                  '${selected.nags.isEmpty ? '' : ' Annotations: ${selected.nags.map(_nagLabel).join(', ')}.'}',
+      ),
       controls: StudyNavigationControls(
+        status: _outcomeIndicator(context),
+        onReturnToPlayedLine: _returnToPlayedLine,
         canPrevious: _plyIndex >= 0,
         canNext: _plyIndex + 1 < line.length,
-        onFirst: () => setState(() => _plyIndex = -1),
-        onPrevious: () => setState(() => _plyIndex--),
-        onNext: () => setState(() => _plyIndex++),
-        onLast: () => setState(() => _plyIndex = line.length - 1),
+        onFirst: () => _setCursor(-1),
+        onPrevious: () => _setCursor(_plyIndex - 1),
+        onNext: () => _setCursor(_plyIndex + 1),
+        onLast: () => _setCursor(line.length - 1),
         onFlip: () => setState(() {
           _orientation = _orientation == PuzzleSide.white
               ? PuzzleSide.black
               : PuzzleSide.white;
+          widget.onOrientationChanged?.call(_orientation);
         }),
       ),
       details: ListView(
-        padding: const EdgeInsets.all(16),
+        controller: _detailsController,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
         children: [
+          for (
+            var index = 0;
+            index < widget.presentation.comments.length;
+            index++
+          )
+            Semantics(
+              container: true,
+              key: index == 0 ? const ValueKey('puzzle-notes') : null,
+              label: index == 0 ? 'Puzzle notes' : null,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(widget.presentation.comments[index]),
+              ),
+            ),
+          if (widget.presentation.comments.isNotEmpty)
+            const SizedBox(height: 4),
           Semantics(
-            label: 'Puzzle outcome',
-            value: _outcomeLabel(widget.presentation),
-            child: ExcludeSemantics(
-              child: Text('Result: ${_outcomeLabel(widget.presentation)}'),
+            container: true,
+            explicitChildNodes: true,
+            label: 'Solution line',
+            value: _plyIndex < 0
+                ? 'Starting position, ${line.length} solution moves'
+                : 'Move ${_plyIndex + 1} of ${line.length}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: _solutionRows(line),
             ),
-          ),
-          if (widget.presentation.comments.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Puzzle notes',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            for (final comment in widget.presentation.comments) Text(comment),
-          ],
-          const SizedBox(height: 16),
-          const Text(
-            'Solution line',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          Wrap(
-            children: [
-              for (var index = 0; index < line.length; index++)
-                StudyMoveButton(
-                  prefix: _movePrefix(line[index]),
-                  label: line[index].san,
-                  selected: _plyIndex == index,
-                  annotation: line[index].nags.isEmpty
-                      ? null
-                      : line[index].nags.map(_nagLabel).join(' '),
-                  onPressed: () => setState(() => _plyIndex = index),
-                ),
-            ],
           ),
           if (widget.presentation.usedFullLineFallback)
             const Padding(
@@ -190,64 +238,265 @@ final class _PuzzleSolutionReviewViewState
                 'Full line used: no completion marker on this continuation.',
               ),
             ),
-          for (var depth = 0; depth < line.length; depth++)
-            if (_siblingsAt(depth).length > 1)
-              DropdownButton<int>(
-                key: ValueKey('variation-$depth'),
-                value: _variationChoices[depth] ?? 0,
-                isExpanded: true,
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _variationChoices[depth] = value;
-                    _variationChoices.removeWhere((key, _) => key > depth);
-                    _plyIndex = depth;
-                  });
-                },
-                items: [
-                  for (
-                    var index = 0;
-                    index < _siblingsAt(depth).length;
-                    index++
-                  )
-                    DropdownMenuItem(
-                      value: index,
-                      child: Text(
-                        'Variation at move ${depth + 1}: ${_siblingsAt(depth)[index].san}',
-                      ),
-                    ),
-                ],
-              ),
-          const SizedBox(height: 8),
-          Text(
-            selected == null
-                ? 'Starting position'
-                : 'Selected move: ${selected.san}',
-          ),
-          if (selected != null) ...[
-            if (selected.nags.isNotEmpty)
-              Text('Annotations: ${selected.nags.map(_nagLabel).join(', ')}'),
-            for (final comment in selected.comments) Text(comment),
-          ],
-          Center(child: Text('${_plyIndex + 1} of ${line.length}')),
-          const SizedBox(height: 12),
-          PuzzleControls(
-            mode: PuzzleControlsMode.review,
-            onPause: () {},
-            onShowSolution: () {},
-            onSkip: () {},
-            onRetry: widget.onRetry,
-          ),
-          if (widget.onNext != null)
-            FilledButton(
-              onPressed: widget.canAdvance ? widget.onNext : null,
-              child: Text(
-                widget.isFinalExercise ? 'Finish cycle' : 'Next exercise',
-              ),
-            ),
         ],
       ),
+      actions:
+          (widget.onRetry == null || !widget.showRetry) &&
+              widget.onNext == null &&
+              widget.onPrevious == null &&
+              !widget.showBlockNavigation
+          ? null
+          : Row(
+              children: [
+                if (widget.showBlockNavigation ||
+                    widget.onPrevious != null) ...[
+                  StudyPreviousBlockButton(
+                    showLabel: false,
+                    onPressed: widget.canAdvance ? widget.onPrevious : null,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                if (widget.onRetry != null && widget.showRetry) ...[
+                  Flexible(
+                    flex: 2,
+                    fit: FlexFit.loose,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: widget.onRetry,
+                      icon: const Icon(Icons.replay),
+                      label: const Text(
+                        'Try again',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  if (widget.onNext != null) const SizedBox(width: 8),
+                ],
+                if (widget.onNext != null)
+                  Expanded(
+                    flex: 3,
+                    child: StudyNextBlockButton(
+                      label:
+                          widget.nextLabel ??
+                          (widget.isFinalExercise
+                              ? 'Finish cycle'
+                              : 'Next exercise'),
+                      primary: true,
+                      onPressed: widget.canAdvance ? widget.onNext : null,
+                    ),
+                  ),
+              ],
+            ),
     );
+  }
+
+  Widget _outcomeIndicator(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final successColor = Theme.of(context).brightness == Brightness.dark
+        ? Colors.greenAccent.shade200
+        : Colors.green.shade800;
+    final (icon, color) = switch (widget.presentation.outcome) {
+      PuzzleAttemptOutcome.passed => (Icons.check_circle_outline, successColor),
+      PuzzleAttemptOutcome.wrongMove => (Icons.cancel_outlined, scheme.error),
+      PuzzleAttemptOutcome.assisted => (
+        Icons.lightbulb_outline,
+        scheme.tertiary,
+      ),
+      PuzzleAttemptOutcome.revealed => (
+        Icons.visibility_outlined,
+        scheme.onSurfaceVariant,
+      ),
+      PuzzleAttemptOutcome.skipped => (
+        Icons.skip_next_outlined,
+        scheme.onSurfaceVariant,
+      ),
+      PuzzleAttemptOutcome.timedOut => (Icons.timer_off_outlined, scheme.error),
+      PuzzleAttemptOutcome.abandoned => (
+        Icons.stop_circle_outlined,
+        scheme.onSurfaceVariant,
+      ),
+      null => (Icons.help_outline, scheme.onSurfaceVariant),
+    };
+    final label = _outcomeLabel(widget.presentation);
+    return Semantics(
+      label: 'Puzzle outcome',
+      value: label,
+      liveRegion: true,
+      child: Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: ExcludeSemantics(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Icon(icon, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Keep uninterrupted notation together. Comments and alternatives terminate
+  // a run, so each branch remains adjacent to its authored branching move.
+  List<Widget> _solutionRows(List<PuzzlePresentationMove> line) {
+    final rows = <Widget>[];
+    final run = <Widget>[];
+    final variations = puzzleAttemptVariations(widget.presentation);
+    void flushRun() {
+      if (run.isEmpty) return;
+      rows.add(Wrap(spacing: 2, runSpacing: 0, children: List.of(run)));
+      run.clear();
+    }
+
+    for (var index = 0; index < line.length; index++) {
+      final move = line[index];
+      run.add(
+        StudyMoveButton(
+          key: _moveKeys.putIfAbsent(index, GlobalKey.new),
+          prefix: _movePrefix(move),
+          label: move.san,
+          selected: _plyIndex == index,
+          annotation: move.nags.isEmpty
+              ? null
+              : move.nags.map(_nagLabel).join(' '),
+          onPressed: () => _setCursor(index),
+        ),
+      );
+      final siblings = _siblingsAt(index);
+      final branches = puzzleVariationsAt(variations, [
+        for (final preceding in line.take(index)) preceding.uci,
+      ]);
+      if (move.comments.isEmpty && siblings.length <= 1 && branches.isEmpty) {
+        continue;
+      }
+      flushRun();
+      if (branches.isNotEmpty) {
+        rows.add(PuzzleAttemptVariations(variations: branches));
+      }
+      if (move.comments.isNotEmpty) {
+        rows.add(
+          Padding(
+            padding: EdgeInsets.only(left: _branchIndent(index) + 8, bottom: 4),
+            child: Text(move.comments.join('\n')),
+          ),
+        );
+      }
+      if (siblings.length > 1) {
+        rows.add(
+          ExpansionTile(
+            key: ValueKey('alternatives-$index'),
+            minTileHeight: 48,
+            visualDensity: VisualDensity.compact,
+            tilePadding: EdgeInsets.only(left: _branchIndent(index)),
+            title: Text('Alternatives at ${_movePrefix(move).trim()}'),
+            children: [
+              for (var branch = 0; branch < siblings.length; branch++)
+                if (branch != (_variationChoices[index] ?? 0))
+                  ListTile(
+                    key: ValueKey('alternative-$index-$branch'),
+                    dense: true,
+                    minTileHeight: 48,
+                    contentPadding: EdgeInsets.only(
+                      left: _branchIndent(index) + 8,
+                    ),
+                    title: Text(
+                      '${_movePrefix(siblings[branch])}${siblings[branch].san}',
+                    ),
+                    subtitle: siblings[branch].comments.isEmpty
+                        ? null
+                        : Text(siblings[branch].comments.join('\n')),
+                    onTap: () => _selectAlternative(index, branch),
+                  ),
+            ],
+          ),
+        );
+      }
+    }
+    flushRun();
+    final trailingBranches = puzzleVariationsAt(variations, [
+      for (final move in line) move.uci,
+    ]);
+    if (trailingBranches.isNotEmpty) {
+      rows.add(PuzzleAttemptVariations(variations: trailingBranches));
+    }
+    return rows;
+  }
+
+  void _selectAlternative(int depth, int index) {
+    setState(() {
+      _variationChoices[depth] = index;
+      _variationChoices.removeWhere((key, _) => key > depth);
+      _plyIndex = depth;
+    });
+    widget.onPathChanged?.call([
+      for (var i = 0; i <= depth; i++) _variationChoices[i] ?? 0,
+    ]);
+    _scrollSelectedMoveIntoView();
+  }
+
+  void _setCursor(int index) {
+    setState(() => _plyIndex = index.clamp(-1, _line.length - 1));
+    widget.onPathChanged?.call(_pathThrough(_plyIndex));
+    _scrollSelectedMoveIntoView();
+  }
+
+  void _scrollSelectedMoveIntoView() {
+    final index = _plyIndex;
+    if (index < 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || index != _plyIndex) return;
+      final target = _moveKeys[index]?.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 160),
+          alignment: 0.5,
+        );
+      }
+    });
+  }
+
+  double _branchIndent(int depth) =>
+      12.0 *
+      _variationChoices.entries
+          .where((entry) => entry.key < depth && entry.value != 0)
+          .length
+          .clamp(0, 3)
+          .toInt();
+
+  List<int> _pathThrough(int index) => [
+    for (var depth = 0; depth <= index; depth++) _variationChoices[depth] ?? 0,
+  ];
+
+  void _returnToPlayedLine() {
+    final choices = <int, int>{};
+    var siblings =
+        widget.presentation.solution ?? const <PuzzlePresentationMove>[];
+    final accepted = widget.presentation.entries.where(
+      (entry) => entry.accepted,
+    );
+    for (final entry in accepted) {
+      final choice = siblings.indexWhere((move) => move.uci == entry.uci);
+      if (choice < 0 || siblings.isEmpty) break;
+      choices[choices.length] = choice;
+      siblings = siblings[choice].children;
+    }
+    setState(() {
+      _variationChoices
+        ..clear()
+        ..addAll(choices);
+      final line = _line;
+      _plyIndex = accepted.isEmpty
+          ? -1
+          : (accepted.length - 1).clamp(-1, line.length - 1);
+    });
+    widget.onPathChanged?.call(_pathThrough(_plyIndex));
+    _scrollSelectedMoveIntoView();
   }
 
   List<PuzzlePresentationMove> _siblingsAt(int depth) {
@@ -265,7 +514,11 @@ final class _PuzzleSolutionReviewViewState
   }
 
   String _movePrefix(PuzzlePresentationMove move) {
-    final fields = move.fenBefore.split(' ');
+    return _prefixForFen(move.fenBefore);
+  }
+
+  String _prefixForFen(String fen) {
+    final fields = fen.split(' ');
     final number = fields.length >= 6 ? int.tryParse(fields[5]) ?? 1 : 1;
     final isBlack = fields.length >= 2 && fields[1] == 'b';
     return '$number${isBlack ? '...' : '.'} ';
@@ -291,7 +544,7 @@ final class _PuzzleSolutionReviewViewState
       switch (presentation.outcome) {
         PuzzleAttemptOutcome.passed => 'Passed',
         PuzzleAttemptOutcome.assisted => 'Assisted',
-        PuzzleAttemptOutcome.wrongMove => 'Incorrect move',
+        PuzzleAttemptOutcome.wrongMove => 'First attempt failed',
         PuzzleAttemptOutcome.revealed => 'Solution revealed',
         PuzzleAttemptOutcome.skipped => 'Skipped',
         PuzzleAttemptOutcome.timedOut => 'Timed out',

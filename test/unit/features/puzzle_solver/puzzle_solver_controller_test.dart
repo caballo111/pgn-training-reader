@@ -8,6 +8,7 @@ import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
 import 'package:pgntrainingreader/domain/training/attempt_move.dart';
 import 'package:pgntrainingreader/domain/training/authored_line_puzzle_evaluator.dart';
 import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
+import 'package:pgntrainingreader/domain/training/puzzle_evaluator.dart';
 import 'package:pgntrainingreader/domain/training/timing_segment.dart';
 import 'package:pgntrainingreader/domain/training/training_repository.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/application/puzzle_solver_controller.dart';
@@ -452,4 +453,284 @@ void main() {
       expect(controller.currentEvaluation!.currentFen, isNot(_fen));
     },
   );
+
+  test(
+    'records interleaved distinct mistakes and restores v2 history',
+    () async {
+      Map<String, dynamic>? interaction;
+      controller = PuzzleSolverController(
+        automaticReplies: false,
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        loadInteraction: (_) async => interaction,
+        saveInteraction: (_, value) async => interaction = value,
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+      for (final move in ['e2e3', 'd2d3', 'e2e3', 'c2c3', 'd2d3']) {
+        await controller.submitMove(uci: move);
+      }
+
+      expect(interaction!['version'], 2);
+      expect(controller.state!.rejections.map((entry) => entry.uci), [
+        'e2e3',
+        'd2d3',
+        'c2c3',
+      ]);
+      expect(
+        controller.state!.entries.where((entry) => !entry.accepted),
+        hasLength(3),
+      );
+      expect(repository.attempt.outcome, PuzzleAttemptOutcome.wrongMove);
+      expect(repository.attempt.wrongMoveCount, 1);
+      expect(controller.state!.rejectedMove!.uci, 'd2d3');
+      expect(controller.state!.rejections.map((entry) => entry.id), [
+        'rejection-1',
+        'rejection-2',
+        'rejection-3',
+      ]);
+      expect(controller.state!.phase.name, 'failedPractice');
+
+      controller = PuzzleSolverController(
+        automaticReplies: false,
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        loadInteraction: (_) async => interaction,
+        saveInteraction: (_, value) async => interaction = value,
+      );
+      final restored = await controller.initialize(
+        puzzle: _puzzle,
+        attemptId: 'attempt',
+      );
+      expect(restored.rejections.map((entry) => entry.uci), [
+        'e2e3',
+        'd2d3',
+        'c2c3',
+      ]);
+      await controller.submitMove(uci: 'e2e3');
+      expect(controller.state!.rejections, hasLength(3));
+      await controller.submitMove(uci: 'b2b3');
+      expect(controller.state!.rejections.map((entry) => entry.uci), [
+        'e2e3',
+        'd2d3',
+        'c2c3',
+        'b2b3',
+      ]);
+      expect(repository.attempt.outcome, PuzzleAttemptOutcome.wrongMove);
+      expect(repository.attempt.wrongMoveCount, 1);
+    },
+  );
+
+  test(
+    'rejects unknown future interaction versions without overwriting them',
+    () async {
+      var saves = 0;
+      controller = PuzzleSolverController(
+        automaticReplies: false,
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        loadInteraction: (_) async => {'version': 3, 'future': true},
+        saveInteraction: (_, _) async => saves++,
+      );
+
+      await expectLater(
+        controller.initialize(puzzle: _puzzle, attemptId: 'attempt'),
+        throwsStateError,
+      );
+      expect(saves, 0);
+    },
+  );
+
+  test(
+    'upgrades legacy entries while retaining mistake history and review path',
+    () async {
+      Map<String, dynamic>? interaction;
+      controller = PuzzleSolverController(
+        automaticReplies: false,
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        loadInteraction: (_) async => interaction,
+        saveInteraction: (_, value) async => interaction = value,
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+      await controller.submitMove(uci: 'e2e3');
+      await controller.submitMove(uci: 'd2d3');
+      final legacy = Map<String, dynamic>.from(interaction!);
+      legacy['version'] = 1;
+      legacy.remove('rejections');
+      legacy.remove('reviewPath');
+      interaction = legacy;
+
+      controller = PuzzleSolverController(
+        automaticReplies: false,
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        loadInteraction: (_) async => interaction,
+        saveInteraction: (_, value) async => interaction = value,
+      );
+      final restored = await controller.initialize(
+        puzzle: _puzzle,
+        attemptId: 'attempt',
+      );
+      expect(restored.rejections.map((entry) => entry.uci), ['e2e3', 'd2d3']);
+      expect(interaction!['version'], 2);
+      expect(interaction!['phase'], 'failedPractice');
+
+      await Future.wait([
+        controller.setReviewPath([0]),
+        controller.setReviewPath([]),
+      ]);
+      expect(controller.reviewPath, isEmpty);
+      expect(interaction!['reviewPath'], isEmpty);
+      await expectLater(
+        controller.setReviewPath([0, 0, 0]),
+        throwsArgumentError,
+      );
+      expect(controller.reviewPath, isEmpty);
+    },
+  );
+
+  test(
+    'same UCI at separate authored positions is a separate mistake',
+    () async {
+      final pathPuzzle = ChessContent(
+        headers: const {},
+        startingFen: _fen,
+        contentType: ContentType.puzzle,
+        rootMoves: [
+          MoveNode(
+            san: 'e4',
+            uci: 'e2e4',
+            fenBefore: _fen,
+            fenAfter: 'ignored',
+            children: [
+              MoveNode(
+                san: 'e5',
+                uci: 'e7e5',
+                fenBefore: 'ignored',
+                fenAfter: 'ignored',
+                children: [
+                  MoveNode(
+                    san: 'd4',
+                    uci: 'd2d4',
+                    fenBefore: 'ignored',
+                    fenAfter: 'ignored',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+      await controller.initialize(puzzle: pathPuzzle, attemptId: 'attempt');
+      await controller.submitMove(uci: 'g1f3');
+      await controller.submitMove(uci: 'e2e4');
+      await controller.submitMove(uci: 'e7e5');
+      await controller.submitMove(uci: 'g1f3');
+
+      expect(controller.state!.rejections, hasLength(2));
+      expect(controller.state!.rejections.map((entry) => entry.uci), [
+        'g1f3',
+        'g1f3',
+      ]);
+      expect(controller.state!.rejections.first.authoredPath, isEmpty);
+      expect(controller.state!.rejections.last.authoredPath, ['e2e4', 'e7e5']);
+    },
+  );
+
+  test(
+    'whenIdle waits for cursor saves and surfaces failures for retry',
+    () async {
+      Map<String, dynamic>? interaction;
+      Completer<void>? cursorWriteGate;
+      var failCursorWrite = false;
+      controller = PuzzleSolverController(
+        automaticReplies: false,
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        loadInteraction: (_) async => interaction,
+        saveInteraction: (_, value) async {
+          final gate = cursorWriteGate;
+          if (gate != null) await gate.future;
+          if (failCursorWrite) throw StateError('cursor save failed');
+          interaction = value;
+        },
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+      expect(controller.reviewOrientation, isNull);
+
+      cursorWriteGate = Completer<void>();
+      final cursorSave = controller.setReviewPath([0]);
+      var idleCompleted = false;
+      final idle = controller.whenIdle().then((_) => idleCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(idleCompleted, isFalse);
+      cursorWriteGate.complete();
+      await Future.wait([cursorSave, idle]);
+      expect(idleCompleted, isTrue);
+      expect(interaction!['reviewPath'], [0]);
+
+      cursorWriteGate = null;
+      failCursorWrite = true;
+      final failedCursorSave = controller.setReviewPath([]);
+      await expectLater(failedCursorSave, throwsStateError);
+      await expectLater(controller.whenIdle(), throwsStateError);
+
+      failCursorWrite = false;
+      await controller.setReviewPath([0]);
+      await controller.whenIdle();
+      expect(interaction!['reviewPath'], [0]);
+
+      failCursorWrite = true;
+      final failedOrientationSave = controller.setReviewOrientation(
+        PuzzleSide.black,
+      );
+      await expectLater(failedOrientationSave, throwsStateError);
+      await expectLater(controller.whenIdle(), throwsStateError);
+      failCursorWrite = false;
+      await controller.setReviewOrientation(PuzzleSide.black);
+      await controller.whenIdle();
+      expect(interaction!['reviewOrientation'], 'black');
+
+      controller = PuzzleSolverController(
+        automaticReplies: false,
+        repository: repository,
+        evaluatorFactory: () => AuthoredLinePuzzleEvaluator(idGenerator: ids),
+        loadInteraction: (_) async => interaction,
+        saveInteraction: (_, value) async => interaction = value,
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: 'attempt');
+      expect(controller.reviewOrientation, PuzzleSide.black);
+    },
+  );
+
+  test('promotion choices are distinct UCI mistake identities', () async {
+    const promotionFen = '7k/P7/8/8/8/8/8/7K w - - 0 1';
+    final promotionPuzzle = ChessContent(
+      headers: const {},
+      startingFen: promotionFen,
+      contentType: ContentType.puzzle,
+      rootMoves: [
+        MoveNode(
+          san: 'Kg2',
+          uci: 'h1g2',
+          fenBefore: promotionFen,
+          fenAfter: 'ignored',
+        ),
+      ],
+    );
+    await controller.initialize(puzzle: promotionPuzzle, attemptId: 'attempt');
+    await controller.submitMove(uci: 'a7a8q');
+    await controller.submitMove(uci: 'a7a8r');
+    await controller.submitMove(uci: 'a7a8q');
+
+    expect(controller.state!.rejections.map((entry) => entry.uci), [
+      'a7a8q',
+      'a7a8r',
+    ]);
+    expect(controller.state!.rejectedMove!.uci, 'a7a8q');
+    expect(controller.state!.rejections.map((entry) => entry.id), [
+      'rejection-1',
+      'rejection-2',
+    ]);
+  });
 }

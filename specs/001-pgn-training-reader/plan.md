@@ -667,3 +667,10 @@ benchmark evidence cannot accept reference-device requirements. Android build,
 original-corpus measurements and physical TalkBack/process-death acceptance
 remain pending. This review does not approve binary distribution. Future main
 screen/icon/board-design proposals are tracked in [backlog](../backlog.md).
+
+## Continuous study follow-up
+
+Feature 002 adopts the direct in-place puzzle flow for book study and shared
+cycle solving/review improvements. Its requirements, implementation plan,
+and acceptance tasks are tracked in
+[002-continuous-study-flow](../002-continuous-study-flow/spec.md).

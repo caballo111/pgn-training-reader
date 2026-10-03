@@ -1,5 +1,9 @@
 # Puzzle UX assessment and fixing plan
 
+Historical implementation record. The rejection suppression and multi-surface
+entry/review decisions are superseded by the adopted
+[continuous study feature](../002-continuous-study-flow/spec.md).
+
 Date: 2026-10-01. Status: implemented; automated verification passed; Android build and physical-device acceptance pending.
 
 Scope: reading versus solving, casual practice versus cycle training, automatic

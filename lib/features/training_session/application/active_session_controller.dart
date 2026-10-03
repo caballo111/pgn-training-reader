@@ -403,7 +403,11 @@ final class ActiveSessionController extends ChangeNotifier
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed &&
         _state.status == ActiveSessionStatus.active) {
-      unawaited(pause());
+      unawaited(
+        pause().catchError((Object error) async {
+          await _run(() async => throw error);
+        }),
+      );
     }
   }
 

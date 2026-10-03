@@ -12,6 +12,7 @@ import 'package:pgntrainingreader/domain/training/cycle.dart';
 import 'package:pgntrainingreader/domain/training/lifecycle_status.dart';
 import 'package:pgntrainingreader/domain/training/progress_aggregate.dart';
 import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
+import 'package:pgntrainingreader/domain/training/puzzle_interaction_repository.dart';
 import 'package:pgntrainingreader/domain/training/timing_segment.dart';
 import 'package:pgntrainingreader/domain/training/training_repository.dart';
 import 'package:pgntrainingreader/domain/training/training_session.dart';
@@ -21,6 +22,7 @@ import 'package:pgntrainingreader/domain/training/training_set_item.dart';
 import 'package:pgntrainingreader/features/training_session/application/active_session_controller.dart';
 import 'package:pgntrainingreader/features/training_session/presentation/active_session_page.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solving_view.dart';
+import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
 
 final _startedAt = DateTime.utc(2026, 9, 28, 12);
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -34,6 +36,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       final clock = _TestClock();
       final attempt = PuzzleAttempt(
         id: 'attempt',
@@ -121,22 +124,26 @@ void main() {
       );
       await tester.tap(find.text('Open session'));
       await tester.pumpAndSettle();
-      expect(find.text('White to move'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.label == 'White to move',
+        ),
+        findsOneWidget,
+      );
       expect(find.byType(PuzzleSolvingView), findsOneWidget);
+      await _checkActionGeometry(tester, ['Hint', 'Show solution']);
 
       clock.elapsed += const Duration(seconds: 3);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       await tester.pumpAndSettle();
       expect(service.pauseCalls, 1);
       expect(service.segmentDurations, [const Duration(seconds: 3)]);
-      expect(
-        find.text('Session paused. Resume when you are ready.'),
-        findsOneWidget,
-      );
+      expect(find.byTooltip('Resume session'), findsOneWidget);
       expect(tester.takeException(), isNull);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Resume'));
+      await tester.tap(find.byTooltip('Resume session'));
       await tester.pumpAndSettle();
       clock.elapsed += const Duration(seconds: 4);
       await tester.pump(const Duration(seconds: 1));
@@ -152,21 +159,58 @@ void main() {
       expect(repository.attempt.outcome, PuzzleAttemptOutcome.passed);
       controller.refreshClock();
       await tester.pumpAndSettle();
-      expect(find.text('Selected move: e4'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is ReaderBoard &&
+              widget.positionLabel?.contains('e4.') == true,
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Continue to review'), findsNothing);
+      await _checkActionGeometry(tester, ['Finish cycle']);
+      repository.failInteractionWrites = true;
+      await tester.tap(find.byTooltip('Starting position'));
+      await tester.pumpAndSettle();
+      expect(find.text('Review position could not be saved.'), findsOneWidget);
+      ScaffoldMessenger.of(tester.element(find.text('Finish cycle')))
+          .clearSnackBars();
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.ancestor(
+          of: find.text('Finish cycle'),
+          matching: find.byType(FilledButton),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Finish cycle'), findsOneWidget);
+      expect(
+        find.text('Review could not be saved. Retry to continue.'),
+        findsOneWidget,
+      );
+      expect(controller.state.status, ActiveSessionStatus.active);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(service.closeCalls, 0);
+      expect(find.text('Open session'), findsNothing);
+      repository.failInteractionWrites = false;
       await tester.tap(find.byTooltip('Pause session'));
       await tester.pumpAndSettle();
       expect(controller.state.status, ActiveSessionStatus.paused);
       clock.elapsed += const Duration(seconds: 5);
       await tester.pump(const Duration(seconds: 5));
-      expect(find.text('Session 00:07'), findsOneWidget);
+      expect(find.text('00:07'), findsOneWidget);
       expect(
         tester.getSemantics(find.bySemanticsLabel('Session active time')).value,
         '00:07',
       );
       expect(
-        tester.getSemantics(find.bySemanticsLabel('Cycle active time')).value,
-        '00:07',
+        tester
+            .getSemantics(
+              find.bySemanticsLabel('Cycle progress, section, and active time'),
+            )
+            .value,
+        contains('Cycle active time 00:07'),
       );
       expect(controller.state.session?.status, TrainingSessionStatus.paused);
       expect(
@@ -193,6 +237,36 @@ void main() {
   );
 }
 
+Future<void> _checkActionGeometry(
+  WidgetTester tester,
+  List<String> labels,
+) async {
+  for (final size in [
+    const Size(360, 640),
+    const Size(412, 915),
+    const Size(640, 360),
+  ]) {
+    for (final scale in [1.0, 2.0]) {
+      tester.view.physicalSize = size;
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      await tester.pumpAndSettle();
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'Cycle layout at $size with text scale $scale',
+      );
+      for (final label in labels) {
+        final rect = tester.getRect(find.text(label));
+        expect(rect.top, greaterThanOrEqualTo(0));
+        expect(rect.bottom, lessThanOrEqualTo(size.height));
+      }
+    }
+  }
+  tester.view.physicalSize = const Size(320, 800);
+  tester.platformDispatcher.textScaleFactorTestValue = 1;
+  await tester.pumpAndSettle();
+}
+
 final class _TestClock implements AppClock {
   Duration elapsed = Duration.zero;
   @override
@@ -214,10 +288,25 @@ final class _ContentRepository implements ChessContentRepository {
   Future<ChessContent?> getById(String id) async => content;
 }
 
-final class _TrainingRepository implements TrainingRepository {
+final class _TrainingRepository
+    implements TrainingRepository, PuzzleInteractionRepository {
   _TrainingRepository({required this.attempt, required this.item});
   PuzzleAttempt attempt;
   final TrainingSetItem item;
+  bool failInteractionWrites = false;
+  Map<String, dynamic>? interaction;
+  @override
+  Future<Map<String, dynamic>?> loadPuzzleInteraction(String attemptId) async =>
+      interaction;
+  @override
+  Future<void> savePuzzleInteraction(
+    String attemptId,
+    Map<String, dynamic> value,
+  ) async {
+    if (failInteractionWrites) throw StateError('Interaction save failed');
+    interaction = Map.of(value);
+  }
+
   @override
   Future<List<TrainingSession>> listSessions(String cycleId) async => [];
   @override

@@ -19,8 +19,11 @@ class StudyMoveButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
+    container: true,
+    excludeSemantics: true,
     button: true,
     selected: selected,
+    onTap: onPressed,
     label:
         '${prefix ?? ''}$label${annotation == null ? '' : ', annotation $annotation'}'
         '${selected ? ', current position' : ''}',

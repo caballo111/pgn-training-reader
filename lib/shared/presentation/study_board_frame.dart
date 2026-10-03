@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Common side-to-move label and square geometry for read-only and active study boards.
+import '../../domain/training/puzzle_evaluator.dart';
+
+/// A square board retaining turn information for assistive technology.
 class StudyBoardFrame extends StatelessWidget {
   const StudyBoardFrame({
     required this.sideToMove,
@@ -8,22 +10,14 @@ class StudyBoardFrame extends StatelessWidget {
     super.key,
   });
 
-  final String sideToMove;
+  final PuzzleSide sideToMove;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Semantics(
-        liveRegion: true,
-        label: sideToMove,
-        child: ExcludeSemantics(
-          child: Text(sideToMove, textAlign: TextAlign.center),
-        ),
-      ),
-      AspectRatio(aspectRatio: 1, child: child),
-    ],
+  Widget build(BuildContext context) => Semantics(
+    key: const ValueKey('study-side-to-move'),
+    liveRegion: true,
+    label: sideToMove == PuzzleSide.white ? 'White to move' : 'Black to move',
+    child: AspectRatio(aspectRatio: 1, child: child),
   );
 }

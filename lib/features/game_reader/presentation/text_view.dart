@@ -13,10 +13,18 @@ import '../../../shared/presentation/study_navigation_controls.dart';
 /// Readable study material. Positions and navigation appear only when the
 /// PGN supplies a board position or moves.
 final class TextView extends StatefulWidget {
-  const TextView({required this.content, this.readPuzzle = false, super.key});
+  const TextView({
+    required this.content,
+    this.readPuzzle = false,
+    this.initialState,
+    this.onStateChanged,
+    super.key,
+  });
 
   final ChessContent content;
   final bool readPuzzle;
+  final Map<String, dynamic>? initialState;
+  final ValueChanged<Map<String, dynamic>>? onStateChanged;
 
   @override
   State<TextView> createState() => _TextViewState();
@@ -26,6 +34,48 @@ final class _TextViewState extends State<TextView> {
   late GameReaderController _controller = GameReaderController(widget.content);
 
   PuzzleSide _orientation = PuzzleSide.white;
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    final saved = widget.initialState;
+    for (final index in (saved?['path'] as List? ?? const [])) {
+      if (index is int) _controller.selectVariation(index);
+    }
+    _orientation = saved?['orientation'] == 'black'
+        ? PuzzleSide.black
+        : PuzzleSide.white;
+    _scrollController = ScrollController(
+      initialScrollOffset: (saved?['scroll'] as num?)?.toDouble() ?? 0,
+    );
+    _scrollController.addListener(_publishState);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _publishState();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _publishState() {
+    var choices = widget.content.rootMoves;
+    final path = <int>[];
+    for (final node in _controller.navigation.path) {
+      final index = choices.indexOf(node);
+      if (index < 0) break;
+      path.add(index);
+      choices = node.children;
+    }
+    widget.onStateChanged?.call({
+      'path': path,
+      'orientation': _orientation.name,
+      'scroll': _scrollController.hasClients ? _scrollController.offset : 0.0,
+    });
+  }
 
   bool get _hasMoves => widget.content.rootMoves.isNotEmpty;
   bool get _hasPosition =>
@@ -50,6 +100,7 @@ final class _TextViewState extends State<TextView> {
     final navigation = _controller.navigation;
     final result = widget.content.result?.trim();
     final details = ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       children: [
         if (!_hasMoves &&
@@ -101,6 +152,8 @@ final class _TextViewState extends State<TextView> {
       );
     }
     return StudyLayout(
+      controlCount: _hasMoves ? 4 : 0,
+      controlTrailingWidth: 48,
       board: ReaderBoard(
         board: _controller.current.forBoard(orientation: _orientation),
         showOrientationControl: false,
@@ -117,6 +170,7 @@ final class _TextViewState extends State<TextView> {
           _orientation = _orientation == PuzzleSide.white
               ? PuzzleSide.black
               : PuzzleSide.white;
+          _publishState();
         }),
       ),
       details: details,
@@ -124,7 +178,10 @@ final class _TextViewState extends State<TextView> {
   }
 
   VoidCallback _perform(void Function() action) =>
-      () => setState(action);
+      () => setState(() {
+        action();
+        _publishState();
+      });
 
   void _acceptNavigation(ReaderNavigationState navigation) {
     setState(() {
@@ -134,6 +191,7 @@ final class _TextViewState extends State<TextView> {
         if (index < 0) return;
         _controller.selectVariation(index);
       }
+      _publishState();
     });
   }
 }

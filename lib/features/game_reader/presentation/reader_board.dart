@@ -2,6 +2,8 @@ import 'package:chessground/chessground.dart' as chessground;
 import 'package:dartchess/dartchess.dart' as chess;
 import 'package:flutter/material.dart';
 
+import '../../../domain/training/puzzle_evaluator.dart';
+
 import '../../../shared/chessboard/chessboard_adapter.dart';
 import '../../../shared/presentation/flip_board_button.dart';
 import '../../../shared/presentation/study_board_frame.dart';
@@ -15,11 +17,13 @@ final class ReaderBoard extends StatefulWidget {
   const ReaderBoard({
     required this.board,
     this.showOrientationControl = true,
+    this.positionLabel,
     super.key,
   });
 
   final ChessboardViewData board;
   final bool showOrientationControl;
+  final String? positionLabel;
 
   @override
   State<ReaderBoard> createState() => _ReaderBoardState();
@@ -38,20 +42,19 @@ class _ReaderBoardState extends State<ReaderBoard> {
 
   @override
   Widget build(BuildContext context) {
-    final sideLabel = widget.board.game.sideToMove == chess.Side.white
-        ? 'White to move'
-        : 'Black to move';
-
-    return StudyBoardFrame(
-      sideToMove: sideLabel,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Semantics(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        StudyBoardFrame(
+          sideToMove: widget.board.game.sideToMove == chess.Side.white
+              ? PuzzleSide.white
+              : PuzzleSide.black,
+          child: Semantics(
             container: true,
+            liveRegion: widget.positionLabel != null,
             label:
                 'Chessboard with files a through h and ranks 1 through 8. '
-                '$sideLabel.',
+                '${widget.positionLabel ?? ''}',
             child: ExcludeSemantics(
               child: AspectRatio(
                 aspectRatio: 1,
@@ -71,15 +74,15 @@ class _ReaderBoardState extends State<ReaderBoard> {
               ),
             ),
           ),
-          if (widget.showOrientationControl)
-            Center(
-              child: FlipBoardButton(
-                key: const ValueKey('reader-board-orientation'),
-                onPressed: _toggleOrientation,
-              ),
+        ),
+        if (widget.showOrientationControl)
+          Center(
+            child: FlipBoardButton(
+              key: const ValueKey('reader-board-orientation'),
+              onPressed: _toggleOrientation,
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 

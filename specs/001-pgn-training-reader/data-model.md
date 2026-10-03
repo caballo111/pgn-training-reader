@@ -185,3 +185,12 @@ excluded from scored cycle aggregates. When
 legacy records lack a cycle snapshot, use the historical/current selection
 with `allMoves`; a legacy finalized attempt without interaction state may
 enter read-only review.
+
+## Feature 002 interaction extension
+
+Continuous study uses version 2 puzzle interaction JSON with distinct rejected
+practice moves keyed by attempt/authored path/UCI, independently persisted
+review cursor, and versioned block reading cursor/exposure settings. The first
+error and its scored wrongMoveCount remain immutable. Later distinct mistakes
+are retained without changing cycle metrics. See
+[study-flow contract](../002-continuous-study-flow/contracts/study-flow.md).

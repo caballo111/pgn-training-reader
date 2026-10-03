@@ -20,6 +20,10 @@ final class PuzzleBoard extends StatefulWidget {
     this.enabled = true,
     this.lastMoveUci,
     this.hintSquare,
+    this.displayFen,
+    this.displayLastMoveUci,
+    this.displaySideToMove,
+    this.reducedMotion = false,
     super.key,
   });
 
@@ -47,6 +51,12 @@ final class PuzzleBoard extends StatefulWidget {
   /// Origin square emphasized by an assisted hint.
   final String? hintSquare;
 
+  /// Temporary presentation-only rejected position. Never persisted.
+  final String? displayFen;
+  final String? displayLastMoveUci;
+  final PuzzleSide? displaySideToMove;
+  final bool reducedMotion;
+
   @override
   State<PuzzleBoard> createState() => _PuzzleBoardState();
 }
@@ -63,7 +73,11 @@ final class _PuzzleBoardState extends State<PuzzleBoard> {
   @override
   void didUpdateWidget(covariant PuzzleBoard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _controller.updatePosition(_gameData(), resetPremove: true);
+    _controller.updatePosition(
+      _gameData(),
+      animate: !widget.reducedMotion,
+      resetPremove: true,
+    );
   }
 
   @override
@@ -97,6 +111,7 @@ final class _PuzzleBoardState extends State<PuzzleBoard> {
                     enableDrops: false,
                     showLastMove: true,
                     showValidMoves: true,
+                    animationDuration: Duration(milliseconds: 200),
                   ),
                   onMove: (move, {viaDragAndDrop}) =>
                       widget.onMoveSubmitted(move.uci),
@@ -124,16 +139,16 @@ final class _PuzzleBoardState extends State<PuzzleBoard> {
 
   chessground.GameData _gameData() {
     final board = ChessboardAdapter.fromPosition(
-      fen: widget.fen,
-      sideToMove: widget.sideToMove,
+      fen: widget.displayFen ?? widget.fen,
+      sideToMove: widget.displaySideToMove ?? widget.sideToMove,
       legalDestinations: widget.legalDestinations,
       orientation: widget.orientation,
-      lastMoveUci: widget.lastMoveUci,
+      lastMoveUci: widget.displayLastMoveUci ?? widget.lastMoveUci,
     );
     return chessground.GameData(
       fen: board.game.fen,
-      playerSide: _playerSide(widget.sideToMove),
-      sideToMove: board.game.sideToMove,
+      playerSide: _playerSide(widget.displaySideToMove ?? widget.sideToMove),
+      sideToMove: _orientation(widget.displaySideToMove ?? widget.sideToMove),
       validMoves: board.game.validMoves,
       lastMove: board.game.lastMove,
     );

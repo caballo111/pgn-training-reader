@@ -523,3 +523,10 @@ reference-corpus/device, real Android process-death and SDK/integration checks.
 The release review lists final artifact/source/signing obligations.
 
 Future UI and app-icon proposals are captured in [backlog](../backlog.md).
+
+## Continuous study follow-up
+
+Feature 002 adopts the direct in-place puzzle flow for book study and shared
+cycle solving/review improvements. Its requirements, implementation plan,
+and acceptance tasks are tracked in
+[002-continuous-study-flow](../002-continuous-study-flow/spec.md).

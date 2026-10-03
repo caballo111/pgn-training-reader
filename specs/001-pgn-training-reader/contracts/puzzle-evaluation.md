@@ -59,8 +59,11 @@ interactive and concealed so the learner can keep practicing. Later practice
 moves and their board position are persisted in the separate interaction
 record; they cannot mutate the finalized attempt, its outcome, failure reason,
 or metrics. Keep the first rejected move for the scored audit; additional
-incorrect practice submissions show feedback without appending rejected moves
-to the interaction notation. Accepted practice moves remain persisted.
+incorrect practice submissions are recorded in separate interaction history
+when distinct by attempt, authored position, and normalized UCI. Repeats across
+all prior submissions at that position show feedback without duplicate entries.
+Accepted practice moves remain persisted. Feature 002 defines the continuous
+study surface, versioned interaction history, and rejection presentation.
 For a new interaction, keep solution content concealed until the
 learner completes the continued practice line or explicitly reveals the
 solution. Reaching the authored endpoint later does not change `WrongMove` to

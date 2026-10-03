@@ -182,7 +182,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
     await _waitForBoardImages(tester);
     expect(tester.takeException(), isNull);
     await expectLater(
@@ -207,7 +213,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Black to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'Black to move',
+      ),
+      findsOneWidget,
+    );
     await _waitForBoardImages(tester);
     expect(tester.takeException(), isNull);
     await expectLater(
@@ -235,7 +247,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('White to move'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics && widget.properties.label == 'White to move',
+      ),
+      findsOneWidget,
+    );
     await _waitForBoardImages(tester);
     expect(tester.takeException(), isNull);
     await expectLater(
@@ -261,7 +279,7 @@ void main() {
       _app(home: PuzzleSolutionReviewView(presentation: presentation)),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Result: Incorrect move'), findsOneWidget);
+    expect(find.byTooltip('First attempt failed'), findsOneWidget);
     await _waitForBoardImages(tester);
     expect(tester.takeException(), isNull);
     await expectLater(

@@ -158,6 +158,104 @@ void main() {
     },
   );
 
+  for (final scenario in [
+    'normal',
+    'reduced motion',
+    'background',
+    'disposal',
+  ]) {
+    testWidgets('rejected move cue safely returns: $scenario', (tester) async {
+      final attempt = PuzzleAttempt(
+        id: 'attempt-rejection-cue',
+        blockId: 'block',
+        cycleId: 'cycle',
+        sessionId: 'session',
+        startedAt: _started,
+      );
+      final controller = PuzzleSolverController(
+        repository: _Repository(attempt),
+        evaluatorFactory: () =>
+            AuthoredLinePuzzleEvaluator(idGenerator: _Ids()),
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: attempt.id);
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(disableAnimations: scenario == 'reduced motion'),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: PuzzleSolvingView(
+              controller: controller,
+              currentExercise: 1,
+              totalExercises: 1,
+              orientation: PuzzleSide.white,
+              onPause: () {},
+            ),
+          ),
+        ),
+      );
+
+      final acceptedFen = controller.state!.currentFen;
+      final board = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
+      board.onMoveSubmitted('d2d4');
+      await tester.pump();
+      await tester.pump();
+
+      final duringCue = tester.widget<PuzzleBoard>(find.byType(PuzzleBoard));
+      expect(duringCue.displayFen, isNotNull);
+      expect(duringCue.fen, acceptedFen);
+      expect(duringCue.enabled, isFalse);
+      expect(controller.state!.currentFen, acceptedFen);
+
+      if (scenario == 'disposal') {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 700));
+        expect(tester.takeException(), isNull);
+        controller.dispose();
+        return;
+      }
+      if (scenario == 'background') {
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pump();
+        expect(
+          tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).displayFen,
+          isNull,
+        );
+        expect(controller.state!.currentFen, acceptedFen);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        controller.dispose();
+        return;
+      }
+      await tester.pump(const Duration(milliseconds: 449));
+      expect(
+        tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).displayFen,
+        isNotNull,
+      );
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(
+        tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).displayFen,
+        isNull,
+      );
+      if (scenario == 'reduced motion') {
+        await tester.pump();
+        expect(
+          tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).enabled,
+          isTrue,
+        );
+      }
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+      expect(controller.state!.currentFen, acceptedFen);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
+
   testWidgets(
     'active view shows accepted user moves and hides puzzle answers',
     (tester) async {
@@ -196,9 +294,16 @@ void main() {
       final semantics = tester.ensureSemantics();
 
       expect(find.text('1. e4'), findsOneWidget);
-      expect(find.text('1... e5 (reply)'), findsOneWidget);
-      expect(find.text('Moves played'), findsOneWidget);
-      expect(find.text('White to move'), findsOneWidget);
+      expect(find.text('1... e5'), findsOneWidget);
+      expect(find.text('Moves played'), findsNothing);
+      expect(find.bySemanticsLabel('Moves played'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.label == 'White to move',
+        ),
+        findsOneWidget,
+      );
       for (final secret in [
         'e4',
         'g1f3',
@@ -281,7 +386,8 @@ void main() {
         ),
       ),
     );
-    await tester.ensureVisible(find.text('Pause'));
+    await tester.tap(find.byTooltip('More puzzle actions'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Pause'));
     await tester.pumpAndSettle();
 
@@ -302,6 +408,8 @@ void main() {
       isTrue,
     );
     expect(find.text('Attempt paused'), findsNothing);
+    await tester.tap(find.byTooltip('More puzzle actions'));
+    await tester.pumpAndSettle();
     expect(find.text('Pause'), findsOneWidget);
   });
 }

@@ -248,8 +248,11 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Daily sessions'));
+      await tester.pumpAndSettle();
       expect(find.text('2026-01-02'), findsOneWidget);
-      expect(find.text('Daily sessions'), findsOneWidget);
+      await tester.tap(find.text('2026-01-02'));
+      await tester.pumpAndSettle();
       _expectMetric('Active duration', _duration(summary.totalActiveTime));
       _expectMetric('Attempted', '${summary.attemptedCount}');
       _expectMetric('Passed', '${summary.passedCount}');
@@ -282,7 +285,7 @@ void main() {
       );
       expect(
         find.text(_duration(comparison.later.totalActiveTime)),
-        findsNWidgets(2),
+        findsOneWidget,
       );
       expect(
         find.text(_durationChange(comparison.totalActiveTimeChange)),
@@ -385,47 +388,36 @@ void main() {
     );
   });
 
-  testWidgets(
-    'shows explicit unavailable state when theme and difficulty metadata are absent',
-    (tester) async {
-      final controller = ProgressReportController(
-        trainingSetId: 'set',
-        repository: _FakeTrainingRepository(metadata: false),
-      );
-      addTearDown(controller.dispose);
+  testWidgets('hides metadata sections when both dimensions are empty', (
+    tester,
+  ) async {
+    final controller = ProgressReportController(
+      trainingSetId: 'set',
+      repository: _FakeTrainingRepository(metadata: false),
+    );
+    addTearDown(controller.dispose);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ProgressReportPage(
-            controller: controller,
-            trainingSetName: 'Tactics',
-          ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProgressReportPage(
+          controller: controller,
+          trainingSetName: 'Tactics',
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(
-        find.text('Theme metadata unavailable for this cycle.'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.text('Theme metadata unavailable for this cycle.'),
-        findsOneWidget,
-      );
-      await tester.scrollUntilVisible(
-        find.text('Difficulty metadata unavailable for this cycle.'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.text('Difficulty metadata unavailable for this cycle.'),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(
+      find.text('Theme metadata unavailable for this cycle.'),
+      findsNothing,
+    );
+    expect(
+      find.text('Difficulty metadata unavailable for this cycle.'),
+      findsNothing,
+    );
+    expect(find.text('By theme'), findsNothing);
+    expect(find.text('By difficulty'), findsNothing);
+  });
 }
 
 void _expectMetric(String label, String value) {

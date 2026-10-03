@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../domain/training/progress_calculator.dart';
 import '../../../domain/training/progress_report_data.dart';
+import '../../../domain/training/lifecycle_status.dart';
 import '../../../domain/training/training_repository.dart';
 
 /// Loads and displays the daily session summaries for one training cycle.
@@ -44,46 +45,119 @@ final class _DailySessionsViewState extends State<DailySessionsView> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      FutureBuilder<List<SessionProgressAggregate>>(
-        future: _sessionsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _Notice(
-              message: 'Could not load daily sessions.',
-              action: 'Retry',
-              onPressed: () => setState(_load),
-            );
-          }
-          final sessions = snapshot.data ?? const <SessionProgressAggregate>[];
-          if (sessions.isEmpty) {
-            return const _Notice(
-              message: 'No daily sessions have been recorded.',
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Daily sessions',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              for (final session in sessions) ...[
-                _SessionCard(session: session),
-                const SizedBox(height: 8),
-              ],
-            ],
-          );
-        },
+  Widget build(
+    BuildContext context,
+  ) => FutureBuilder<List<SessionProgressAggregate>>(
+    future: _sessionsFuture,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (snapshot.hasError) {
+        return _Notice(
+          message: 'Could not load daily sessions.',
+          action: 'Retry',
+          onPressed: () => setState(_load),
+        );
+      }
+      final sessions = snapshot.data ?? const <SessionProgressAggregate>[];
+      if (sessions.isEmpty) {
+        return const _Notice(message: 'No daily sessions have been recorded.');
+      }
+      final days = _groupByStudyDay(sessions);
+      return ExpansionTile(
+        key: ValueKey<Object>((widget.cycleId, widget.repository)),
+        initiallyExpanded: false,
+        tilePadding: EdgeInsets.zero,
+        title: Text(
+          'Daily sessions',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        subtitle: Text(
+          '${days.length} ${days.length == 1 ? 'day' : 'days'} · '
+          '${sessions.length} ${sessions.length == 1 ? 'session' : 'sessions'}',
+        ),
+        children: [
+          for (final day in days)
+            _DayTile(key: ValueKey('${widget.cycleId}:${day.key}'), day: day),
+        ],
       );
+    },
+  );
 }
 
-final class _SessionCard extends StatelessWidget {
-  const _SessionCard({required this.session});
+final class _StudyDay {
+  const _StudyDay({
+    required this.key,
+    required this.date,
+    required this.sessions,
+  });
+
+  final String key;
+  final DateTime date;
+  final List<SessionProgressAggregate> sessions;
+}
+
+List<_StudyDay> _groupByStudyDay(List<SessionProgressAggregate> sessions) {
+  final grouped = <String, List<SessionProgressAggregate>>{};
+  final dates = <String, DateTime>{};
+  for (final session in sessions) {
+    final date = session.session.studyDay;
+    final key =
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    dates[key] = date;
+    grouped.putIfAbsent(key, () => []).add(session);
+  }
+  final days = grouped.entries.map((entry) {
+    final ordered = entry.value
+      ..sort((a, b) {
+        final byStart = b.session.startedAt.compareTo(a.session.startedAt);
+        return byStart != 0 ? byStart : a.session.id.compareTo(b.session.id);
+      });
+    return _StudyDay(
+      key: entry.key,
+      date: dates[entry.key]!,
+      sessions: ordered,
+    );
+  }).toList()..sort((a, b) => b.key.compareTo(a.key));
+  return days;
+}
+
+final class _DayTile extends StatelessWidget {
+  const _DayTile({super.key, required this.day});
+
+  final _StudyDay day;
+
+  @override
+  Widget build(BuildContext context) {
+    var attempted = 0;
+    var passed = 0;
+    var duration = Duration.zero;
+    for (final session in day.sessions) {
+      final summary = ProgressCalculator.calculate(session.progress);
+      attempted += summary.attemptedCount;
+      passed += summary.passedCount;
+      duration += summary.totalActiveTime;
+    }
+    return ExpansionTile(
+      initiallyExpanded: false,
+      title: Text(_dateLabel(day.date)),
+      subtitle: Text(
+        '${day.sessions.length} ${day.sessions.length == 1 ? 'session' : 'sessions'} · '
+        '$attempted attempted · $passed passed · ${_formatDuration(duration)}',
+        softWrap: true,
+      ),
+      children: [
+        for (final session in day.sessions) _SessionDetails(session: session),
+      ],
+    );
+  }
+}
+
+final class _SessionDetails extends StatelessWidget {
+  const _SessionDetails({required this.session});
 
   final SessionProgressAggregate session;
 
@@ -91,14 +165,22 @@ final class _SessionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final summary = ProgressCalculator.calculate(session.progress);
     return Card(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _dateLabel(session.session.studyDay),
-              style: Theme.of(context).textTheme.titleSmall,
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Text(
+                  _timeLabel(session.session.startedAt),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(_statusLabel(session.session.status)),
+              ],
             ),
             const SizedBox(height: 8),
             _MetricRow(
@@ -130,7 +212,6 @@ final class _SessionCard extends StatelessWidget {
 
 final class _MetricRow extends StatelessWidget {
   const _MetricRow(this.label, this.value);
-
   final String label;
   final String value;
 
@@ -148,7 +229,6 @@ final class _MetricRow extends StatelessWidget {
 
 final class _Notice extends StatelessWidget {
   const _Notice({required this.message, this.action, this.onPressed});
-
   final String message;
   final String? action;
   final VoidCallback? onPressed;
@@ -171,12 +251,22 @@ final class _Notice extends StatelessWidget {
   );
 }
 
-String _dateLabel(DateTime value) {
-  final date = value.toLocal();
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '${date.year}-$month-$day';
+String _dateLabel(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+String _timeLabel(DateTime value) {
+  final local = value.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final suffix = local.hour < 12 ? 'AM' : 'PM';
+  return '$hour:${local.minute.toString().padLeft(2, '0')} $suffix';
 }
+
+String _statusLabel(TrainingSessionStatus status) => switch (status) {
+  TrainingSessionStatus.active => 'Active',
+  TrainingSessionStatus.paused => 'Paused',
+  TrainingSessionStatus.closed => 'Closed',
+  TrainingSessionStatus.recovered => 'Recovered',
+};
 
 String _formatDuration(Duration duration) {
   final hours = duration.inHours;

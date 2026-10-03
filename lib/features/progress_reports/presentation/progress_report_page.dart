@@ -127,7 +127,6 @@ final class _ProgressReportPageState extends State<ProgressReportPage> {
               repository: widget.controller.repository,
               cycleId: selectedCycle.id,
             ),
-            const SizedBox(height: 12),
             MetadataProgressSummaryView(
               repository: widget.controller.repository,
               cycleId: selectedCycle.id,

@@ -131,6 +131,7 @@ void main() {
         if (i % 4 == 0) {
           expect(indexed.exerciseId, 'exercise-$i');
           expect(indexed.theme, 'theme-$i');
+          expect(indexed.difficulty, 'difficulty-$i');
         }
         if (i % 4 == 1) expect(indexed.section, 'section-$i');
         if (i % 4 == 2) expect(indexed.sequence, i);
@@ -143,7 +144,7 @@ void main() {
 String _block(int i) {
   final classification = switch (i % 4) {
     0 =>
-      '[X-ContentType "Puzzle"]\n[X-ExerciseId "exercise-$i"]\n[X-Theme "theme-$i"]\n',
+      '[X-ContentType "Puzzle"]\n[X-ExerciseId "exercise-$i"]\n[X-Theme "theme-$i"]\n[X-Difficulty "difficulty-$i"]\n',
     1 => '[X-ContentType "Instruction"]\n[X-Section "section-$i"]\n',
     2 => '[X-ContentType "Demonstration"]\n[X-Sequence "$i"]\n',
     _ => '', // Legacy block exercises classification inference.

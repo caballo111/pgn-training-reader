@@ -49,13 +49,11 @@ final class _MetadataProgressSummaryViewState
   }
 
   Future<_MetadataSummaryData> _loadData() async {
-    final themesFuture = widget.repository.themeAggregatesForCycle(
-      widget.cycleId,
-    );
-    final difficultiesFuture = widget.repository.difficultyAggregatesForCycle(
-      widget.cycleId,
-    );
-    return (themes: await themesFuture, difficulties: await difficultiesFuture);
+    final groups = await Future.wait([
+      widget.repository.themeAggregatesForCycle(widget.cycleId),
+      widget.repository.difficultyAggregatesForCycle(widget.cycleId),
+    ]);
+    return (themes: groups[0], difficulties: groups[1]);
   }
 
   @override
@@ -73,21 +71,22 @@ final class _MetadataProgressSummaryViewState
         );
       }
       final data = snapshot.data!;
+      if (data.themes.isEmpty && data.difficulties.isEmpty) {
+        return const SizedBox.shrink();
+      }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _MetadataSection(
-            title: 'By theme',
-            unavailableMessage: 'Theme metadata unavailable for this cycle.',
-            summaries: data.themes,
-          ),
           const SizedBox(height: 12),
-          _MetadataSection(
-            title: 'By difficulty',
-            unavailableMessage:
-                'Difficulty metadata unavailable for this cycle.',
-            summaries: data.difficulties,
-          ),
+          if (data.themes.isNotEmpty) ...[
+            _MetadataSection(title: 'By theme', summaries: data.themes),
+            if (data.difficulties.isNotEmpty) const SizedBox(height: 12),
+          ],
+          if (data.difficulties.isNotEmpty)
+            _MetadataSection(
+              title: 'By difficulty',
+              summaries: data.difficulties,
+            ),
         ],
       );
     },
@@ -95,28 +94,13 @@ final class _MetadataProgressSummaryViewState
 }
 
 final class _MetadataSection extends StatelessWidget {
-  const _MetadataSection({
-    required this.title,
-    required this.unavailableMessage,
-    required this.summaries,
-  });
+  const _MetadataSection({required this.title, required this.summaries});
 
   final String title;
-  final String unavailableMessage;
   final List<MetadataProgressAggregate> summaries;
 
   @override
   Widget build(BuildContext context) {
-    if (summaries.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(unavailableMessage),
-        ],
-      );
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

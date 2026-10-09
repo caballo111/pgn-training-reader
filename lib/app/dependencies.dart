@@ -17,6 +17,10 @@ import '../domain/training/training_set_repository.dart';
 import '../data/repositories/drift_training_repository.dart';
 import '../data/repositories/drift_chess_content_repository.dart';
 import '../data/repositories/drift_library_lifecycle_service.dart';
+import '../data/repositories/drift_exploration_repository.dart';
+import '../data/analysis/stockfish_analysis_engine.dart';
+import '../domain/analysis/analysis_engine.dart';
+import '../domain/analysis/exploration_repository.dart';
 import '../domain/chess_content/chess_content_repository.dart';
 import '../domain/library/pgn_source_repository.dart';
 import '../domain/library/library_lifecycle_service.dart';
@@ -37,8 +41,15 @@ final class AppDependencies {
     AppLogger? logger,
     this.databaseFactory,
     ThemeController? themeController,
+    ExplorationRepository? explorationRepository,
+    AnalysisEngineFactory? analysisEngineFactory,
   }) : clock = clock ?? SystemAppClock(),
        themeController = themeController ?? ThemeController(),
+       // Keep the public injection name distinct from the private lazy cache.
+       // ignore: prefer_initializing_formals
+       _explorationRepository = explorationRepository,
+       analysisEngineFactory =
+           analysisEngineFactory ?? defaultAnalysisEngineFactory,
        idGenerator = idGenerator ?? RandomIdGenerator(),
        logger = logger ?? const StructuredAppLogger(_discardLogRecord);
 
@@ -46,6 +57,11 @@ final class AppDependencies {
   final IdGenerator idGenerator;
   final AppLogger logger;
   final ThemeController themeController;
+  final AnalysisEngineFactory analysisEngineFactory;
+  ExplorationRepository? _explorationRepository;
+
+  ExplorationRepository get explorationRepository =>
+      _explorationRepository ??= DriftExplorationRepository(database);
 
   final AppDatabase Function()? databaseFactory;
   AppDatabase? _database;

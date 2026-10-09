@@ -1,6 +1,12 @@
+import 'dart:async';
+
 import 'package:dartchess/dartchess.dart' as chess;
 import 'package:flutter/material.dart';
 
+import '../../../domain/analysis/exploration_repository.dart';
+import '../../../domain/analysis/exploration_session.dart';
+import '../../analysis/presentation/analysis_panel.dart';
+import '../../analysis/presentation/exploration_workspace.dart';
 import '../../../domain/training/puzzle_attempt.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
 import '../../../shared/chessboard/chessboard_adapter.dart';
@@ -29,6 +35,9 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
     this.onPathChanged,
     this.initialOrientation,
     this.onOrientationChanged,
+    this.explorationScopeId,
+    this.explorationRepository,
+    this.analysisEngineFactory,
     super.key,
   });
 
@@ -51,13 +60,130 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
   final PuzzleSide? initialOrientation;
   final ValueChanged<PuzzleSide>? onOrientationChanged;
 
+  final String? explorationScopeId;
+  final ExplorationRepository? explorationRepository;
+  final AnalysisEngineFactory? analysisEngineFactory;
+
   @override
-  State<PuzzleSolutionReviewView> createState() =>
-      _PuzzleSolutionReviewViewState();
+  PuzzleSolutionReviewViewState createState() =>
+      PuzzleSolutionReviewViewState();
 }
 
-final class _PuzzleSolutionReviewViewState
+final class PuzzleSolutionReviewViewState
     extends State<PuzzleSolutionReviewView> {
+  final _workspaceKey = GlobalKey<ExplorationWorkspaceState>();
+  final _analysisKey = GlobalKey<AnalysisPanelState>();
+  ExplorationOrigin? _exploration;
+  List<String> _initialExplorationMoves = const [];
+  List<String> _explorationComments = const [];
+  double _returnScroll = 0;
+  String? _draftLookupKey;
+  Future<ExplorationSession?>? _draftLookup;
+
+  bool get isExploring => _exploration != null;
+
+  Future<void> prepareToLeave() async {
+    await _workspaceKey.currentState?.prepareToLeave();
+    await _analysisKey.currentState?.prepareToLeave();
+  }
+
+  Future<void> returnFromExploration() async {
+    await prepareToLeave();
+    if (mounted && isExploring) _restoreReview();
+  }
+
+  void _restoreReview() {
+    setState(() {
+      _exploration = null;
+      _draftLookupKey = null;
+      _draftLookup = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _detailsController.hasClients) {
+        _detailsController.jumpTo(
+          _returnScroll.clamp(0, _detailsController.position.maxScrollExtent),
+        );
+      }
+    });
+  }
+
+  Future<void> _explore({List<String> initialMoves = const []}) async {
+    await _analysisKey.currentState?.prepareToLeave();
+    if (!mounted || !widget.presentation.isSolutionVisible) return;
+    final selected = _plyIndex < 0 ? null : _line[_plyIndex];
+    _openExploration(
+      path: _pathThrough(_plyIndex),
+      moves: [for (final move in _line.take(_plyIndex + 1)) move.uci],
+      label: selected == null
+          ? 'starting position'
+          : '${_movePrefix(selected)}${selected.san}',
+      initialMoves: initialMoves,
+    );
+  }
+
+  void _openExploration({
+    required List<int> path,
+    required List<String> moves,
+    required String label,
+    String? discriminator,
+    List<String> initialMoves = const [],
+  }) {
+    final comments = <String>[...widget.presentation.comments];
+    var siblings =
+        widget.presentation.solution ?? const <PuzzlePresentationMove>[];
+    PuzzlePresentationMove? anchoredMove;
+    for (final index in path) {
+      if (index < 0 || index >= siblings.length) break;
+      anchoredMove = siblings[index];
+      siblings = anchoredMove.children;
+    }
+    if (anchoredMove != null) comments.addAll(anchoredMove.comments);
+    _returnScroll = _detailsController.hasClients
+        ? _detailsController.offset
+        : 0;
+    setState(() {
+      _initialExplorationMoves = initialMoves;
+      _explorationComments = comments;
+      _exploration = ExplorationOrigin(
+        scopeId: widget.explorationScopeId ?? 'ephemeral-review',
+        startingFen: widget.presentation.startingFen,
+        authoredPath: path,
+        authoredMoves: moves,
+        label: label,
+        discriminator: discriminator,
+      );
+    });
+  }
+
+  Future<void> _exploreTry(PuzzleRejection rejection) async {
+    await _analysisKey.currentState?.prepareToLeave();
+    if (!mounted || !widget.presentation.isSolutionVisible) return;
+    final path = <int>[];
+    var siblings = widget.presentation.solution!;
+    for (final uci in rejection.authoredPath) {
+      final index = siblings.indexWhere((move) => move.uci == uci);
+      if (index < 0) return;
+      path.add(index);
+      siblings = siblings[index].children;
+    }
+    if (!rejection.legal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This try was illegal. Explore the position before it.',
+          ),
+        ),
+      );
+    }
+    _openExploration(
+      path: path,
+      moves: rejection.authoredPath,
+      label: '${_prefixForFen(rejection.fenBefore)}before your try',
+      discriminator: 'try:${rejection.uci}',
+      initialMoves: rejection.legal ? [rejection.uci] : const [],
+    );
+  }
+
   final Map<int, int> _variationChoices = {};
   final Map<int, GlobalKey> _moveKeys = {};
   final ScrollController _detailsController = ScrollController();
@@ -75,6 +201,10 @@ final class _PuzzleSolutionReviewViewState
   @override
   void didUpdateWidget(covariant PuzzleSolutionReviewView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.presentation.isSolutionVisible ||
+        oldWidget.explorationScopeId != widget.explorationScopeId) {
+      _exploration = null;
+    }
     if (!identical(oldWidget.presentation, widget.presentation)) {
       _variationChoices.clear();
       _orientation =
@@ -108,21 +238,24 @@ final class _PuzzleSolutionReviewViewState
     final entries = widget.presentation.entries
         .where((entry) => entry.accepted)
         .toList();
+    final acceptedMoves = entries.isEmpty
+        ? widget.presentation.playedMoves
+        : [for (final entry in entries) entry.uci];
     var siblings =
         widget.presentation.solution ?? const <PuzzlePresentationMove>[];
     for (
       var depth = 0;
-      depth < entries.length && siblings.isNotEmpty;
+      depth < acceptedMoves.length && siblings.isNotEmpty;
       depth++
     ) {
       final choice = siblings.indexWhere(
-        (move) => move.uci == entries[depth].uci,
+        (move) => move.uci == acceptedMoves[depth],
       );
       if (choice < 0) break;
       _variationChoices[depth] = choice;
       siblings = siblings[choice].children;
     }
-    _plyIndex = entries.isEmpty ? -1 : entries.length - 1;
+    _plyIndex = _variationChoices.length - 1;
   }
 
   List<PuzzlePresentationMove> get _line {
@@ -149,6 +282,21 @@ final class _PuzzleSolutionReviewViewState
     if (!widget.presentation.isSolutionVisible) {
       return const Center(child: Text('The solution is not available yet.'));
     }
+    if (_exploration case final origin?) {
+      return ExplorationWorkspace(
+        key: _workspaceKey,
+        origin: origin,
+        repository: widget.explorationScopeId == null
+            ? null
+            : widget.explorationRepository,
+        engineFactory: widget.analysisEngineFactory,
+        orientation: _orientation,
+        initialMoves: _initialExplorationMoves,
+        returnLabel: 'Return to review',
+        bookContext: Text(_explorationComments.join('\n\n')),
+        onReturn: _restoreReview,
+      );
+    }
     final line = _line;
     if (line.isEmpty) {
       return const Center(child: Text('No solution moves are available.'));
@@ -156,6 +304,21 @@ final class _PuzzleSolutionReviewViewState
     _plyIndex = _plyIndex.clamp(-1, line.length - 1);
     final position = _positionAt(_plyIndex, line);
     final selected = _plyIndex < 0 ? null : line[_plyIndex];
+    final origin = ExplorationOrigin(
+      scopeId: widget.explorationScopeId ?? 'ephemeral-review',
+      startingFen: widget.presentation.startingFen,
+      authoredPath: _pathThrough(_plyIndex),
+      authoredMoves: [for (final move in line.take(_plyIndex + 1)) move.uci],
+      label: selected == null
+          ? 'starting position'
+          : '${_movePrefix(selected)}${selected.san}',
+    );
+    if (_draftLookupKey != origin.identityKey) {
+      _draftLookupKey = origin.identityKey;
+      _draftLookup = widget.explorationScopeId == null
+          ? null
+          : widget.explorationRepository?.load(origin);
+    }
     final legal = <String, Set<String>>{
       for (final entry in chess.makeLegalMoves(position).entries)
         entry.key.name: {
@@ -203,15 +366,65 @@ final class _PuzzleSolutionReviewViewState
         controller: _detailsController,
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
         children: [
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FutureBuilder<ExplorationSession?>(
+              key: ValueKey(_draftLookupKey),
+              future: _draftLookup,
+              builder: (context, snapshot) => TextButton.icon(
+                onPressed: () => unawaited(_explore()),
+                icon: const Icon(Icons.explore_outlined),
+                label: Text(
+                  snapshot.data == null
+                      ? 'Explore position'
+                      : 'Resume exploration',
+                ),
+              ),
+            ),
+          ),
+          if (widget.presentation.comments.isNotEmpty)
+            Semantics(
+              container: true,
+              key: const ValueKey('puzzle-notes'),
+              label: 'Puzzle notes',
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(widget.presentation.comments.first),
+              ),
+            ),
+          AnalysisPanel(
+            key: _analysisKey,
+            startingFen: widget.presentation.startingFen,
+            moves: [for (final move in line.take(_plyIndex + 1)) move.uci],
+            engineFactory: widget.analysisEngineFactory,
+            onExploreSuggestion: (moves) =>
+                unawaited(_explore(initialMoves: moves)),
+          ),
+          if (widget.presentation.rejections.isNotEmpty)
+            ExpansionTile(
+              title: const Text('Your tries'),
+              children: [
+                for (final rejection in widget.presentation.rejections)
+                  ListTile(
+                    title: Text(
+                      '${_prefixForFen(rejection.fenBefore)}${rejection.san ?? rejection.uci}',
+                    ),
+                    subtitle: Text(
+                      rejection.legal
+                          ? 'Explore this try'
+                          : 'Explore before this illegal try',
+                    ),
+                    onTap: () => unawaited(_exploreTry(rejection)),
+                  ),
+              ],
+            ),
           for (
-            var index = 0;
+            var index = 1;
             index < widget.presentation.comments.length;
             index++
           )
             Semantics(
               container: true,
-              key: index == 0 ? const ValueKey('puzzle-notes') : null,
-              label: index == 0 ? 'Puzzle notes' : null,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(widget.presentation.comments[index]),
@@ -480,8 +693,11 @@ final class _PuzzleSolutionReviewViewState
     final accepted = widget.presentation.entries.where(
       (entry) => entry.accepted,
     );
-    for (final entry in accepted) {
-      final choice = siblings.indexWhere((move) => move.uci == entry.uci);
+    final acceptedMoves = accepted.isEmpty
+        ? widget.presentation.playedMoves
+        : [for (final entry in accepted) entry.uci];
+    for (final uci in acceptedMoves) {
+      final choice = siblings.indexWhere((move) => move.uci == uci);
       if (choice < 0 || siblings.isEmpty) break;
       choices[choices.length] = choice;
       siblings = siblings[choice].children;
@@ -491,9 +707,9 @@ final class _PuzzleSolutionReviewViewState
         ..clear()
         ..addAll(choices);
       final line = _line;
-      _plyIndex = accepted.isEmpty
+      _plyIndex = acceptedMoves.isEmpty
           ? -1
-          : (accepted.length - 1).clamp(-1, line.length - 1);
+          : (choices.length - 1).clamp(-1, line.length - 1);
     });
     widget.onPathChanged?.call(_pathThrough(_plyIndex));
     _scrollSelectedMoveIntoView();

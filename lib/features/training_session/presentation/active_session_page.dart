@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../domain/analysis/analysis_engine.dart';
+import '../../../domain/analysis/exploration_repository.dart';
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/content_type.dart';
 import '../../../domain/training/puzzle_attempt.dart';
+import '../../../domain/training/training_set_item.dart';
 import '../../../features/game_reader/presentation/game_reader_page.dart';
 import '../../../features/puzzle_solver/application/puzzle_presentation_state.dart';
 import '../../../features/puzzle_solver/application/puzzle_solver_controller.dart';
@@ -16,9 +19,19 @@ import '../../../shared/presentation/study_mode.dart';
 
 /// Shows a cycle's current indexed content and its explicit lifecycle controls.
 final class ActiveSessionPage extends StatefulWidget {
-  const ActiveSessionPage({super.key, required this.controller});
+  const ActiveSessionPage({
+    super.key,
+    required this.controller,
+    this.explorationRepository,
+    this.analysisEngineFactory,
+    this.explorationScopeIdResolver,
+  });
 
   final ActiveSessionController controller;
+  final ExplorationRepository? explorationRepository;
+  final AnalysisEngineFactory? analysisEngineFactory;
+  final Future<String?> Function(TrainingSetItem item)?
+  explorationScopeIdResolver;
 
   @override
   State<ActiveSessionPage> createState() => _ActiveSessionPageState();
@@ -28,9 +41,14 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
   Timer? _ticker;
   PuzzlePresentationState? _review;
   final Map<String, PuzzleSolverController> _puzzleControllers = {};
+  final GlobalKey<PuzzleSolutionReviewViewState> _reviewKey = GlobalKey();
+  final GlobalKey<GameReaderPageState> _readerKey = GlobalKey();
+  String? _scopeItemId;
+  Future<String?>? _scopeFuture;
   bool _leaving = false;
   bool _allowPop = false;
   bool _advancePending = false;
+  bool _backPending = false;
 
   @override
   void initState() {
@@ -55,10 +73,10 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
   Widget build(BuildContext context) => PopScope<void>(
     canPop: _allowPop,
     onPopInvokedWithResult: (didPop, result) {
-      if (!didPop) _closeAndPop();
+      if (!didPop && !_isExploring) _handleBack();
     },
     child: IgnorePointer(
-      ignoring: _leaving,
+      ignoring: _leaving || _advancePending || _backPending,
       child: AnimatedBuilder(
         animation: widget.controller,
         builder: (context, _) {
@@ -89,7 +107,7 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
                       ),
                       const SizedBox(height: 16),
                       FilledButton(
-                        onPressed: () => widget.controller.start(),
+                        onPressed: _retrySession,
                         child: const Text('Try again'),
                       ),
                     ],
@@ -223,8 +241,7 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
                 ),
               ),
               actions: [
-                if (state.status == ActiveSessionStatus.active &&
-                    _review == null)
+                if (state.status == ActiveSessionStatus.active)
                   IconButton(
                     tooltip: 'Pause session',
                     onPressed: _pauseSession,
@@ -242,29 +259,7 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
               children: [
                 Expanded(
                   child: _review != null
-                      ? PuzzleSolutionReviewView(
-                          presentation: _review!,
-                          initialPath:
-                              _puzzleControllers[state.attempt?.id]?.reviewPath,
-                          onPathChanged: (path) =>
-                              _saveReviewPath(state.attempt?.id, path),
-                          initialOrientation:
-                              _puzzleControllers[state.attempt?.id]
-                                  ?.reviewOrientation,
-                          onOrientationChanged: (orientation) =>
-                              _saveReviewOrientation(
-                                state.attempt?.id,
-                                orientation,
-                              ),
-                          nextLabel: current >= total
-                              ? 'Finish cycle'
-                              : 'Next exercise',
-                          onNext: _nextFromReview,
-                          canAdvance:
-                              state.status == ActiveSessionStatus.active &&
-                              !_advancePending,
-                          isFinalExercise: current >= total,
-                        )
+                      ? _reviewSurface(state, current, total)
                       : _content(state, current, total),
                 ),
                 if (state.status == ActiveSessionStatus.active &&
@@ -274,7 +269,7 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: FilledButton(
-                        onPressed: widget.controller.continueNonPuzzle,
+                        onPressed: _completeNonPuzzleItem,
                         child: const Text('Complete item and continue'),
                       ),
                     ),
@@ -289,11 +284,11 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
 
   Widget _content(ActiveSessionState state, int current, int total) {
     final content = state.content;
+    final item = state.activeItem;
     if (content == null) {
       return const Center(child: Text('No current content.'));
     }
-    if (state.activeItem?.contentType == ContentType.puzzle &&
-        state.attempt != null) {
+    if (item?.contentType == ContentType.puzzle && state.attempt != null) {
       final puzzleController = _puzzleControllers.putIfAbsent(
         state.attempt!.id,
         widget.controller.createPuzzleController,
@@ -314,8 +309,74 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     }
     return IgnorePointer(
       ignoring: state.status != ActiveSessionStatus.active,
-      child: GameReaderPage(content: content),
+      child: FutureBuilder<String?>(
+        future: item == null ? Future<String?>.value() : _scopeForItem(item),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final scopeId = snapshot.data;
+          return GameReaderPage(
+            key: _readerKey,
+            content: content,
+            explorationScopeId: scopeId,
+            explorationRepository: scopeId == null
+                ? null
+                : widget.explorationRepository,
+            analysisEngineFactory: widget.analysisEngineFactory,
+          );
+        },
+      ),
     );
+  }
+
+  Widget _reviewSurface(ActiveSessionState state, int current, int total) {
+    final item = state.activeItem;
+    final presentation = _review;
+    if (item == null || presentation == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return FutureBuilder<String?>(
+      future: _scopeForItem(item),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final scopeId = snapshot.data;
+        return PuzzleSolutionReviewView(
+          key: _reviewKey,
+          presentation: presentation,
+          initialPath: _puzzleControllers[state.attempt?.id]?.reviewPath,
+          onPathChanged: (path) => _saveReviewPath(state.attempt?.id, path),
+          initialOrientation:
+              _puzzleControllers[state.attempt?.id]?.reviewOrientation,
+          onOrientationChanged: (orientation) =>
+              _saveReviewOrientation(state.attempt?.id, orientation),
+          nextLabel: current >= total ? 'Finish cycle' : 'Next exercise',
+          onNext: _nextFromReview,
+          canAdvance:
+              state.status == ActiveSessionStatus.active && !_advancePending,
+          isFinalExercise: current >= total,
+          explorationScopeId: scopeId,
+          explorationRepository: scopeId == null
+              ? null
+              : widget.explorationRepository,
+          analysisEngineFactory: widget.analysisEngineFactory,
+        );
+      },
+    );
+  }
+
+  Future<String?> _scopeForItem(TrainingSetItem item) {
+    if (_scopeItemId != item.id || _scopeFuture == null) {
+      _scopeItemId = item.id;
+      final resolver = widget.explorationScopeIdResolver;
+      _scopeFuture = resolver == null
+          ? Future<String?>.value()
+          : Future<String?>.sync(() => resolver(item))
+                .catchError((Object _) => null);
+    }
+    return _scopeFuture!;
   }
 
   Future<void> _saveReviewPath(String? attemptId, List<int> path) async {
@@ -338,9 +399,13 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
 
   Widget get _backButton => IconButton(
     tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-    onPressed: _closeAndPop,
+    onPressed: _handleBack,
     icon: const BackButtonIcon(),
   );
+
+  bool get _isExploring =>
+      _reviewKey.currentState?.isExploring == true ||
+      _readerKey.currentState?.isExploring == true;
 
   Future<void> _saveReviewOrientation(
     String? attemptId,
@@ -368,6 +433,7 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     _leaving = true;
     setState(() {});
     try {
+      await _prepareCurrentSurfaceToLeave();
       await widget.controller.whenIdle();
       await _settlePuzzleControllers();
       await widget.controller.whenIdle();
@@ -396,6 +462,42 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     });
   }
 
+  Future<void> _handleBack() async {
+    if (_leaving || _advancePending || _backPending) return;
+    final review = _reviewKey.currentState;
+    final reader = _readerKey.currentState;
+    if (review?.isExploring != true && reader?.isExploring != true) {
+      await _closeAndPop();
+      return;
+    }
+
+    setState(() => _backPending = true);
+    try {
+      if (review?.isExploring == true) {
+        await review!.returnFromExploration();
+      } else if (reader?.isExploring == true) {
+        await reader!.returnFromExploration();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Exploration could not be saved. Retry before returning.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _backPending = false);
+    }
+  }
+
+  Future<void> _prepareCurrentSurfaceToLeave() async {
+    await _reviewKey.currentState?.prepareToLeave();
+    await _readerKey.currentState?.prepareToLeave();
+  }
+
   Future<void> _settlePuzzleControllers() async {
     for (final controller in _puzzleControllers.values) {
       final path = controller.reviewPath;
@@ -409,7 +511,10 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
   }
 
   Future<void> _pauseSession() async {
+    if (_advancePending || _leaving) return;
+    setState(() => _advancePending = true);
     try {
+      await _prepareCurrentSurfaceToLeave();
       await _settlePuzzleControllers();
       await widget.controller.pause();
     } catch (_) {
@@ -418,6 +523,30 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
           const SnackBar(content: Text('Session could not be paused. Retry.')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _advancePending = false);
+    }
+  }
+
+  Future<void> _retrySession() async {
+    if (_advancePending || _leaving) return;
+    setState(() => _advancePending = true);
+    try {
+      await _prepareCurrentSurfaceToLeave();
+      await _settlePuzzleControllers();
+      await widget.controller.start();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Session could not be saved. Retry before restarting.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _advancePending = false);
     }
   }
 
@@ -427,6 +556,7 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     final previousItemId = before.activeItem?.id;
     setState(() => _advancePending = true);
     try {
+      await _prepareCurrentSurfaceToLeave();
       await _settlePuzzleControllers();
       await widget.controller.advance();
     } catch (_) {
@@ -450,6 +580,29 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
       _advancePending = false;
       if (advanced) _review = null;
     });
+  }
+
+  Future<void> _completeNonPuzzleItem() async {
+    final before = widget.controller.state;
+    if (_advancePending || before.status != ActiveSessionStatus.active) return;
+    setState(() => _advancePending = true);
+    try {
+      await _prepareCurrentSurfaceToLeave();
+      await widget.controller.whenIdle();
+      await widget.controller.continueNonPuzzle();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Reading could not be saved. Retry before continuing.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _advancePending = false);
+    }
   }
 
   static String _format(Duration value) {

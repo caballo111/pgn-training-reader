@@ -121,6 +121,33 @@ void main() {
     expect(find.text('secret solution'), findsOneWidget);
   });
 
+  testWidgets('Back to book returns one nested exploration first', (
+    tester,
+  ) async {
+    var exploring = true;
+    var returned = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(
+          content: _content(ContentType.text),
+          showBlockNavigation: true,
+          isNestedExploring: () => exploring,
+          onReturnFromExploration: () async {
+            returned++;
+            exploring = false;
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Back to book'));
+    await tester.pumpAndSettle();
+
+    expect(returned, 1);
+    expect(find.byType(GameReaderPage), findsOneWidget);
+    expect(find.text('secret solution'), findsOneWidget);
+  });
+
   testWidgets('delegates puzzles to the injected puzzle view', (tester) async {
     final puzzle = _content(ContentType.puzzle);
     ChessContent? received;

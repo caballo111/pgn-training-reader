@@ -675,6 +675,7 @@ final class _PlayedMoves extends StatelessWidget {
 
     return Semantics(
       container: true,
+      explicitChildNodes: true,
       label: 'Moves played',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

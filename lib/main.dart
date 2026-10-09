@@ -10,8 +10,9 @@ Future<void> main() async {
   SharedPreferences? preferences;
   try {
     preferences = await SharedPreferences.getInstance();
-  } catch (error) {
-    debugPrint('Could not load appearance preference: $error');
+  } catch (_) {
+    // Keep startup available with the default theme. Platform exceptions can
+    // contain private paths, so they must not be written to raw log sinks.
   }
   runApp(
     PgnTrainingReaderApp(

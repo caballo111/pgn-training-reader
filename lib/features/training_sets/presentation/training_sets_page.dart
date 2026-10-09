@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/time/app_clock.dart';
@@ -9,8 +11,11 @@ import '../../../domain/training/training_set.dart';
 import '../../../domain/training/lifecycle_status.dart';
 import '../../../domain/training/training_set_repository.dart';
 import '../../../domain/chess_content/chess_content_repository.dart';
+import '../../../domain/analysis/analysis_engine.dart';
+import '../../../domain/analysis/exploration_repository.dart';
 import '../../../domain/training/training_repository.dart';
 import '../../../domain/training/training_session_service.dart';
+import '../../../domain/training/training_set_item.dart';
 import '../application/training_set_editor_controller.dart';
 import 'training_set_editor_page.dart';
 import '../../training_session/application/active_session_controller.dart';
@@ -31,6 +36,8 @@ final class TrainingSetsPage extends StatefulWidget {
     required this.evaluatorFactory,
     required this.clock,
     required this.idGenerator,
+    this.explorationRepository,
+    this.analysisEngineFactory,
   });
   final TrainingSetRepository repository;
   final PgnIndexRepository indexRepository;
@@ -41,6 +48,8 @@ final class TrainingSetsPage extends StatefulWidget {
   final PuzzleEvaluatorFactory evaluatorFactory;
   final AppClock clock;
   final IdGenerator idGenerator;
+  final ExplorationRepository? explorationRepository;
+  final AnalysisEngineFactory? analysisEngineFactory;
 
   @override
   State<TrainingSetsPage> createState() => _TrainingSetsPageState();
@@ -166,11 +175,36 @@ final class _TrainingSetsPageState extends State<TrainingSetsPage> {
     );
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => ActiveSessionPage(controller: controller),
+        builder: (_) => ActiveSessionPage(
+          controller: controller,
+          explorationRepository: widget.explorationRepository,
+          analysisEngineFactory: widget.analysisEngineFactory,
+          explorationScopeIdResolver: _explorationScopeIdFor,
+        ),
       ),
     );
     controller.dispose();
     if (mounted) _reload();
+  }
+
+  Future<String?> _explorationScopeIdFor(TrainingSetItem item) async {
+    final sources = widget.sourceRepository;
+    if (sources == null) return null;
+    try {
+      final block = await widget.indexRepository.getById(item.blockId);
+      if (block == null) return null;
+      final source = await sources.getById(block.sourceId);
+      final fingerprint = source?.fingerprint;
+      if (source == null ||
+          source.importState != 'indexed' ||
+          fingerprint == null ||
+          fingerprint.isEmpty) {
+        return null;
+      }
+      return jsonEncode([block.id, block.sourceId, fingerprint]);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<PuzzleCompletionPolicy?> _chooseCompletionPolicy() =>

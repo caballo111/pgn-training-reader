@@ -6,6 +6,8 @@ import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content_repository.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
+import 'package:pgntrainingreader/domain/analysis/exploration_repository.dart';
+import 'package:pgntrainingreader/domain/analysis/exploration_session.dart';
 import 'package:pgntrainingreader/domain/training/attempt_move.dart';
 import 'package:pgntrainingreader/domain/training/authored_line_puzzle_evaluator.dart';
 import 'package:pgntrainingreader/domain/training/cycle.dart';
@@ -28,6 +30,123 @@ final _startedAt = DateTime.utc(2026, 9, 28, 12);
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 void main() {
+  testWidgets(
+    'cycle reading waits for a durable exploration save before completing',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final clock = _TestClock();
+      final item = TrainingSetItem(
+        id: 'text-item',
+        trainingSetId: 'set',
+        blockId: 'text-block',
+        position: 0,
+        contentType: ContentType.text,
+        addedAt: _startedAt,
+      );
+      final attempt = PuzzleAttempt(
+        id: 'unused-attempt',
+        blockId: 'unused-block',
+        cycleId: 'cycle',
+        sessionId: 'session',
+        startedAt: _startedAt,
+      );
+      final repository = _TrainingRepository(attempt: attempt, item: item);
+      final cycle = Cycle(
+        id: 'cycle',
+        trainingSetId: 'set',
+        status: CycleStatus.active,
+        startedAt: _startedAt,
+        createdAt: _startedAt,
+      );
+      final session = TrainingSession(
+        id: 'session',
+        cycleId: cycle.id,
+        status: TrainingSessionStatus.active,
+        startedAt: _startedAt,
+        studyDay: DateTime.utc(2026, 9, 28),
+      );
+      final content = ChessContent(
+        headers: const {'Event': 'Reading fixture'},
+        startingFen: _startFen,
+        contentType: ContentType.text,
+        rootMoves: [
+          MoveNode(
+            san: 'e4',
+            uci: 'e2e4',
+            fenBefore: _startFen,
+            fenAfter:
+                'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
+          ),
+        ],
+      );
+      final service = _SessionService(
+        cycle: cycle,
+        session: session,
+        item: item,
+        repository: repository,
+      );
+      final explorationRepository = _ExplorationRepository()..failWrites = true;
+      final controller = ActiveSessionController(
+        trainingSet: TrainingSet(
+          id: 'set',
+          name: 'Reading set',
+          items: [item],
+          createdAt: _startedAt,
+          updatedAt: _startedAt,
+        ),
+        sessionService: service,
+        repository: repository,
+        contentRepository: _ContentRepository(content),
+        clock: clock,
+        evaluatorFactory: () =>
+            AuthoredLinePuzzleEvaluator(clock: clock, idGenerator: _Ids()),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActiveSessionPage(
+            controller: controller,
+            explorationRepository: explorationRepository,
+            explorationScopeIdResolver: (_) async => 'text-block/source/rev1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('explore-position')),
+      );
+      await tester.tap(find.byKey(const ValueKey('explore-position')));
+      await tester.pumpAndSettle();
+      await _playMoveOnBoard(tester, from: 'e2', to: 'e4');
+      await tester.tap(find.text('Complete item and continue'));
+      await tester.pumpAndSettle();
+      expect(service.completeNonPuzzleCalls, 0);
+      expect(controller.state.activeItem?.id, item.id);
+      expect(find.text('Return to reading'), findsOneWidget);
+      expect(
+        find.text('Reading could not be saved. Retry before continuing.'),
+        findsOneWidget,
+      );
+
+      explorationRepository.failWrites = false;
+      ScaffoldMessenger.of(
+        tester.element(find.text('Complete item and continue')),
+      ).clearSnackBars();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Complete item and continue'));
+      await tester.pumpAndSettle();
+      expect(service.completeNonPuzzleCalls, 1);
+      expect(controller.state.status, ActiveSessionStatus.completed);
+      expect(explorationRepository.savedSessions.last.moves, ['e2e4']);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    },
+  );
+
   testWidgets(
     'session shows the existing puzzle solver and pauses on app inactivity',
     (tester) async {
@@ -82,6 +201,7 @@ void main() {
         ],
       );
       final repository = _TrainingRepository(attempt: attempt, item: item);
+      final explorationRepository = _ExplorationRepository();
       final service = _SessionService(
         cycle: cycle,
         session: session,
@@ -112,7 +232,12 @@ void main() {
                 child: FilledButton(
                   onPressed: () => Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
-                      builder: (_) => ActiveSessionPage(controller: controller),
+                      builder: (_) => ActiveSessionPage(
+                        controller: controller,
+                        explorationRepository: explorationRepository,
+                        explorationScopeIdResolver: (_) async =>
+                            '["block","source","revision-1"]',
+                      ),
                     ),
                   ),
                   child: const Text('Open session'),
@@ -168,6 +293,36 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Continue to review'), findsNothing);
+      await tester.ensureVisible(find.text('Explore position'));
+      await tester.tap(find.text('Explore position'));
+      await tester.pumpAndSettle();
+      expect(find.text('Exploring from 1. e4'), findsOneWidget);
+      explorationRepository.failWrites = true;
+      await _playMoveOnBoard(tester, from: 'd7', to: 'd5');
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Return to review'), findsOneWidget);
+      expect(service.closeCalls, 0);
+      expect(find.textContaining('Exploration not saved.'), findsOneWidget);
+      explorationRepository.failWrites = false;
+      await tester.drag(find.byType(ListView).last, const Offset(0, -500));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Retry save'));
+      await tester.tap(find.text('Retry save'));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Solution line'), findsOneWidget);
+      expect(service.closeCalls, 0);
+      expect(explorationRepository.savedSessions, hasLength(1));
+      expect(
+        explorationRepository.savedSessions.single.origin.scopeId,
+        '["block","source","revision-1"]',
+      );
+      expect(explorationRepository.savedSessions.single.moves, [
+        'e2e4',
+        'd7d5',
+      ]);
       await _checkActionGeometry(tester, ['Finish cycle']);
       repository.failInteractionWrites = true;
       await tester.tap(find.byTooltip('Starting position'));
@@ -237,6 +392,32 @@ void main() {
   );
 }
 
+Future<void> _playMoveOnBoard(
+  WidgetTester tester, {
+  required String from,
+  required String to,
+}) async {
+  final board = find.byWidgetPredicate(
+    (widget) => widget.runtimeType.toString() == 'Chessboard',
+  );
+  expect(board, findsOneWidget);
+  final rect = tester.getRect(board);
+  Offset squareCenter(String square) {
+    final file = square.codeUnitAt(0) - 'a'.codeUnitAt(0);
+    final rank = int.parse(square.substring(1));
+    final row = 8 - rank;
+    return Offset(
+      rect.left + rect.width * (file + 0.5) / 8,
+      rect.top + rect.height * (row + 0.5) / 8,
+    );
+  }
+
+  await tester.tapAt(squareCenter(from));
+  await tester.pump(const Duration(milliseconds: 80));
+  await tester.tapAt(squareCenter(to));
+  await tester.pumpAndSettle();
+}
+
 Future<void> _checkActionGeometry(
   WidgetTester tester,
   List<String> labels,
@@ -256,7 +437,10 @@ Future<void> _checkActionGeometry(
         reason: 'Cycle layout at $size with text scale $scale',
       );
       for (final label in labels) {
-        final rect = tester.getRect(find.text(label));
+        final finder = find.text(label).evaluate().isNotEmpty
+            ? find.text(label)
+            : find.byTooltip(label);
+        final rect = tester.getRect(finder);
         expect(rect.top, greaterThanOrEqualTo(0));
         expect(rect.bottom, lessThanOrEqualTo(size.height));
       }
@@ -286,6 +470,23 @@ final class _ContentRepository implements ChessContentRepository {
   final ChessContent content;
   @override
   Future<ChessContent?> getById(String id) async => content;
+}
+
+final class _ExplorationRepository implements ExplorationRepository {
+  final Map<String, ExplorationSession> _sessions = {};
+  final List<ExplorationSession> savedSessions = [];
+  bool failWrites = false;
+
+  @override
+  Future<ExplorationSession?> load(ExplorationOrigin origin) async =>
+      _sessions[origin.identityKey];
+
+  @override
+  Future<void> save(ExplorationSession session) async {
+    if (failWrites) throw StateError('Draft save failed.');
+    _sessions[session.origin.identityKey] = session;
+    savedSessions.add(session);
+  }
 }
 
 final class _TrainingRepository
@@ -346,9 +547,11 @@ final class _SessionService implements TrainingSessionService {
   final Cycle cycle;
   final TrainingSession session;
   final TrainingSetItem item;
+  late TrainingSetItem? nextItem = item;
   final _TrainingRepository repository;
   int pauseCalls = 0;
   int closeCalls = 0;
+  int completeNonPuzzleCalls = 0;
   int failCloseCount = 0;
   final List<Duration> segmentDurations = [];
   @override
@@ -364,7 +567,35 @@ final class _SessionService implements TrainingSessionService {
   }) async => session;
   @override
   Future<TrainingSetItem?> selectNextItem({required String cycleId}) async =>
-      item;
+      nextItem;
+  @override
+  Future<CycleItemCompletion> completeNonPuzzleItem({
+    required String cycleId,
+    required String trainingSetItemId,
+    required DateTime completedAt,
+  }) async {
+    completeNonPuzzleCalls++;
+    nextItem = null;
+    return CycleItemCompletion(
+      cycleId: cycleId,
+      trainingSetItemId: trainingSetItemId,
+      completedAt: completedAt,
+    );
+  }
+
+  @override
+  Future<Cycle> completeCycle({
+    required String cycleId,
+    required DateTime completedAt,
+  }) async => Cycle(
+    id: cycle.id,
+    trainingSetId: cycle.trainingSetId,
+    status: CycleStatus.completed,
+    startedAt: cycle.startedAt,
+    completedAt: completedAt,
+    createdAt: cycle.createdAt,
+  );
+
   @override
   Future<TrainingSession> pauseSession({
     required String sessionId,

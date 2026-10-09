@@ -69,7 +69,7 @@ class StudyLayout extends StatelessWidget {
           return Row(
             children: [
               Expanded(
-                flex: 2,
+                flex: 5,
                 child: LayoutBuilder(
                   builder: (context, boardConstraints) {
                     final controlHeight = _controlHeight(
@@ -89,7 +89,7 @@ class StudyLayout extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                flex: 3,
+                flex: 9,
                 child: Column(
                   children: [
                     if (header != null)
@@ -158,9 +158,12 @@ class StudyLayout extends StatelessWidget {
                   );
                   // Include the gap between the board/control group and the
                   // details viewport in the reservation.
+                  // Keep at least a useful notes/move viewport on short
+                  // phones. The reservation includes the gap below the board,
+                  // leaving 140px for details when the available height allows.
                   final detailReserve = math.min(
-                    128.0,
-                    mainConstraints.maxHeight * .25,
+                    148.0,
+                    mainConstraints.maxHeight,
                   );
                   final boardSize = wide
                       ? math.max(

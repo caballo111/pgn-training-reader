@@ -19,6 +19,13 @@ moves and timing segments. `app_settings` stores reading intent and separate
 casual/practice interaction state. Exact OS paths are internal and not a public
 portability contract. No shared-storage permission is needed for managed copies.
 
+Personal exploration drafts are separate, versioned `app_settings` entries,
+scoped to the source/block revision and authored origin. They contain the
+origin's move history and personal branches; they never rewrite the imported
+PGN or a scored attempt. Removed or changed source revisions do not attach old
+drafts to new content. Drafts remain local and have no portable export yet.
+Optional Stockfish analysis runs on the device; positions are not uploaded.
+
 Diagnostic messages are sanitized; production log fields exclude PGN text,
 comments, solutions, file paths and content URIs. Source fingerprints sample
 bytes rather than prove cryptographic whole-file identity; changed sources

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
@@ -72,6 +73,25 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   Map<String, dynamic> _presentation = {'version': 1};
   Future<void> _presentationWrite = Future<void>.value();
   Timer? _readerSaveTimer;
+  final _readerKey = GlobalKey<TextViewState>();
+  final _reviewKey = GlobalKey<PuzzleSolutionReviewViewState>();
+
+  String get _explorationScopeId =>
+      jsonEncode([widget.bookId, widget.blockId, widget.sourceRevision]);
+
+  bool get isExploring =>
+      _readerKey.currentState?.isExploring == true ||
+      _reviewKey.currentState?.isExploring == true;
+
+  Future<void> returnFromExploration() async {
+    await _readerKey.currentState?.returnFromExploration();
+    await _reviewKey.currentState?.returnFromExploration();
+  }
+
+  Future<void> _flushAnalysis() async {
+    await _readerKey.currentState?.prepareToLeave();
+    await _reviewKey.currentState?.prepareToLeave();
+  }
 
   String get _preferenceKey => 'library.read-puzzles.${widget.bookId}';
   StudyPresentationStore get _store =>
@@ -201,6 +221,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   }
 
   Future<void> _flushPresentation() async {
+    await _flushAnalysis();
     _readerSaveTimer?.cancel();
     try {
       await _presentationWrite;
@@ -348,15 +369,26 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
     }
   }
 
-  Future<void> _backToBook() => _leave(() async {
-    setState(() => _allowPop = true);
-    await WidgetsBinding.instance.endOfFrame;
-    if (mounted) Navigator.of(context).pop();
-  });
+  Future<void> _backToBook() async {
+    if (isExploring) {
+      try {
+        await returnFromExploration();
+      } catch (_) {
+        // The workspace keeps its draft visible and provides save retry.
+      }
+      return;
+    }
+    await _leave(() async {
+      setState(() => _allowPop = true);
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
 
   /// Finalizes scoring before a classification change exposes authored text.
   Future<void> prepareForReading() async {
     await _openingDone?.future;
+    await _flushAnalysis();
     await _settleController();
     await _controller?.reveal();
     await _markExposed();
@@ -702,60 +734,75 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
               ),
             ),
           Expanded(
-            child: _reading
-                ? TextView(
-                    content: widget.puzzle,
-                    readPuzzle: true,
-                    initialState: _presentation['reader'] is Map
-                        ? Map<String, dynamic>.from(
-                            _presentation['reader'] as Map,
-                          )
-                        : null,
-                    onStateChanged: _readerChanged,
-                  )
-                : review != null
-                ? PuzzleSolutionReviewView(
-                    presentation: review,
-                    showBlockNavigation: true,
-                    nextLabel: next == null ? 'Back to book' : 'Next block',
-                    canAdvance: !_busy,
-                    initialPath: controller?.reviewPath,
-                    onPathChanged: _saveReviewPath,
-                    initialOrientation: controller?.reviewOrientation,
-                    onOrientationChanged: _saveReviewOrientation,
-                    onRetry: _busy ? null : () => _start(fresh: true),
-                    onPrevious: _busy || widget.onPreviousBlock == null
-                        ? null
-                        : () => _leave(widget.onPreviousBlock!),
-                    onNext: _busy
-                        ? null
-                        : () => next == null
-                              ? _backToBook()
-                              : _leave(() => next(_policy!)),
-                  )
-                : PuzzleSolvingView(
-                    controller: controller!,
-                    isCasualPractice: true,
-                    showBlockNavigation: true,
-                    onPreviousBlock: _busy || widget.onPreviousBlock == null
-                        ? null
-                        : () => _leave(widget.onPreviousBlock!),
-                    nextBlockLabel: next == null
-                        ? 'Back to book'
-                        : 'Next block',
-                    onNextBlock: _busy
-                        ? null
-                        : () => next == null
-                              ? _backToBook()
-                              : _leave(() => next(_policy!)),
-                    showProgress: false,
-                    modeLabel: null,
-                    currentExercise: 1,
-                    totalExercises: 1,
-                    orientation: side,
-                    onPause: _pause,
-                    onReview: _enterReview,
-                  ),
+            child: IgnorePointer(
+              ignoring: _busy,
+              child: _reading
+                  ? TextView(
+                      key: _readerKey,
+                      content: widget.puzzle,
+                      explorationScopeId: _explorationScopeId,
+                      explorationRepository:
+                          widget.dependencies.explorationRepository,
+                      analysisEngineFactory:
+                          widget.dependencies.analysisEngineFactory,
+                      readPuzzle: true,
+                      initialState: _presentation['reader'] is Map
+                          ? Map<String, dynamic>.from(
+                              _presentation['reader'] as Map,
+                            )
+                          : null,
+                      onStateChanged: _readerChanged,
+                    )
+                  : review != null
+                  ? PuzzleSolutionReviewView(
+                      key: _reviewKey,
+                      explorationScopeId: _explorationScopeId,
+                      explorationRepository:
+                          widget.dependencies.explorationRepository,
+                      analysisEngineFactory:
+                          widget.dependencies.analysisEngineFactory,
+                      presentation: review,
+                      showBlockNavigation: true,
+                      nextLabel: next == null ? 'Back to book' : 'Next block',
+                      canAdvance: !_busy,
+                      initialPath: controller?.reviewPath,
+                      onPathChanged: _saveReviewPath,
+                      initialOrientation: controller?.reviewOrientation,
+                      onOrientationChanged: _saveReviewOrientation,
+                      onRetry: _busy ? null : () => _start(fresh: true),
+                      onPrevious: _busy || widget.onPreviousBlock == null
+                          ? null
+                          : () => _leave(widget.onPreviousBlock!),
+                      onNext: _busy
+                          ? null
+                          : () => next == null
+                                ? _backToBook()
+                                : _leave(() => next(_policy!)),
+                    )
+                  : PuzzleSolvingView(
+                      controller: controller!,
+                      isCasualPractice: true,
+                      showBlockNavigation: true,
+                      onPreviousBlock: _busy || widget.onPreviousBlock == null
+                          ? null
+                          : () => _leave(widget.onPreviousBlock!),
+                      nextBlockLabel: next == null
+                          ? 'Back to book'
+                          : 'Next block',
+                      onNextBlock: _busy
+                          ? null
+                          : () => next == null
+                                ? _backToBook()
+                                : _leave(() => next(_policy!)),
+                      showProgress: false,
+                      modeLabel: null,
+                      currentExercise: 1,
+                      totalExercises: 1,
+                      orientation: side,
+                      onPause: _pause,
+                      onReview: _enterReview,
+                    ),
+            ),
           ),
           if (_reading)
             SafeArea(

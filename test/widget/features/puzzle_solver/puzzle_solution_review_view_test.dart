@@ -648,7 +648,14 @@ void main() {
       expect(rect.bottom, lessThanOrEqualTo(640));
     }
     final actionBottomBeforeScroll = tester.getRect(next).bottom;
-    detailsScroll.position.jumpTo(detailsScroll.position.maxScrollExtent);
+    // Scroll as a learner would: lazy children of different heights can
+    // change the estimated extent while the engine controls enter view.
+    await tester.scrollUntilVisible(
+      find.text('1. e3'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+      maxScrolls: 60,
+    );
     await tester.pumpAndSettle();
     expect(detailsScroll.position.maxScrollExtent, greaterThan(0));
     expect(find.text('1 distinct wrong move'), findsNothing);

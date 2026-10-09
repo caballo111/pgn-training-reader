@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -57,6 +58,9 @@ Route<dynamic> onGenerateAppRoute(
       builder: (_) => TrainingSetsPage(
         repository: dependencies.trainingSetRepository,
         indexRepository: dependencies.pgnIndexRepository,
+        sourceRepository: dependencies.pgnSourceRepository,
+        explorationRepository: dependencies.explorationRepository,
+        analysisEngineFactory: dependencies.analysisEngineFactory,
         trainingRepository: dependencies.trainingRepository,
         sessionService: dependencies.trainingSessionService,
         contentRepository: dependencies.chessContentRepository,
@@ -235,6 +239,21 @@ Future<void> _openBlock(
             return GameReaderPage(
               key: ValueKey(currentBlock.id),
               content: content!,
+              explorationScopeId: jsonEncode([
+                currentBlock.sourceId,
+                currentBlock.id,
+                revisionFor(currentBlock.sourceId),
+              ]),
+              explorationRepository: dependencies.explorationRepository,
+              analysisEngineFactory: dependencies.analysisEngineFactory,
+              isNestedExploring: () =>
+                  practiceKey.currentState?.isExploring == true,
+              onReturnFromExploration: () async {
+                await practiceKey.currentState?.returnFromExploration();
+              },
+              onPrepareToLeave: () async {
+                await practiceKey.currentState?.prepareToLeave();
+              },
               unavailableMessage: openingFailure,
               initialReaderState: readingPresentation['reader'] is Map
                   ? Map<String, dynamic>.from(

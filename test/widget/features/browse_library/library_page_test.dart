@@ -228,7 +228,10 @@ final class _Sources implements PgnSourceRepository {
   Future<void> update(PgnSource source) async {}
 
   @override
-  Future<void> remove({required String id, required DateTime removedAt}) async {}
+  Future<void> remove({
+    required String id,
+    required DateTime removedAt,
+  }) async {}
 
   @override
   Future<void> updateAfterVerifiedRelink({

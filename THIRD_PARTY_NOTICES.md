@@ -74,6 +74,10 @@ the review described in [distribution review](docs/distribution-license-review.m
 | `material_color_utilities` | 0.13.0 | Apache-2.0 | [License](docs/third-party-licenses/material_color_utilities.txt) |
 | `meta` | 1.19.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/meta.txt) |
 | `mime` | 2.1.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/mime.txt) |
+| `multistockfish` | 0.6.1 | GPL-3.0 | [License](docs/third-party-licenses/multistockfish.txt) |
+| `multistockfish_chess` | 0.6.0 | GPL-3.0 | [License](docs/third-party-licenses/multistockfish_chess.txt) |
+| `multistockfish_light` | 0.1.0 | GPL-3.0 | [License](docs/third-party-licenses/multistockfish_light.txt) |
+| `multistockfish_variant` | 0.4.0 | GPL-3.0 | [License](docs/third-party-licenses/multistockfish_variant.txt) |
 | `native_toolchain_c` | 0.19.5 | BSD (see exact clauses) | [License](docs/third-party-licenses/native_toolchain_c.txt) |
 | `objective_c` | 9.6.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/objective_c.txt) |
 | `package_config` | 3.0.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/package_config.txt) |
@@ -102,6 +106,7 @@ the review described in [distribution review](docs/distribution-license-review.m
 | `sqlite3` | 3.6.0 | MIT | [License](docs/third-party-licenses/sqlite3.txt) |
 | `sqlite3_flutter_libs` | 0.6.0+eol | MIT | [License](docs/third-party-licenses/sqlite3_flutter_libs.txt) |
 | `sqlparser` | 0.45.0 | MIT | [License](docs/third-party-licenses/sqlparser.txt) |
+| Stockfish 19 native engine | bundled by `multistockfish_light 0.1.0` | GPL-3.0 | [License](docs/third-party-licenses/stockfish-19.txt) |
 | `stack_trace` | 1.12.2 | BSD (see exact clauses) | [License](docs/third-party-licenses/stack_trace.txt) |
 | `stream_channel` | 2.1.4 | BSD (see exact clauses) | [License](docs/third-party-licenses/stream_channel.txt) |
 | `stream_transform` | 2.1.2 | BSD (see exact clauses) | [License](docs/third-party-licenses/stream_transform.txt) |
@@ -121,3 +126,15 @@ the review described in [distribution review](docs/distribution-license-review.m
 | `xml` | 7.1.0 | MIT | [License](docs/third-party-licenses/xml.txt) |
 | `yaml` | 3.1.4 | MIT | [License](docs/third-party-licenses/yaml.txt) |
 | `yaml_edit` | 2.2.4 | BSD (see exact clauses) | [License](docs/third-party-licenses/yaml_edit.txt) |
+
+The Stockfish adapter uses the `light` flavor at runtime. The facade package
+also declares native `multistockfish_chess` and `multistockfish_variant`
+plugins; they remain part of the resolved source and Android build graph. For
+distribution, preserve the exact corresponding source for all shipped native
+libraries, their build scripts, the app's source, these notices, and GPLv3
+installation information where required. The upstream source is available in
+the [lichess-org/dart-multistockfish repository](https://github.com/lichess-org/dart-multistockfish)
+and in the versioned pub.dev source archives for [`multistockfish 0.6.1`](https://pub.dev/packages/multistockfish/versions/0.6.1),
+[`multistockfish_light 0.1.0`](https://pub.dev/packages/multistockfish_light/versions/0.1.0),
+[`multistockfish_chess 0.6.0`](https://pub.dev/packages/multistockfish_chess/versions/0.6.0),
+and [`multistockfish_variant 0.4.0`](https://pub.dev/packages/multistockfish_variant/versions/0.4.0).

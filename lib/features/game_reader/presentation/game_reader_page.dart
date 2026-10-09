@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../domain/analysis/analysis_engine.dart';
+import '../../../domain/analysis/exploration_repository.dart';
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/content_type.dart';
 import '../../../shared/presentation/study_block_navigation.dart';
@@ -32,6 +34,12 @@ final class GameReaderPage extends StatefulWidget {
     this.onNextBlock,
     this.onPreviousBlock,
     this.onBookSettings,
+    this.explorationScopeId,
+    this.explorationRepository,
+    this.analysisEngineFactory,
+    this.isNestedExploring,
+    this.onReturnFromExploration,
+    this.onPrepareToLeave,
     super.key,
   });
 
@@ -47,6 +55,12 @@ final class GameReaderPage extends StatefulWidget {
   final VoidCallback? onNextBlock;
   final VoidCallback? onPreviousBlock;
   final VoidCallback? onBookSettings;
+  final String? explorationScopeId;
+  final ExplorationRepository? explorationRepository;
+  final AnalysisEngineFactory? analysisEngineFactory;
+  final bool Function()? isNestedExploring;
+  final Future<void> Function()? onReturnFromExploration;
+  final Future<void> Function()? onPrepareToLeave;
 
   /// Injected puzzle presentation; no solution-bearing content is rendered
   /// when a puzzle view has not been supplied by the caller.
@@ -55,10 +69,11 @@ final class GameReaderPage extends StatefulWidget {
   final Future<void> Function(ContentType)? onClassificationOverride;
 
   @override
-  State<GameReaderPage> createState() => _GameReaderPageState();
+  GameReaderPageState createState() => GameReaderPageState();
 }
 
-final class _GameReaderPageState extends State<GameReaderPage> {
+/// Page state exposed for parent flows that must save reader work before exit.
+final class GameReaderPageState extends State<GameReaderPage> {
   late ChessContent content = widget.content;
   StudyMode? _puzzleMode;
   bool _saving = false;
@@ -66,6 +81,63 @@ final class _GameReaderPageState extends State<GameReaderPage> {
   late Map<String, dynamic> _readerState = widget.initialReaderState ?? {};
   Timer? _readerSaveTimer;
   Future<void> _readerWrite = Future<void>.value();
+  Future<void>? _activePrepare;
+  Future<void>? _activeExplorationReturn;
+  final GlobalKey<TextViewState> _textViewKey = GlobalKey<TextViewState>();
+
+  bool get isExploring =>
+      (_textViewKey.currentState?.isExploring ?? false) ||
+      (widget.isNestedExploring?.call() ?? false);
+
+  /// Persist an open exploration and the authored reader cursor before a
+  /// parent replaces this page.
+  Future<void> prepareToLeave() {
+    final active = _activePrepare;
+    if (active != null) return active;
+    final operation = _prepareToLeave();
+    _activePrepare = operation;
+    return operation.whenComplete(() {
+      if (identical(_activePrepare, operation)) _activePrepare = null;
+    });
+  }
+
+  Future<void> _prepareToLeave() async {
+    final wasSaving = _saving;
+    if (!wasSaving && mounted) setState(() => _saving = true);
+    try {
+      await _textViewKey.currentState?.prepareToLeave();
+      await widget.onPrepareToLeave?.call();
+      await _flushReader();
+    } finally {
+      if (!wasSaving && mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Return from an open exploration to authored reading, preserving its
+  /// cursor and scroll, and save the restored reader state.
+  Future<void> returnFromExploration() {
+    final active = _activeExplorationReturn;
+    if (active != null) return active;
+    final operation = _returnFromExploration();
+    _activeExplorationReturn = operation;
+    return operation.whenComplete(() {
+      if (identical(_activeExplorationReturn, operation)) {
+        _activeExplorationReturn = null;
+      }
+    });
+  }
+
+  Future<void> _returnFromExploration() async {
+    final textView = _textViewKey.currentState;
+    if (textView?.isExploring == true) {
+      await textView!.returnFromExploration();
+    } else if (widget.isNestedExploring?.call() ?? false) {
+      await widget.onReturnFromExploration?.call();
+    } else {
+      return;
+    }
+    await _flushReader();
+  }
 
   @override
   void initState() {
@@ -117,7 +189,7 @@ final class _GameReaderPageState extends State<GameReaderPage> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      await _flushReader();
+      await prepareToLeave();
       if (mounted) action();
     } catch (_) {
       if (mounted) {
@@ -134,12 +206,31 @@ final class _GameReaderPageState extends State<GameReaderPage> {
     }
   }
 
-  Future<void> _returnToBook() => _navigateBlock(() {
-    setState(() => _allowPop = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).pop();
+  Future<void> _returnToBook() async {
+    if (_saving) return;
+    if (isExploring) {
+      try {
+        await returnFromExploration();
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Exploration could not be saved. Retry before returning.',
+              ),
+            ),
+          );
+        }
+      }
+      return;
+    }
+    await _navigateBlock(() {
+      setState(() => _allowPop = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
     });
-  });
+  }
 
   @override
   void dispose() {
@@ -231,9 +322,6 @@ final class _GameReaderPageState extends State<GameReaderPage> {
                   ),
                   Text(
                     [
-                      if (_puzzleMode != null &&
-                          _puzzleMode != StudyMode.reading)
-                        'Casual practice',
                       if (widget.section?.trim().isNotEmpty == true)
                         widget.section!,
                       'Block ${widget.blockNumber}',
@@ -354,8 +442,12 @@ final class _GameReaderPageState extends State<GameReaderPage> {
             )
           : switch (content.contentType) {
               ContentType.text => TextView(
+                key: _textViewKey,
                 content: content,
                 initialState: widget.initialReaderState,
+                explorationScopeId: widget.explorationScopeId,
+                explorationRepository: widget.explorationRepository,
+                analysisEngineFactory: widget.analysisEngineFactory,
                 onStateChanged: widget.onSaveReaderState == null
                     ? null
                     : _readerChanged,
@@ -374,16 +466,36 @@ final class _GameReaderPageState extends State<GameReaderPage> {
               ),
             },
     );
+    final guardedSurface = IgnorePointer(ignoring: _saving, child: surface);
     if (widget.onSaveReaderState == null ||
         content.contentType == ContentType.puzzle) {
-      return surface;
+      return guardedSurface;
     }
     return PopScope(
       canPop: _allowPop,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _returnToBook();
+        if (!didPop) {
+          if (isExploring) {
+            final messenger = ScaffoldMessenger.of(context);
+            unawaited(
+              returnFromExploration().catchError((Object _) {
+                if (mounted) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Exploration could not be saved. Retry before leaving.',
+                      ),
+                    ),
+                  );
+                }
+              }),
+            );
+          } else {
+            unawaited(_returnToBook());
+          }
+        }
       },
-      child: surface,
+      child: guardedSurface,
     );
   }
 
@@ -391,7 +503,7 @@ final class _GameReaderPageState extends State<GameReaderPage> {
     if (type == null) return;
     setState(() => _saving = true);
     try {
-      await _flushReader();
+      await prepareToLeave();
       await widget.onClassificationOverride!(type);
       if (mounted) {
         setState(() {

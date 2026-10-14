@@ -38,6 +38,8 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
     this.explorationScopeId,
     this.explorationRepository,
     this.analysisEngineFactory,
+    this.explorationEnabled = true,
+    this.persistenceMessage,
     super.key,
   });
 
@@ -63,6 +65,8 @@ final class PuzzleSolutionReviewView extends StatefulWidget {
   final String? explorationScopeId;
   final ExplorationRepository? explorationRepository;
   final AnalysisEngineFactory? analysisEngineFactory;
+  final bool explorationEnabled;
+  final String? persistenceMessage;
 
   @override
   PuzzleSolutionReviewViewState createState() =>
@@ -76,6 +80,10 @@ final class PuzzleSolutionReviewViewState
   ExplorationOrigin? _exploration;
   List<String> _initialExplorationMoves = const [];
   List<String> _explorationComments = const [];
+  bool _initialMovesAreEngine = false;
+  bool _workspaceEngineWasEnabled = false;
+  PuzzleSide? _workspaceOrientation;
+  bool _openingWorkspace = false;
   double _returnScroll = 0;
   String? _draftLookupKey;
   Future<ExplorationSession?>? _draftLookup;
@@ -95,6 +103,9 @@ final class PuzzleSolutionReviewViewState
   void _restoreReview() {
     setState(() {
       _exploration = null;
+      _workspaceEngineWasEnabled = false;
+      _workspaceOrientation = null;
+      _initialMovesAreEngine = false;
       _draftLookupKey = null;
       _draftLookup = null;
     });
@@ -108,56 +119,106 @@ final class PuzzleSolutionReviewViewState
   }
 
   Future<void> _explore({List<String> initialMoves = const []}) async {
-    await _analysisKey.currentState?.prepareToLeave();
-    if (!mounted || !widget.presentation.isSolutionVisible) return;
-    final selected = _plyIndex < 0 ? null : _line[_plyIndex];
-    _openExploration(
-      path: _pathThrough(_plyIndex),
-      moves: [for (final move in _line.take(_plyIndex + 1)) move.uci],
+    if (!widget.presentation.isSolutionVisible ||
+        _openingWorkspace ||
+        !widget.explorationEnabled) {
+      return;
+    }
+    final lineAtTap = List<PuzzlePresentationMove>.unmodifiable(_line);
+    final plyAtTap = _plyIndex;
+    final selected = plyAtTap < 0 ? null : lineAtTap[plyAtTap];
+    await _enterExploration(
+      path: _pathThrough(plyAtTap),
+      moves: [for (final move in lineAtTap.take(plyAtTap + 1)) move.uci],
       label: selected == null
           ? 'starting position'
           : '${_movePrefix(selected)}${selected.san}',
       initialMoves: initialMoves,
+      initialMovesAreEngine: initialMoves.isNotEmpty,
     );
   }
 
-  void _openExploration({
+  Future<void> _enterExploration({
     required List<int> path,
     required List<String> moves,
     required String label,
     String? discriminator,
     List<String> initialMoves = const [],
-  }) {
-    final comments = <String>[...widget.presentation.comments];
+    bool initialMovesAreEngine = false,
+  }) async {
+    if (_openingWorkspace ||
+        !widget.explorationEnabled ||
+        !widget.presentation.isSolutionVisible) {
+      return;
+    }
+    final presentationAtTap = widget.presentation;
+    final scopeAtTap = widget.explorationScopeId;
+    final repositoryAtTap = widget.explorationRepository;
+    final engineFactoryAtTap = widget.analysisEngineFactory;
+    final orientationAtTap = _orientation;
+    final engineWasEnabledAtTap =
+        _analysisKey.currentState?.engineRequested ?? false;
+    final pathAtTap = List<int>.unmodifiable(path);
+    final movesAtTap = List<String>.unmodifiable(moves);
+    final initialMovesAtTap = List<String>.unmodifiable(initialMoves);
+    final returnScrollAtTap = _detailsController.hasClients
+        ? _detailsController.offset
+        : 0.0;
+    final comments = <String>[...presentationAtTap.comments];
     var siblings =
-        widget.presentation.solution ?? const <PuzzlePresentationMove>[];
+        presentationAtTap.solution ?? const <PuzzlePresentationMove>[];
     PuzzlePresentationMove? anchoredMove;
-    for (final index in path) {
+    for (final index in pathAtTap) {
       if (index < 0 || index >= siblings.length) break;
       anchoredMove = siblings[index];
       siblings = anchoredMove.children;
     }
     if (anchoredMove != null) comments.addAll(anchoredMove.comments);
-    _returnScroll = _detailsController.hasClients
-        ? _detailsController.offset
-        : 0;
-    setState(() {
-      _initialExplorationMoves = initialMoves;
-      _explorationComments = comments;
-      _exploration = ExplorationOrigin(
-        scopeId: widget.explorationScopeId ?? 'ephemeral-review',
-        startingFen: widget.presentation.startingFen,
-        authoredPath: path,
-        authoredMoves: moves,
-        label: label,
-        discriminator: discriminator,
-      );
-    });
+    final originAtTap = ExplorationOrigin(
+      scopeId: scopeAtTap ?? 'ephemeral-review',
+      startingFen: presentationAtTap.startingFen,
+      authoredPath: pathAtTap,
+      authoredMoves: movesAtTap,
+      label: label,
+      discriminator: discriminator,
+    );
+    _openingWorkspace = true;
+    setState(() {});
+    try {
+      await _analysisKey.currentState?.prepareToLeave();
+      if (!mounted ||
+          !identical(widget.presentation, presentationAtTap) ||
+          !widget.presentation.isSolutionVisible ||
+          scopeAtTap != widget.explorationScopeId ||
+          !identical(repositoryAtTap, widget.explorationRepository) ||
+          !identical(engineFactoryAtTap, widget.analysisEngineFactory)) {
+        return;
+      }
+      setState(() {
+        _returnScroll = returnScrollAtTap;
+        _initialExplorationMoves = initialMovesAtTap;
+        _explorationComments = comments;
+        _workspaceEngineWasEnabled = engineWasEnabledAtTap;
+        _exploration = originAtTap;
+        _initialMovesAreEngine = initialMovesAreEngine;
+        _workspaceOrientation = orientationAtTap;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Engine analysis could not be stopped.'),
+          ),
+        );
+      }
+    } finally {
+      _openingWorkspace = false;
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _exploreTry(PuzzleRejection rejection) async {
-    await _analysisKey.currentState?.prepareToLeave();
-    if (!mounted || !widget.presentation.isSolutionVisible) return;
+    if (!widget.presentation.isSolutionVisible || _openingWorkspace) return;
     final path = <int>[];
     var siblings = widget.presentation.solution!;
     for (final uci in rejection.authoredPath) {
@@ -175,19 +236,191 @@ final class PuzzleSolutionReviewViewState
         ),
       );
     }
-    _openExploration(
+    final prefix = _prefixForFen(rejection.fenBefore);
+    final triedMove = rejection.san ?? rejection.uci;
+    await _enterExploration(
       path: path,
       moves: rejection.authoredPath,
-      label: '${_prefixForFen(rejection.fenBefore)}before your try',
+      label: rejection.legal
+          ? 'before $prefix$triedMove (your rejected try)'
+          : 'before $prefix$triedMove (your illegal try)',
       discriminator: 'try:${rejection.uci}',
       initialMoves: rejection.legal ? [rejection.uci] : const [],
+      initialMovesAreEngine: false,
     );
+  }
+
+  Widget _reviewOutcomeCard() {
+    final label = _outcomeLabel(widget.presentation);
+    final description = switch (widget.presentation.outcome) {
+      PuzzleAttemptOutcome.passed => 'You completed the solution line.',
+      PuzzleAttemptOutcome.assisted => 'You completed this puzzle with help.',
+      PuzzleAttemptOutcome.wrongMove =>
+        'Review the solution and the moves that were rejected.',
+      PuzzleAttemptOutcome.revealed => 'The solution was shown to you.',
+      PuzzleAttemptOutcome.skipped => 'This puzzle was skipped.',
+      PuzzleAttemptOutcome.timedOut =>
+        'Time ran out before the puzzle was complete.',
+      PuzzleAttemptOutcome.abandoned => 'This attempt was left unfinished.',
+      null => 'Continue reviewing the solution.',
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(description),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _returnToPlayedLine,
+                  icon: const Icon(Icons.menu_book_outlined),
+                  label: const Text('Review solution'),
+                ),
+                if (widget.presentation.rejections.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: _scrollToTries,
+                    icon: const Icon(Icons.history),
+                    label: const Text('Review my tries'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _scrollToTries() {
+    final target = _triesKey.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 180),
+      alignment: 0.2,
+    );
+  }
+
+  Widget _reviewBookContext() {
+    final line = _line;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text('Select an authored move to return to review there.'),
+        ),
+        if (line.isNotEmpty)
+          Wrap(
+            spacing: 2,
+            runSpacing: 2,
+            children: [
+              for (var index = 0; index < line.length; index++)
+                StudyMoveButton(
+                  key: ValueKey('review-book-move-$index'),
+                  prefix: _movePrefix(line[index]),
+                  label: line[index].san,
+                  onPressed: () =>
+                      unawaited(_returnToBookPath(_pathThrough(index))),
+                ),
+            ],
+          ),
+        for (var depth = 0; depth < line.length; depth++)
+          if (_siblingsAt(depth).length > 1)
+            ExpansionTile(
+              key: ValueKey('review-book-alternatives-$depth'),
+              tilePadding: EdgeInsets.zero,
+              title: Text(
+                'Other moves after ${_movePrefix(line[depth]).trim()}',
+              ),
+              children: [
+                for (
+                  var branch = 0;
+                  branch < _siblingsAt(depth).length;
+                  branch++
+                )
+                  if (branch != (_variationChoices[depth] ?? 0))
+                    ListTile(
+                      key: ValueKey('review-book-branch-$depth-$branch'),
+                      title: Text(
+                        '${_movePrefix(_siblingsAt(depth)[branch])}'
+                        '${_siblingsAt(depth)[branch].san}',
+                      ),
+                      onTap: () => unawaited(
+                        _returnToBookPath([..._pathThrough(depth - 1), branch]),
+                      ),
+                    ),
+              ],
+            ),
+        if (_explorationComments.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(_explorationComments.join('\n\n')),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _returnToBookPath(List<int> path) async {
+    if (_openingWorkspace || _exploration == null) return;
+    try {
+      await _workspaceKey.currentState?.prepareToLeave();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Exploration could not be saved. Retry before returning.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted || _exploration == null) return;
+    var siblings = widget.presentation.solution ?? const [];
+    for (final index in path) {
+      if (index < 0 || index >= siblings.length) return;
+      siblings = siblings[index].children;
+    }
+    setState(() {
+      _variationChoices
+        ..clear()
+        ..addEntries([
+          for (var depth = 0; depth < path.length; depth++)
+            MapEntry(depth, path[depth]),
+        ]);
+      _plyIndex = path.length - 1;
+      _exploration = null;
+      _initialExplorationMoves = const [];
+      _initialMovesAreEngine = false;
+      _workspaceEngineWasEnabled = false;
+      _workspaceOrientation = null;
+      _draftLookupKey = null;
+      _draftLookup = null;
+    });
+    widget.onPathChanged?.call(path);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _detailsController.hasClients) {
+        _detailsController.jumpTo(
+          _returnScroll.clamp(0, _detailsController.position.maxScrollExtent),
+        );
+      }
+      _scrollSelectedMoveIntoView();
+    });
   }
 
   final Map<int, int> _variationChoices = {};
   final Map<int, GlobalKey> _moveKeys = {};
+  final GlobalKey _triesKey = GlobalKey();
   final ScrollController _detailsController = ScrollController();
   int _plyIndex = 0;
+  bool _compactBoard = false;
   late PuzzleSide _orientation =
       widget.initialOrientation ??
       widget.presentation.boardOrientation ??
@@ -277,6 +510,56 @@ final class PuzzleSolutionReviewViewState
     return result;
   }
 
+  Widget _reviewTools(List<PuzzlePresentationMove> line) {
+    final explore = FutureBuilder<ExplorationSession?>(
+      key: ValueKey(_draftLookupKey),
+      future: _draftLookup,
+      builder: (context, snapshot) => OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+        onPressed: _openingWorkspace || !widget.explorationEnabled
+            ? null
+            : () => unawaited(_explore()),
+        icon: const Icon(Icons.explore_outlined),
+        label: Text(
+          snapshot.data == null ? 'Explore position' : 'Resume exploration',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+    final analysis = AnalysisPanel(
+      key: _analysisKey,
+      startingFen: widget.presentation.startingFen,
+      moves: [for (final move in line.take(_plyIndex + 1)) move.uci],
+      engineFactory: widget.analysisEngineFactory,
+      compact: true,
+      onExploreSuggestion: widget.explorationEnabled
+          ? (moves) => unawaited(_explore(initialMoves: moves))
+          : null,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < 520
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: SizedBox(width: double.infinity, child: explore),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(height: 48, width: double.infinity, child: analysis),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(flex: 2, child: explore),
+                const SizedBox(width: 8),
+                Expanded(flex: 3, child: analysis),
+              ],
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.presentation.isSolutionVisible) {
@@ -290,10 +573,13 @@ final class PuzzleSolutionReviewViewState
             ? null
             : widget.explorationRepository,
         engineFactory: widget.analysisEngineFactory,
-        orientation: _orientation,
+        engineWasEnabled: _workspaceEngineWasEnabled,
+        persistenceMessage: widget.persistenceMessage,
+        orientation: _workspaceOrientation ?? _orientation,
         initialMoves: _initialExplorationMoves,
+        initialMovesAreEngine: _initialMovesAreEngine,
         returnLabel: 'Return to review',
-        bookContext: Text(_explorationComments.join('\n\n')),
+        bookContext: _reviewBookContext(),
         onReturn: _restoreReview,
       );
     }
@@ -335,176 +621,183 @@ final class PuzzleSolutionReviewViewState
       lastMoveUci: selected?.uci,
     );
 
-    return StudyLayout(
-      controlCount: 6,
-      controlTrailingWidth: 48,
-      board: ReaderBoard(
-        board: board,
-        showOrientationControl: false,
-        positionLabel: selected == null
-            ? 'Starting position.'
-            : 'Position after ${_movePrefix(selected)}${selected.san}.'
-                  '${selected.nags.isEmpty ? '' : ' Annotations: ${selected.nags.map(_nagLabel).join(', ')}.'}',
-      ),
-      controls: StudyNavigationControls(
-        status: _outcomeIndicator(context),
-        onReturnToPlayedLine: _returnToPlayedLine,
-        canPrevious: _plyIndex >= 0,
-        canNext: _plyIndex + 1 < line.length,
-        onFirst: () => _setCursor(-1),
-        onPrevious: () => _setCursor(_plyIndex - 1),
-        onNext: () => _setCursor(_plyIndex + 1),
-        onLast: () => _setCursor(line.length - 1),
-        onFlip: () => setState(() {
-          _orientation = _orientation == PuzzleSide.white
-              ? PuzzleSide.black
-              : PuzzleSide.white;
-          widget.onOrientationChanged?.call(_orientation);
-        }),
-      ),
-      details: ListView(
-        controller: _detailsController,
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        children: [
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FutureBuilder<ExplorationSession?>(
-              key: ValueKey(_draftLookupKey),
-              future: _draftLookup,
-              builder: (context, snapshot) => TextButton.icon(
-                onPressed: () => unawaited(_explore()),
-                icon: const Icon(Icons.explore_outlined),
-                label: Text(
-                  snapshot.data == null
-                      ? 'Explore position'
-                      : 'Resume exploration',
+    return AbsorbPointer(
+      absorbing: _openingWorkspace,
+      child: StudyLayout(
+        controlCount: 6,
+        controlTrailingWidth: 96,
+        compactBoard: _compactBoard,
+        board: ReaderBoard(
+          board: board,
+          showOrientationControl: false,
+          positionLabel: selected == null
+              ? 'Starting position.'
+              : 'Position after ${_movePrefix(selected)}${selected.san}.'
+                    '${selected.nags.isEmpty ? '' : ' Annotations: ${selected.nags.map(_nagLabel).join(', ')}.'}',
+        ),
+        controls: Row(
+          children: [
+            Expanded(
+              child: StudyNavigationControls(
+                status: _outcomeIndicator(context),
+                onReturnToPlayedLine: _returnToPlayedLine,
+                canPrevious: _plyIndex >= 0,
+                canNext: _plyIndex + 1 < line.length,
+                onFirst: () => _setCursor(-1),
+                onPrevious: () => _setCursor(_plyIndex - 1),
+                onNext: () => _setCursor(_plyIndex + 1),
+                onLast: () => _setCursor(line.length - 1),
+                onFlip: () => setState(() {
+                  _orientation = _orientation == PuzzleSide.white
+                      ? PuzzleSide.black
+                      : PuzzleSide.white;
+                  widget.onOrientationChanged?.call(_orientation);
+                }),
+              ),
+            ),
+            IconButton(
+              tooltip: _compactBoard ? 'Expand board' : 'Compact board',
+              onPressed: _openingWorkspace
+                  ? null
+                  : () => setState(() => _compactBoard = !_compactBoard),
+              icon: Icon(_compactBoard ? Icons.expand : Icons.compress),
+            ),
+          ],
+        ),
+        tools: _reviewTools(line),
+        details: ListView(
+          key: const ValueKey('review-details'),
+          controller: _detailsController,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          children: [
+            _reviewOutcomeCard(),
+            if (widget.presentation.comments.isNotEmpty)
+              Semantics(
+                container: true,
+                key: const ValueKey('puzzle-notes'),
+                label: 'Puzzle notes',
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(widget.presentation.comments.first),
                 ),
               ),
-            ),
-          ),
-          if (widget.presentation.comments.isNotEmpty)
-            Semantics(
-              container: true,
-              key: const ValueKey('puzzle-notes'),
-              label: 'Puzzle notes',
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(widget.presentation.comments.first),
-              ),
-            ),
-          AnalysisPanel(
-            key: _analysisKey,
-            startingFen: widget.presentation.startingFen,
-            moves: [for (final move in line.take(_plyIndex + 1)) move.uci],
-            engineFactory: widget.analysisEngineFactory,
-            onExploreSuggestion: (moves) =>
-                unawaited(_explore(initialMoves: moves)),
-          ),
-          if (widget.presentation.rejections.isNotEmpty)
-            ExpansionTile(
-              title: const Text('Your tries'),
-              children: [
-                for (final rejection in widget.presentation.rejections)
-                  ListTile(
-                    title: Text(
-                      '${_prefixForFen(rejection.fenBefore)}${rejection.san ?? rejection.uci}',
+            if (widget.presentation.rejections.isNotEmpty)
+              Column(
+                key: _triesKey,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                    child: Text(
+                      'Your tries',
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    subtitle: Text(
-                      rejection.legal
-                          ? 'Explore this try'
-                          : 'Explore before this illegal try',
-                    ),
-                    onTap: () => unawaited(_exploreTry(rejection)),
                   ),
-              ],
-            ),
-          for (
-            var index = 1;
-            index < widget.presentation.comments.length;
-            index++
-          )
+                  for (final rejection in widget.presentation.rejections)
+                    ListTile(
+                      key: ValueKey('rejected-try-${rejection.ordinal}'),
+                      title: Text(
+                        '${_prefixForFen(rejection.fenBefore)}${rejection.san ?? rejection.uci}',
+                      ),
+                      subtitle: Text(
+                        rejection.legal
+                            ? 'Explore after ${rejection.san ?? rejection.uci}'
+                            : 'Explore before illegal ${rejection.san ?? rejection.uci}',
+                      ),
+                      onTap: widget.explorationEnabled
+                          ? () => unawaited(_exploreTry(rejection))
+                          : null,
+                    ),
+                ],
+              ),
+            for (
+              var index = 1;
+              index < widget.presentation.comments.length;
+              index++
+            )
+              Semantics(
+                container: true,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(widget.presentation.comments[index]),
+                ),
+              ),
+            if (widget.presentation.comments.isNotEmpty)
+              const SizedBox(height: 4),
             Semantics(
               container: true,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(widget.presentation.comments[index]),
+              explicitChildNodes: true,
+              label: 'Solution line',
+              value: _plyIndex < 0
+                  ? 'Starting position, ${line.length} solution moves'
+                  : 'Move ${_plyIndex + 1} of ${line.length}',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: _solutionRows(line),
               ),
             ),
-          if (widget.presentation.comments.isNotEmpty)
-            const SizedBox(height: 4),
-          Semantics(
-            container: true,
-            explicitChildNodes: true,
-            label: 'Solution line',
-            value: _plyIndex < 0
-                ? 'Starting position, ${line.length} solution moves'
-                : 'Move ${_plyIndex + 1} of ${line.length}',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: _solutionRows(line),
-            ),
-          ),
-          if (widget.presentation.usedFullLineFallback)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Full line used: no completion marker on this continuation.',
+            if (widget.presentation.usedFullLineFallback)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Full line used: no completion marker on this continuation.',
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
+        actions:
+            (widget.onRetry == null || !widget.showRetry) &&
+                widget.onNext == null &&
+                widget.onPrevious == null &&
+                !widget.showBlockNavigation
+            ? null
+            : Row(
+                children: [
+                  if (widget.showBlockNavigation ||
+                      widget.onPrevious != null) ...[
+                    StudyPreviousBlockButton(
+                      showLabel: false,
+                      onPressed: widget.canAdvance ? widget.onPrevious : null,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  if (widget.onRetry != null && widget.showRetry) ...[
+                    Flexible(
+                      flex: 2,
+                      fit: FlexFit.loose,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        onPressed: widget.onRetry,
+                        icon: const Icon(Icons.replay),
+                        label: const Text(
+                          'Try again',
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    if (widget.onNext != null) const SizedBox(width: 8),
+                  ],
+                  if (widget.onNext != null)
+                    Expanded(
+                      flex: 3,
+                      child: StudyNextBlockButton(
+                        label:
+                            widget.nextLabel ??
+                            (widget.isFinalExercise
+                                ? 'Finish cycle'
+                                : 'Next exercise'),
+                        primary: true,
+                        onPressed: widget.canAdvance ? widget.onNext : null,
+                      ),
+                    ),
+                ],
+              ),
       ),
-      actions:
-          (widget.onRetry == null || !widget.showRetry) &&
-              widget.onNext == null &&
-              widget.onPrevious == null &&
-              !widget.showBlockNavigation
-          ? null
-          : Row(
-              children: [
-                if (widget.showBlockNavigation ||
-                    widget.onPrevious != null) ...[
-                  StudyPreviousBlockButton(
-                    showLabel: false,
-                    onPressed: widget.canAdvance ? widget.onPrevious : null,
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (widget.onRetry != null && widget.showRetry) ...[
-                  Flexible(
-                    flex: 2,
-                    fit: FlexFit.loose,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(48, 48),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                      onPressed: widget.onRetry,
-                      icon: const Icon(Icons.replay),
-                      label: const Text(
-                        'Try again',
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  if (widget.onNext != null) const SizedBox(width: 8),
-                ],
-                if (widget.onNext != null)
-                  Expanded(
-                    flex: 3,
-                    child: StudyNextBlockButton(
-                      label:
-                          widget.nextLabel ??
-                          (widget.isFinalExercise
-                              ? 'Finish cycle'
-                              : 'Next exercise'),
-                      primary: true,
-                      onPressed: widget.canAdvance ? widget.onNext : null,
-                    ),
-                  ),
-              ],
-            ),
     );
   }
 

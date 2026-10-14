@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:chessground/chessground.dart' as chessground;
+import 'package:dartchess/dartchess.dart' as chess;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/analysis/analysis_engine.dart';
@@ -70,39 +72,400 @@ void main() {
   });
 
   testWidgets(
-    'shows a fixed White-relative score and gates the PV explicitly',
+    'numbers the engine line in SAN and previews selected moves before adding',
     (tester) async {
       final engine = _FakeEngine(
         result: const AnalysisResult(
           depth: 11,
           centipawns: -37,
-          principalVariation: ['e7e5', 'g1f3'],
+          principalVariation: ['e7e5', 'g1f3', 'b8c6'],
           isComplete: true,
         ),
       );
-      List<String>? explored;
+      List<String>? added;
       await tester.pumpWidget(
         _host(
           moves: const ['e2e4'], // Black to move; score remains White-relative.
           engineFactory: () => engine,
-          onExploreSuggestion: (moves) => explored = moves,
+          onExploreSuggestion: (moves) => added = moves,
+          compact: true,
         ),
       );
       await _enable(tester);
       await tester.pumpAndSettle();
 
-      expect(find.text('Evaluation (White): −0.37'), findsOneWidget);
+      expect(find.text('White −0.37 · Black to move'), findsOneWidget);
       expect(find.text('Depth 11'), findsOneWidget);
-      expect(find.byKey(const ValueKey('analysis-suggestion')), findsNothing);
+      expect(find.textContaining('e7e5'), findsNothing);
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('compact-analysis-row')))
+            .height,
+        48,
+      );
 
-      await tester.tap(find.text('Show suggestion'));
+      await tester.tap(find.byKey(const ValueKey('view-engine-line')));
       await tester.pumpAndSettle();
-      expect(find.text('Suggested line: e7e5 g1f3'), findsOneWidget);
-      expect(explored, isNull);
+      expect(find.text('Engine line preview'), findsOneWidget);
+      expect(find.text('Start of engine line · Black to move'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('engine-line-preview-move-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('engine-line-preview-move-2')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('engine-line-preview-move-3')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('engine-line-preview-move-1')))
+            .height,
+        greaterThanOrEqualTo(48),
+      );
+      expect(find.textContaining('e7e5'), findsNothing);
+      expect(added, isNull);
+      expect(
+        tester
+            .widget<chessground.StaticChessboard>(
+              find.byKey(const ValueKey('engine-line-board')),
+            )
+            .fen,
+        _positionFen(const ['e2e4']),
+      );
 
-      await tester.tap(find.text('Explore suggestion'));
+      await tester.tap(
+        find.byKey(const ValueKey('engine-line-preview-move-3')),
+      );
       await tester.pumpAndSettle();
-      expect(explored, ['e7e5', 'g1f3']);
+      expect(find.text('After 2... Nc6 · White to move'), findsOneWidget);
+      expect(
+        tester
+            .widget<chessground.StaticChessboard>(
+              find.byKey(const ValueKey('engine-line-board')),
+            )
+            .fen,
+        _positionFen(const ['e2e4', 'e7e5', 'g1f3', 'b8c6']),
+      );
+      expect(added, isNull);
+
+      await tester.tap(find.text('Previous'));
+      await tester.pumpAndSettle();
+      expect(find.text('After 2. Nf3 · Black to move'), findsOneWidget);
+      expect(
+        tester
+            .widget<chessground.StaticChessboard>(
+              find.byKey(const ValueKey('engine-line-board')),
+            )
+            .fen,
+        _positionFen(const ['e2e4', 'e7e5', 'g1f3']),
+      );
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      expect(find.text('After 2... Nc6 · White to move'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(added, isNull);
+
+      await tester.tap(find.byKey(const ValueKey('view-engine-line')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add line to exploration'));
+      await tester.pumpAndSettle();
+      expect(added, ['e7e5', 'g1f3', 'b8c6']);
+    },
+  );
+
+  testWidgets('does not expose a legal prefix of an invalid engine line', (
+    tester,
+  ) async {
+    final engine = _FakeEngine(
+      result: const AnalysisResult(
+        depth: 9,
+        centipawns: 20,
+        principalVariation: ['e2e4', 'e2e4'],
+        isComplete: true,
+      ),
+    );
+    var addCalls = 0;
+    await tester.pumpWidget(
+      _host(
+        engineFactory: () => engine,
+        onExploreSuggestion: (_) => addCalls++,
+      ),
+    );
+    await _enable(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Engine line unavailable.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('view-engine-line')), findsNothing);
+    expect(find.byKey(const ValueKey('engine-line-move-1')), findsNothing);
+    expect(find.text('Add line to exploration'), findsNothing);
+    expect(addCalls, 0);
+  });
+
+  testWidgets('adding a line does not pop the parent route during handoff', (
+    tester,
+  ) async {
+    final engine = _FakeEngine();
+    final panelKey = GlobalKey<AnalysisPanelState>();
+    List<String>? added;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              Expanded(
+                child: AnalysisPanel(
+                  key: panelKey,
+                  startingFen: _startFen,
+                  moves: const [],
+                  engineFactory: () => engine,
+                  compact: true,
+                  onExploreSuggestion: (moves) {
+                    added = moves;
+                    unawaited(panelKey.currentState!.prepareToLeave());
+                  },
+                ),
+              ),
+              const Text(
+                'Parent route remains',
+                key: ValueKey<String>('parent-route-remains'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await _enable(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('view-engine-line')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add line to exploration'));
+    await tester.pumpAndSettle();
+
+    expect(added, ['e2e4', 'e7e5']);
+    expect(find.byKey(const ValueKey('parent-route-remains')), findsOneWidget);
+    expect(find.text('Engine line preview'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a position update closes only the owned line preview', (
+    tester,
+  ) async {
+    final engine = _FakeEngine();
+    final panelKey = GlobalKey<AnalysisPanelState>();
+    Widget host(List<String> moves) => MaterialApp(
+      home: Scaffold(
+        body: Column(
+          children: [
+            Expanded(
+              child: AnalysisPanel(
+                key: panelKey,
+                startingFen: _startFen,
+                moves: moves,
+                engineFactory: () => engine,
+                compact: true,
+              ),
+            ),
+            const Text(
+              'Parent route remains',
+              key: ValueKey<String>('parent-route-remains'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(host(const []));
+    await _enable(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('view-engine-line')));
+    await tester.pumpAndSettle();
+    expect(find.text('Engine line preview'), findsOneWidget);
+
+    await tester.pumpWidget(host(const ['e2e4']));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Engine line preview'), findsNothing);
+    expect(find.byKey(const ValueKey('parent-route-remains')), findsOneWidget);
+    expect(panelKey.currentState, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact analysis stays a short row at narrow enlarged text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final engine = _FakeEngine();
+    await tester.pumpWidget(
+      _host(
+        engineFactory: () => engine,
+        compact: true,
+        textScaler: TextScaler.linear(2),
+      ),
+    );
+    await _enable(tester);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('compact-analysis-row'))).height,
+      64,
+    );
+    expect(find.text('White +0.31'), findsOneWidget);
+    expect(find.text('White to move'), findsOneWidget);
+    expect(find.text('Depth 8'), findsNothing);
+    expect(find.byKey(const ValueKey('view-engine-line')), findsOneWidget);
+    expect(find.text('Analyze deeper'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const ValueKey('engine-controls-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('Analyze deeper'), findsOneWidget);
+    await tester.tap(find.text('Analyze deeper'));
+    await tester.pumpAndSettle();
+    expect(engine.requests, hasLength(2));
+    expect(engine.requests.last.budget, const Duration(seconds: 5));
+  });
+
+  testWidgets('compact analysis keeps controls reachable in a narrow pane', (
+    tester,
+  ) async {
+    final engine = _FakeEngine();
+    await tester.pumpWidget(
+      _host(engineFactory: () => engine, compact: true, panelWidth: 180),
+    );
+    await _enable(tester);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('compact-analysis-row'))).height,
+      96,
+    );
+    expect(find.byKey(const ValueKey('view-engine-line')), findsOneWidget);
+    expect(find.byKey(const ValueKey('engine-controls-menu')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('engine preview board scales down for landscape height', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 320);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = _FakeEngine();
+    await tester.pumpWidget(_host(engineFactory: () => engine, compact: true));
+    await _enable(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('view-engine-line')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<chessground.StaticChessboard>(
+            find.byKey(const ValueKey('engine-line-board')),
+          )
+          .size,
+      lessThanOrEqualTo(144),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'keeps revealed suggestions through three moves and deeper analysis, then resets off',
+    (tester) async {
+      final engine = _FakeEngine(controlledStreams: true);
+      AnalysisEngine engineFactory() => engine;
+      final panelKey = GlobalKey<AnalysisPanelState>();
+      await tester.pumpWidget(
+        _host(engineFactory: engineFactory, panelKey: panelKey),
+      );
+      await _enableWithoutSettling(tester);
+      expect(panelKey.currentState!.engineRequested, isTrue);
+      expect(engine.requests, hasLength(1));
+
+      engine.emit(0, _lineResult(const ['e2e4', 'e7e5', 'g1f3']));
+      await tester.pump();
+      await tester.tap(find.text('View engine line'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('engine-line-move-1')), findsOneWidget);
+
+      final positions = <({List<String> moves, List<String> pv})>[
+        (moves: const ['e2e4'], pv: const ['e7e5', 'g1f3', 'b8c6']),
+        (
+          moves: const ['e2e4', 'e7e5', 'g1f3'],
+          pv: const ['b8c6', 'f1b5', 'a7a6'],
+        ),
+        (
+          moves: const ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5'],
+          pv: const ['a7a6', 'b5a4', 'g8f6'],
+        ),
+      ];
+      for (var index = 0; index < positions.length; index++) {
+        await tester.pumpWidget(
+          _host(
+            moves: positions[index].moves,
+            engineFactory: engineFactory,
+            panelKey: panelKey,
+          ),
+        );
+        expect(find.byKey(const ValueKey('analysis-evaluation')), findsNothing);
+        expect(find.byKey(const ValueKey('engine-line-move-1')), findsNothing);
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(engine.requests, hasLength(index + 2));
+        engine.emit(index + 1, _lineResult(positions[index].pv));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('engine-line-move-1')),
+          findsOneWidget,
+        );
+      }
+
+      await tester.tap(find.byKey(const ValueKey('analyze-deeper')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('analysis-evaluation')), findsNothing);
+      expect(find.byKey(const ValueKey('engine-line-move-1')), findsNothing);
+      for (
+        var attempt = 0;
+        attempt < 10 && engine.requests.length < 5;
+        attempt++
+      ) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(engine.requests, hasLength(5));
+      expect(engine.requests.last.budget, const Duration(seconds: 5));
+      engine.emit(4, _lineResult(const ['a7a6', 'b5a4', 'g8f6']));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('engine-line-move-1')), findsOneWidget);
+
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      expect(panelKey.currentState!.engineRequested, isFalse);
+      expect(find.byKey(const ValueKey('engine-line-move-1')), findsNothing);
+
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pump();
+      for (
+        var attempt = 0;
+        attempt < 10 && engine.requests.length < 6;
+        attempt++
+      ) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(engine.requests, hasLength(6));
+      engine.emit(5, _lineResult(const ['a7a6', 'b5a4', 'g8f6']));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('engine-line-move-1')), findsNothing);
+      expect(find.text('View engine line'), findsOneWidget);
     },
   );
 
@@ -170,7 +533,8 @@ void main() {
     tester,
   ) async {
     final engine = _FakeEngine(controlledStreams: true);
-    await tester.pumpWidget(_host(engineFactory: () => engine));
+    AnalysisEngine engineFactory() => engine;
+    await tester.pumpWidget(_host(engineFactory: engineFactory));
     await _enableWithoutSettling(tester);
     expect(engine.requests, hasLength(1));
 
@@ -184,16 +548,16 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('Evaluation (White): +0.12'), findsOneWidget);
+    expect(find.text('White +0.12 · White to move'), findsOneWidget);
 
     await tester.pumpWidget(
-      _host(moves: const ['d2d4'], engineFactory: () => engine),
+      _host(moves: const ['d2d4'], engineFactory: engineFactory),
     );
     expect(find.byKey(const ValueKey('analysis-evaluation')), findsNothing);
     expect(find.text('Analyzing position…'), findsOneWidget);
 
-    // The canceled request can still deliver a late event from a broadcast
-    // stream; its old generation must remain invisible on the new position.
+    // A canceled request can still produce a late result. It must never
+    // become visible on the newly selected position.
     engine.emit(
       0,
       const AnalysisResult(
@@ -220,7 +584,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('Evaluation (White): −0.20'), findsOneWidget);
+    expect(find.text('White −0.20 · Black to move'), findsOneWidget);
   });
 
   testWidgets('background pauses and foreground requires explicit resume', (
@@ -308,14 +672,19 @@ void main() {
 }
 
 Future<void> _enable(WidgetTester tester) async {
-  await tester.tap(find.byType(SwitchListTile));
+  await tester.tap(_engineToggle(tester));
   await tester.pumpAndSettle();
 }
 
 Future<void> _enableWithoutSettling(WidgetTester tester) async {
-  await tester.tap(find.byType(SwitchListTile));
+  await tester.tap(_engineToggle(tester));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 1));
+}
+
+Finder _engineToggle(WidgetTester tester) {
+  final tile = find.byType(SwitchListTile);
+  return tile.evaluate().isNotEmpty ? tile : find.byType(Switch);
 }
 
 Widget _host({
@@ -326,6 +695,8 @@ Widget _host({
   bool enabled = true,
   TextScaler? textScaler,
   Key? panelKey,
+  bool compact = false,
+  double? panelWidth,
 }) => MaterialApp(
   builder: (context, child) => textScaler == null
       ? child!
@@ -334,13 +705,17 @@ Widget _host({
           child: child!,
         ),
   home: Scaffold(
-    body: AnalysisPanel(
-      key: panelKey,
-      startingFen: startingFen,
-      moves: moves,
-      engineFactory: engineFactory,
-      onExploreSuggestion: onExploreSuggestion,
-      enabled: enabled,
+    body: SizedBox(
+      width: panelWidth,
+      child: AnalysisPanel(
+        key: panelKey,
+        startingFen: startingFen,
+        moves: moves,
+        engineFactory: engineFactory,
+        onExploreSuggestion: onExploreSuggestion,
+        enabled: enabled,
+        compact: compact,
+      ),
     ),
   ),
 );
@@ -355,6 +730,22 @@ class _Request {
   final String startingFen;
   final List<String> moves;
   final Duration budget;
+}
+
+AnalysisResult _lineResult(List<String> moves) => AnalysisResult(
+  depth: 9,
+  centipawns: 24,
+  principalVariation: moves,
+  isComplete: true,
+);
+
+String _positionFen(List<String> moves) {
+  var position = chess.Chess.fromSetup(chess.Setup.parseFen(_startFen));
+  for (final uci in moves) {
+    final move = chess.Move.parse(uci)!;
+    position = position.play(move) as chess.Chess;
+  }
+  return position.fen;
 }
 
 class _FakeEngine implements AnalysisEngine {
@@ -397,7 +788,13 @@ class _FakeEngine implements AnalysisEngine {
       throw UnsupportedError('No engine on this platform.');
     }
     if (controlledStreams) {
-      final stream = StreamController<AnalysisResult>.broadcast(sync: true);
+      // A local cancellation future keeps the controllable stream in the
+      // widget test's fake-async zone, instead of the broadcast stream's
+      // shared root-zone cancellation future.
+      final stream = StreamController<AnalysisResult>(
+        sync: true,
+        onCancel: () => Future<void>.value(),
+      );
       streams.add(stream);
       return stream.stream;
     }

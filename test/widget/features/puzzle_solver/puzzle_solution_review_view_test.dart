@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:dartchess/dartchess.dart' as chess;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pgntrainingreader/domain/analysis/analysis_engine.dart';
+import 'package:pgntrainingreader/domain/analysis/exploration_repository.dart';
+import 'package:pgntrainingreader/domain/analysis/exploration_session.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
@@ -10,8 +15,17 @@ import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/application/puzzle_presentation_state.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solution_review_view.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
+import 'package:pgntrainingreader/features/analysis/presentation/exploration_board.dart';
+import 'package:pgntrainingreader/features/analysis/presentation/exploration_workspace.dart';
 
 const _fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+Finder _reviewDetailsScrollable() => find
+    .descendant(
+      of: find.byKey(const ValueKey('review-details')),
+      matching: find.byType(Scrollable),
+    )
+    .first;
 
 String _afterMove(String fen, String uci) {
   final position = chess.Chess.fromSetup(chess.Setup.parseFen(fen));
@@ -105,6 +119,8 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('e4'), findsWidgets);
+      expect(find.text(labels[expectedOutcome]!), findsOneWidget);
+      expect(find.text('Review solution'), findsOneWidget);
       expect(find.byTooltip(labels[expectedOutcome]!), findsOneWidget);
       expect(find.bySemanticsLabel('Puzzle outcome'), findsOneWidget);
       expect(
@@ -119,6 +135,182 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
     semantics.dispose();
+  });
+
+  testWidgets('legal rejected try opens the board after its move', (
+    tester,
+  ) async {
+    final evaluator = AuthoredLinePuzzleEvaluator();
+    evaluator.initialize(
+      puzzle: _terminalPuzzle,
+      attempt: PuzzleAttempt(
+        id: 'legal-rejected-try',
+        blockId: 'block',
+        cycleId: 'cycle',
+        sessionId: 'session',
+        startedAt: DateTime.utc(2026),
+      ),
+    );
+    final presentation = PuzzlePresentationState.fromDomain(
+      puzzle: _terminalPuzzle,
+      evaluation: evaluator.reveal(),
+      rejections: [
+        PuzzleRejection(
+          ordinal: 1,
+          uci: 'd2d4',
+          san: 'd4',
+          authoredPath: const [],
+          fenBefore: _fen,
+          actor: 'learner',
+          legal: true,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PuzzleSolutionReviewView(presentation: presentation),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Solution revealed'), findsOneWidget);
+    expect(find.text('Review solution'), findsOneWidget);
+    expect(find.text('Review my tries'), findsOneWidget);
+    await tester.tap(find.text('Review my tries'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Explore after d4'));
+    await tester.tap(find.text('Explore after d4'));
+    await tester.pumpAndSettle();
+
+    final workspace = tester.widget<ExplorationWorkspace>(
+      find.byType(ExplorationWorkspace),
+    );
+    expect(workspace.origin.label, 'before 1. d4 (your rejected try)');
+    expect(workspace.origin.discriminator, 'try:d2d4');
+    expect(
+      tester
+          .widget<ExplorationBoard>(find.byType(ExplorationBoard))
+          .session
+          .position
+          .fen,
+      contains('3P4'),
+    );
+  });
+
+  testWidgets('illegal rejected try identifies the pre-move position', (
+    tester,
+  ) async {
+    final evaluator = AuthoredLinePuzzleEvaluator();
+    evaluator.initialize(
+      puzzle: _terminalPuzzle,
+      attempt: PuzzleAttempt(
+        id: 'illegal-rejected-try',
+        blockId: 'block',
+        cycleId: 'cycle',
+        sessionId: 'session',
+        startedAt: DateTime.utc(2026),
+      ),
+    );
+    final presentation = PuzzlePresentationState.fromDomain(
+      puzzle: _terminalPuzzle,
+      evaluation: evaluator.reveal(),
+      rejections: [
+        PuzzleRejection(
+          ordinal: 1,
+          uci: 'e2e5',
+          authoredPath: const [],
+          fenBefore: _fen,
+          actor: 'learner',
+          legal: false,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PuzzleSolutionReviewView(presentation: presentation),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review my tries'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Explore before illegal e2e5'));
+    await tester.tap(find.text('Explore before illegal e2e5'));
+    await tester.pumpAndSettle();
+
+    final workspace = tester.widget<ExplorationWorkspace>(
+      find.byType(ExplorationWorkspace),
+    );
+    expect(workspace.origin.label, 'before 1. e2e5 (your illegal try)');
+    expect(workspace.origin.discriminator, 'try:e2e5');
+    expect(
+      tester
+          .widget<ExplorationBoard>(find.byType(ExplorationBoard))
+          .session
+          .position
+          .fen,
+      _fen,
+    );
+  });
+
+  testWidgets('disabled exploration also blocks rejected-try entry', (
+    tester,
+  ) async {
+    final evaluator = AuthoredLinePuzzleEvaluator();
+    evaluator.initialize(
+      puzzle: _terminalPuzzle,
+      attempt: PuzzleAttempt(
+        id: 'disabled-try-exploration',
+        blockId: 'block',
+        cycleId: 'cycle',
+        sessionId: 'session',
+        startedAt: DateTime.utc(2026),
+      ),
+    );
+    final presentation = PuzzlePresentationState.fromDomain(
+      puzzle: _terminalPuzzle,
+      evaluation: evaluator.reveal(),
+      rejections: [
+        PuzzleRejection(
+          ordinal: 1,
+          uci: 'd2d4',
+          san: 'd4',
+          authoredPath: const [],
+          fenBefore: _fen,
+          actor: 'learner',
+          legal: true,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PuzzleSolutionReviewView(
+            presentation: presentation,
+            explorationEnabled: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Solution revealed'), findsOneWidget);
+    await tester.tap(find.text('Review my tries'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Explore after d4'));
+    final tryTile = tester.widget<ListTile>(
+      find.ancestor(
+        of: find.text('Explore after d4'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    expect(tryTile.onTap, isNull);
+    await tester.tap(find.text('Explore after d4'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExplorationWorkspace), findsNothing);
+    expect(find.text('Solution revealed'), findsOneWidget);
   });
 
   testWidgets('review navigates authored moves and presents annotations', (
@@ -258,6 +450,191 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  testWidgets(
+    'book notation returns to the selected sibling review move after save',
+    (tester) async {
+      tester.view.physicalSize = const Size(1000, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final e4Fen = _afterMove(_fen, 'e2e4');
+      final reviewPuzzle = ChessContent(
+        headers: const {},
+        startingFen: _fen,
+        contentType: ContentType.puzzle,
+        rootMoves: [
+          MoveNode(
+            san: 'e4',
+            uci: 'e2e4',
+            fenBefore: _fen,
+            fenAfter: e4Fen,
+            children: [
+              MoveNode(
+                san: 'e5',
+                uci: 'e7e5',
+                fenBefore: e4Fen,
+                fenAfter: _afterMove(e4Fen, 'e7e5'),
+              ),
+              MoveNode(
+                san: 'c5',
+                uci: 'c7c5',
+                fenBefore: e4Fen,
+                fenAfter: _afterMove(e4Fen, 'c7c5'),
+              ),
+            ],
+          ),
+        ],
+      );
+      final evaluator = AuthoredLinePuzzleEvaluator();
+      evaluator.initialize(
+        puzzle: reviewPuzzle,
+        attempt: PuzzleAttempt(
+          id: 'book-context-review',
+          blockId: 'block',
+          cycleId: 'cycle',
+          sessionId: 'session',
+          startedAt: DateTime.utc(2026),
+        ),
+      );
+      final origin = ExplorationOrigin(
+        scopeId: 'review-source-1',
+        startingFen: _fen,
+        authoredPath: const [],
+        authoredMoves: const [],
+        label: 'starting position',
+      );
+      final repository = _ReviewExplorationRepository()
+        ..drafts[origin.identityKey] = ExplorationSession.initial(
+          origin: origin,
+        ).playUci('d2d4');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PuzzleSolutionReviewView(
+              presentation: PuzzlePresentationState.fromDomain(
+                puzzle: reviewPuzzle,
+                evaluation: evaluator.reveal(),
+              ),
+              explorationScopeId: 'review-source-1',
+              explorationRepository: repository,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resume exploration'));
+      await tester.pumpAndSettle();
+      expect(find.text('Exploring from starting position'), findsOneWidget);
+      expect(repository.loadedOrigins.last.authoredMoves, isEmpty);
+
+      await tester.tap(find.text('Explore another book move'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('review-book-alternatives-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('review-book-branch-1-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ExplorationWorkspace), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is ReaderBoard &&
+              widget.positionLabel?.contains('1... c5') == true,
+        ),
+        findsOneWidget,
+      );
+      expect(repository.drafts[origin.identityKey]?.moves, ['d2d4']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'review entry snapshots path and orientation before engine shutdown',
+    (tester) async {
+      tester.view.physicalSize = const Size(1000, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final evaluator = AuthoredLinePuzzleEvaluator();
+      evaluator.initialize(
+        puzzle: _terminalPuzzle,
+        attempt: PuzzleAttempt(
+          id: 'review-entry-snapshot',
+          blockId: 'block',
+          cycleId: 'cycle',
+          sessionId: 'session',
+          startedAt: DateTime.utc(2026),
+        ),
+      );
+      final stopGate = Completer<void>();
+      final engine = _ReviewGatedEngine(stopGate);
+      var nextCalls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PuzzleSolutionReviewView(
+              presentation: PuzzlePresentationState.fromDomain(
+                puzzle: _terminalPuzzle,
+                evaluation: evaluator.reveal(),
+              ),
+              initialPath: const [0],
+              initialOrientation: PuzzleSide.black,
+              onNext: () => nextCalls++,
+              nextLabel: 'Finish cycle',
+              analysisEngineFactory: () => engine,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+
+      await tester.tap(find.text('Explore position'));
+      await tester.pump();
+      expect(engine.stopCalls, 1);
+      // Pointer input is intentionally absorbed during engine shutdown.
+      await tester.tap(
+        find.byTooltip('Starting position'),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      expect(nextCalls, 0);
+      expect(find.text('Return to review'), findsNothing);
+
+      stopGate.complete();
+      await tester.pumpAndSettle();
+      final workspace = tester.widget<ExplorationWorkspace>(
+        find.byType(ExplorationWorkspace),
+      );
+      expect(workspace.origin.authoredPath, [0]);
+      expect(workspace.origin.authoredMoves, ['e2e4']);
+      expect(workspace.origin.label, '1. e4');
+      expect(workspace.orientation, PuzzleSide.black);
+      expect(
+        find.text('Engine paused on entry · enable it to continue analysis'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Return to review'));
+      await tester.pumpAndSettle();
+      final returnedBoard = tester.widget<ReaderBoard>(
+        find.byType(ReaderBoard),
+      );
+      expect(returnedBoard.board.game.fen, _afterMove(_fen, 'e2e4'));
+      expect(returnedBoard.board.game.sideToMove, chess.Side.black);
+      expect(returnedBoard.board.orientation, chess.Side.black);
+      expect(nextCalls, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('review restores accepted line, reached ply, and orientation', (
     tester,
@@ -622,10 +999,20 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(presentation.comments, hasLength(30));
+    expect(find.text('Explore position'), findsOneWidget);
+    expect(find.text('Analysis is off.'), findsOneWidget);
+    final exploreEntryTop = tester.getTopLeft(find.text('Explore position')).dy;
     final detailsScroll = tester.state<ScrollableState>(
-      find.byType(Scrollable).first,
+      _reviewDetailsScrollable(),
     );
     expect(find.text('Puzzle notes'), findsNothing);
+    expect(find.text('Solution revealed'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.textContaining('Review note 0'),
+      180,
+      scrollable: _reviewDetailsScrollable(),
+    );
+    await tester.pumpAndSettle();
     expect(find.textContaining('Review note 0'), findsOneWidget);
     final initialNotesExtent = detailsScroll.position.maxScrollExtent;
     expect(initialNotesExtent, greaterThan(0));
@@ -653,13 +1040,18 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('1. e3'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _reviewDetailsScrollable(),
       maxScrolls: 60,
     );
     await tester.pumpAndSettle();
     expect(detailsScroll.position.maxScrollExtent, greaterThan(0));
     expect(find.text('1 distinct wrong move'), findsNothing);
     expect(find.text('1. e3'), findsOneWidget);
+    expect(find.text('Explore position'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Explore position')).dy,
+      exploreEntryTop,
+    );
     expect(tester.getRect(next).bottom, actionBottomBeforeScroll);
     expect(tester.takeException(), isNull);
     tester.view.resetPhysicalSize();
@@ -720,4 +1112,50 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+}
+
+final class _ReviewExplorationRepository implements ExplorationRepository {
+  final Map<String, ExplorationSession> drafts = {};
+  final List<ExplorationOrigin> loadedOrigins = [];
+
+  @override
+  Future<ExplorationSession?> load(ExplorationOrigin origin) async {
+    loadedOrigins.add(origin);
+    return drafts[origin.identityKey];
+  }
+
+  @override
+  Future<void> save(ExplorationSession session) async {
+    drafts[session.origin.identityKey] = session;
+  }
+}
+
+final class _ReviewGatedEngine implements AnalysisEngine {
+  _ReviewGatedEngine(this.stopGate);
+
+  final Completer<void> stopGate;
+  int stopCalls = 0;
+
+  @override
+  Stream<AnalysisResult> analyze({
+    required String startingFen,
+    required List<String> moves,
+    required Duration budget,
+  }) => Stream<AnalysisResult>.value(
+    const AnalysisResult(
+      depth: 1,
+      centipawns: 0,
+      principalVariation: [],
+      isComplete: true,
+    ),
+  );
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+    if (!stopGate.isCompleted) await stopGate.future;
+  }
+
+  @override
+  Future<void> dispose() async {}
 }

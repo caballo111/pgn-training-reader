@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:dartchess/dartchess.dart' as chess;
 import 'package:flutter/material.dart';
 
 import '../../../domain/analysis/exploration_repository.dart';
 import '../../../domain/analysis/exploration_session.dart';
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/content_type.dart';
+import '../../../domain/chess_content/move_node.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
 import '../../analysis/presentation/analysis_panel.dart';
 import '../../analysis/presentation/exploration_workspace.dart';
@@ -27,6 +29,8 @@ final class TextView extends StatefulWidget {
     this.explorationScopeId,
     this.explorationRepository,
     this.analysisEngineFactory,
+    this.explorationEnabled = true,
+    this.persistenceMessage,
     super.key,
   });
 
@@ -37,6 +41,8 @@ final class TextView extends StatefulWidget {
   final String? explorationScopeId;
   final ExplorationRepository? explorationRepository;
   final AnalysisEngineFactory? analysisEngineFactory;
+  final bool explorationEnabled;
+  final String? persistenceMessage;
 
   @override
   TextViewState createState() => TextViewState();
@@ -48,6 +54,7 @@ final class TextViewState extends State<TextView> {
   late GameReaderController _controller = GameReaderController(widget.content);
 
   PuzzleSide _orientation = PuzzleSide.white;
+  bool _compactBoard = false;
   late final ScrollController _scrollController;
   final GlobalKey<AnalysisPanelState> _analysisPanelKey =
       GlobalKey<AnalysisPanelState>();
@@ -56,6 +63,7 @@ final class TextViewState extends State<TextView> {
   String _ephemeralScopeId = _newEphemeralScopeId();
   ExplorationOrigin? _workspaceOrigin;
   List<String>? _suggestionMoves;
+  bool _suggestionMovesAreEngine = false;
   double _scrollOffsetBeforeExploration = 0;
   Future<void>? _returningFromExploration;
   Future<void>? _workspacePreparation;
@@ -67,6 +75,7 @@ final class TextViewState extends State<TextView> {
   bool _contentReplacementPending = false;
   bool _workspaceContentSuperseded = false;
   bool _openingWorkspace = false;
+  bool _workspaceEngineWasEnabled = false;
   bool _resumeAvailable = false;
   String? _resumeLookupKey;
   ExplorationRepository? _resumeLookupRepository;
@@ -266,8 +275,11 @@ final class TextViewState extends State<TextView> {
                 origin: origin,
                 repository: _workspaceRepository,
                 engineFactory: _workspaceEngineFactory,
+                engineWasEnabled: _workspaceEngineWasEnabled,
+                persistenceMessage: widget.persistenceMessage,
                 orientation: _workspaceOrientation ?? _orientation,
                 initialMoves: _suggestionMoves ?? const [],
+                initialMovesAreEngine: _suggestionMovesAreEngine,
                 bookContext: _bookContext,
                 onReturn: _onWorkspaceReturn,
                 returnLabel: 'Return to reading',
@@ -291,6 +303,7 @@ final class TextViewState extends State<TextView> {
     final navigation = _controller.navigation;
     final result = widget.content.result?.trim();
     final details = ListView(
+      key: const ValueKey('reader-details'),
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       children: [
@@ -313,16 +326,6 @@ final class TextViewState extends State<TextView> {
             onNavigationChanged: _acceptNavigation,
             shrinkWrap: true,
             scrollable: false,
-          ),
-        if (_canExplore)
-          AnalysisPanel(
-            key: _analysisPanelKey,
-            // The widget key is stable while the authored cursor changes so
-            // its controller can debounce navigation and suppress stale work.
-            startingFen: widget.content.startingFen,
-            moves: navigation.path.map((node) => node.uci).toList(),
-            engineFactory: widget.analysisEngineFactory,
-            onExploreSuggestion: _exploreSuggestion,
           ),
         if (const {'1-0', '0-1', '1/2-1/2'}.contains(result))
           Padding(
@@ -352,48 +355,100 @@ final class TextViewState extends State<TextView> {
         ),
       );
     }
-    return StudyLayout(
-      controlCount: _hasMoves ? 4 : 0,
-      controlTrailingWidth: 48,
-      board: ReaderBoard(
-        board: _controller.current.forBoard(orientation: _orientation),
-        showOrientationControl: false,
-      ),
-      controls: StudyNavigationControls(
-        showNavigation: _hasMoves,
-        canPrevious: navigation.canPrevious,
-        canNext: navigation.canNext,
-        onFirst: _perform(_controller.first),
-        onPrevious: _perform(_controller.previous),
-        onNext: _perform(_controller.next),
-        onLast: _perform(_controller.last),
-        onFlip: () => setState(() {
-          _orientation = _orientation == PuzzleSide.white
-              ? PuzzleSide.black
-              : PuzzleSide.white;
-          _publishState();
-        }),
-      ),
-      actions: _canExplore
-          ? Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: FilledButton.icon(
-                key: const ValueKey('explore-position'),
-                onPressed: _openingWorkspace
-                    ? null
-                    : () => unawaited(_openExploration()),
-                icon: const Icon(Icons.explore_outlined),
-                label: Text(
-                  _resumeAvailable ? 'Resume exploration' : 'Explore position',
-                ),
+    return AbsorbPointer(
+      absorbing: _openingWorkspace,
+      child: StudyLayout(
+        controlCount: _hasMoves ? 4 : 0,
+        controlTrailingWidth: 96,
+        compactBoard: _compactBoard,
+        board: ReaderBoard(
+          board: _controller.current.forBoard(orientation: _orientation),
+          showOrientationControl: false,
+        ),
+        controls: Row(
+          children: [
+            Expanded(
+              child: StudyNavigationControls(
+                showNavigation: _hasMoves,
+                canPrevious: navigation.canPrevious,
+                canNext: navigation.canNext,
+                onFirst: _perform(_controller.first),
+                onPrevious: _perform(_controller.previous),
+                onNext: _perform(_controller.next),
+                onLast: _perform(_controller.last),
+                onFlip: () {
+                  if (_openingWorkspace) return;
+                  setState(() {
+                    _orientation = _orientation == PuzzleSide.white
+                        ? PuzzleSide.black
+                        : PuzzleSide.white;
+                    _publishState();
+                  });
+                },
               ),
-            )
-          : null,
-      details: details,
+            ),
+            IconButton(
+              tooltip: _compactBoard ? 'Expand board' : 'Compact board',
+              onPressed: _openingWorkspace
+                  ? null
+                  : () => setState(() => _compactBoard = !_compactBoard),
+              icon: Icon(_compactBoard ? Icons.expand : Icons.compress),
+            ),
+          ],
+        ),
+        tools: _canExplore
+            ? _readerTools(navigation.path.map((node) => node.uci).toList())
+            : null,
+        details: details,
+      ),
     );
   }
 
-  bool get _canExplore => _hasMoves || _hasPosition;
+  bool get _canExplore =>
+      widget.explorationEnabled && (_hasMoves || _hasPosition);
+
+  Widget _readerTools(List<String> moves) {
+    final explore = OutlinedButton.icon(
+      key: const ValueKey('explore-position'),
+      style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+      onPressed: _openingWorkspace ? null : () => unawaited(_openExploration()),
+      icon: const Icon(Icons.explore_outlined),
+      label: Text(
+        _resumeAvailable ? 'Resume exploration' : 'Explore position',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+    final analysis = AnalysisPanel(
+      key: _analysisPanelKey,
+      startingFen: widget.content.startingFen,
+      moves: moves,
+      engineFactory: widget.analysisEngineFactory,
+      compact: true,
+      onExploreSuggestion: _exploreSuggestion,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < 520
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: SizedBox(width: double.infinity, child: explore),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(height: 48, width: double.infinity, child: analysis),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(flex: 2, child: explore),
+                const SizedBox(width: 8),
+                Expanded(flex: 3, child: analysis),
+              ],
+            ),
+    );
+  }
 
   Future<void> _refreshResumeStatus({bool force = false}) async {
     final repository = widget.explorationRepository;
@@ -434,10 +489,13 @@ final class TextViewState extends State<TextView> {
     }
   }
 
-  List<int> get _currentPathIndices {
-    var choices = widget.content.rootMoves;
+  List<int> _pathIndices(
+    ChessContent content,
+    ReaderNavigationState navigation,
+  ) {
+    var choices = content.rootMoves;
     final result = <int>[];
-    for (final node in _controller.navigation.path) {
+    for (final node in navigation.path) {
       final index = choices.indexOf(node);
       if (index < 0) break;
       result.add(index);
@@ -447,15 +505,39 @@ final class TextViewState extends State<TextView> {
   }
 
   ExplorationOrigin _originForCurrentPosition() {
-    final path = _controller.navigation.path;
+    return _originForPosition(widget.content, _controller.navigation);
+  }
+
+  ExplorationOrigin _originForPosition(
+    ChessContent content,
+    ReaderNavigationState navigation,
+  ) {
+    final path = navigation.path;
     final node = path.isEmpty ? null : path.last;
+    final authoredPath = _pathIndices(content, navigation);
+    final label = node == null
+        ? 'Starting position'
+        : '${_prefixBeforeMove(content.startingFen, path)}${node.san}';
     return ExplorationOrigin(
       scopeId: widget.explorationScopeId ?? _ephemeralScopeId,
-      startingFen: widget.content.startingFen,
-      authoredPath: _currentPathIndices,
+      startingFen: content.startingFen,
+      authoredPath: authoredPath,
       authoredMoves: path.map((move) => move.uci).toList(),
-      label: node == null ? 'Starting position' : 'After ${node.san}',
+      label: label,
     );
+  }
+
+  String _prefixBeforeMove(String startingFen, List<MoveNode> path) {
+    var position = chess.Chess.fromSetup(chess.Setup.parseFen(startingFen));
+    for (final node in path.take(path.length - 1)) {
+      final move = chess.Move.parse(node.uci);
+      if (move == null || !position.isLegal(move)) break;
+      position = position.play(move) as chess.Chess;
+    }
+    final fields = position.fen.split(' ');
+    final moveNumber = fields.length >= 6 ? int.tryParse(fields[5]) ?? 1 : 1;
+    final sidePrefix = position.turn == chess.Side.black ? '...' : '.';
+    return '$moveNumber$sidePrefix ';
   }
 
   Future<void> _openExploration({List<String> initialMoves = const []}) async {
@@ -464,6 +546,12 @@ final class TextViewState extends State<TextView> {
     final scopeAtTap = widget.explorationScopeId;
     final repositoryAtTap = widget.explorationRepository;
     final engineFactoryAtTap = widget.analysisEngineFactory;
+    final navigationAtTap = _controller.navigation;
+    final originAtTap = _originForPosition(contentAtTap, navigationAtTap);
+    final orientationAtTap = _orientation;
+    final engineWasEnabledAtTap =
+        _analysisPanelKey.currentState?.engineRequested ?? false;
+    final initialMovesAtTap = List<String>.unmodifiable(initialMoves);
     final contentGenerationAtTap = _contentGeneration;
     _publishState();
     _scrollOffsetBeforeExploration = _scrollController.hasClients
@@ -482,13 +570,15 @@ final class TextViewState extends State<TextView> {
         return;
       }
       setState(() {
-        _workspaceOrigin = _originForCurrentPosition();
-        _suggestionMoves = List.unmodifiable(initialMoves);
-        _workspaceContentSnapshot = widget.content;
-        _workspaceNavigationSnapshot = _controller.navigation;
-        _workspaceOrientation = _orientation;
-        _workspaceRepository = widget.explorationRepository;
-        _workspaceEngineFactory = widget.analysisEngineFactory;
+        _workspaceOrigin = originAtTap;
+        _suggestionMoves = initialMovesAtTap;
+        _suggestionMovesAreEngine = initialMovesAtTap.isNotEmpty;
+        _workspaceContentSnapshot = contentAtTap;
+        _workspaceNavigationSnapshot = navigationAtTap;
+        _workspaceOrientation = orientationAtTap;
+        _workspaceRepository = repositoryAtTap;
+        _workspaceEngineFactory = engineFactoryAtTap;
+        _workspaceEngineWasEnabled = engineWasEnabledAtTap;
         _workspaceContentSuperseded = false;
         _contentReplacementPending = false;
       });
@@ -585,11 +675,13 @@ final class TextViewState extends State<TextView> {
     setState(() {
       _workspaceOrigin = null;
       _suggestionMoves = null;
+      _suggestionMovesAreEngine = false;
       _workspaceContentSnapshot = null;
       _workspaceNavigationSnapshot = null;
       _workspaceOrientation = null;
       _workspaceRepository = null;
       _workspaceEngineFactory = null;
+      _workspaceEngineWasEnabled = false;
       _contentReplacementPending = false;
       _workspaceContentSuperseded = false;
     });
@@ -605,6 +697,7 @@ final class TextViewState extends State<TextView> {
   }
 
   VoidCallback _perform(void Function() action) => () {
+    if (_openingWorkspace) return;
     setState(() {
       action();
       _publishState();
@@ -613,6 +706,7 @@ final class TextViewState extends State<TextView> {
   };
 
   void _acceptNavigation(ReaderNavigationState navigation) {
+    if (_openingWorkspace) return;
     setState(() {
       _setNavigation(navigation);
       _publishState();

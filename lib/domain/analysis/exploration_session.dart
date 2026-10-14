@@ -159,10 +159,19 @@ final class ExplorationOrigin {
 /// Nodes contain no source PGN comments, annotations, or links to authored
 /// moves. Their position is determined by replaying the origin and its path.
 final class ExplorationMoveNode {
-  const ExplorationMoveNode._({required this.uci, required this.children});
+  const ExplorationMoveNode._({
+    required this.uci,
+    required this.children,
+    this.engineOrigin = false,
+  });
 
   final String uci;
   final List<ExplorationMoveNode> children;
+
+  /// Whether this continuation was seeded from an engine suggestion.
+  ///
+  /// Missing values in version 1 drafts are treated as learner-entered moves.
+  final bool engineOrigin;
 }
 
 /// An immutable, legal personal move tree rooted at an authored position.
@@ -176,6 +185,7 @@ final class ExplorationSession {
       origin: origin,
       root: const [],
       currentPath: const [],
+      selectedPath: const [],
     );
     // Validate the starting FEN and all authored UCI history eagerly.
     session.position;
@@ -186,6 +196,7 @@ final class ExplorationSession {
     required this.origin,
     required this.root,
     required this.currentPath,
+    required this.selectedPath,
   });
 
   static const int codecVersion = 1;
@@ -197,6 +208,11 @@ final class ExplorationSession {
 
   /// Child indexes from the implicit root to the selected personal position.
   final List<int> currentPath;
+
+  /// Child indexes of the selected continuation, independent of the cursor.
+  ///
+  /// This path starts with [currentPath] and continues to its selected leaf.
+  final List<int> selectedPath;
 
   /// The current chess position after authored and selected personal moves.
   chess.Chess get position => _positionFor(currentPath);
@@ -219,6 +235,19 @@ final class ExplorationSession {
     return List.unmodifiable(line);
   }
 
+  /// Learner-created moves on the full selected continuation, including moves
+  /// beyond the current cursor.
+  List<ExplorationMoveNode> get selectedLine {
+    final line = <ExplorationMoveNode>[];
+    var siblings = root;
+    for (final index in selectedPath) {
+      final node = siblings[index];
+      line.add(node);
+      siblings = node.children;
+    }
+    return List.unmodifiable(line);
+  }
+
   /// Personal continuations available at the selected position.
   List<ExplorationMoveNode> get branches =>
       currentPath.isEmpty ? root : activeLine.last.children;
@@ -230,7 +259,7 @@ final class ExplorationSession {
   ///
   /// Invalid or illegal moves throw [ArgumentError] without changing this
   /// session or any source content.
-  ExplorationSession playUci(String uci) {
+  ExplorationSession playUci(String uci, {bool engineOrigin = false}) {
     if (currentPath.length >= _maxPersonalPlies) {
       throw ArgumentError('The personal exploration line is too deep.');
     }
@@ -258,14 +287,27 @@ final class ExplorationSession {
       );
     }
     final nextIndex = existing >= 0 ? existing : branches.length;
-    final nextRoot = existing >= 0
-        ? root
-        : _appendAtPath(
-            root,
-            currentPath,
-            ExplorationMoveNode._(uci: move.uci, children: const []),
-          );
-    return _with(root: nextRoot, currentPath: [...currentPath, nextIndex]);
+    final nextPath = [...currentPath, nextIndex];
+    var nextRoot = root;
+    if (existing < 0) {
+      nextRoot = _appendAtPath(
+        root,
+        currentPath,
+        ExplorationMoveNode._(
+          uci: move.uci,
+          children: const [],
+          engineOrigin: engineOrigin,
+        ),
+      );
+    }
+    final nextSelectedPath = _isPathPrefix(nextPath, selectedPath)
+        ? selectedPath
+        : _completePath(nextRoot, nextPath);
+    return _with(
+      root: nextRoot,
+      currentPath: nextPath,
+      selectedPath: nextSelectedPath,
+    );
   }
 
   /// Moves the personal cursor back one learner-created ply.
@@ -273,15 +315,21 @@ final class ExplorationSession {
       ? this
       : _with(currentPath: currentPath.sublist(0, currentPath.length - 1));
 
-  /// Follows the first stored branch by one learner-created ply.
-  ExplorationSession next() =>
-      branches.isEmpty ? this : _with(currentPath: [...currentPath, 0]);
+  /// Follows the selected continuation by one learner-created ply.
+  ExplorationSession next() => branches.isEmpty
+      ? this
+      : selectPath([
+          ...currentPath,
+          selectedPath.length > currentPath.length
+              ? selectedPath[currentPath.length]
+              : 0,
+        ]);
 
   /// Returns to the authored origin while keeping every personal branch.
   ExplorationSession first() =>
       currentPath.isEmpty ? this : _with(currentPath: const []);
 
-  /// Follows the first stored branch to its leaf, preserving all siblings.
+  /// Follows the selected continuation to its leaf, preserving all siblings.
   ExplorationSession last() {
     var result = this;
     while (result.canNext) {
@@ -307,8 +355,41 @@ final class ExplorationSession {
       }
       siblings = siblings[childIndex].children;
     }
-    return _with(currentPath: path);
+    final nextSelectedPath = _isPathPrefix(path, selectedPath)
+        ? selectedPath
+        : _completePath(root, path);
+    return _with(currentPath: path, selectedPath: nextSelectedPath);
   }
+
+  /// Removes the variation rooted at [path], including all of its descendants.
+  ///
+  /// If the selected cursor is inside the removed variation, it moves to the
+  /// closest surviving parent. Sibling indexes after the removed variation
+  /// are adjusted in both paths.
+  ExplorationSession deleteVariation(List<int> path) {
+    if (path.isEmpty) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'A variation path cannot be empty.',
+      );
+    }
+    _validatePath(root, path);
+    final nextRoot = _removeAtPath(root, path);
+    final nextCurrentPath = _pathAfterDeletion(currentPath, path);
+    final rebasedSelectedPath = _pathAfterDeletion(selectedPath, path);
+    final nextSelectedPath = _completePath(nextRoot, rebasedSelectedPath);
+    return _with(
+      root: nextRoot,
+      currentPath: nextCurrentPath,
+      selectedPath: nextSelectedPath,
+    );
+  }
+
+  /// Clears all personal variations while retaining this draft's authored
+  /// origin.
+  ExplorationSession clearExploration() =>
+      _with(root: const [], currentPath: const [], selectedPath: const []);
 
   /// Encodes this personal draft as versioned, source-independent JSON data.
   Map<String, Object?> toJson() => <String, Object?>{
@@ -316,6 +397,7 @@ final class ExplorationSession {
     'origin': origin.toJson(),
     'tree': _treeToJson(root),
     'cursorPath': List<int>.of(currentPath),
+    'selectedPath': List<int>.of(selectedPath),
   };
 
   /// Decodes and fully replays a stored personal draft.
@@ -338,6 +420,12 @@ final class ExplorationSession {
       final counter = _NodeCounter();
       final root = _readTree(json['tree'], depth: 0, counter: counter);
       final cursorPath = _readIntList(json, 'cursorPath');
+      final selectedPath = _completePath(
+        root,
+        json.containsKey('selectedPath')
+            ? _readIntList(json, 'selectedPath')
+            : cursorPath,
+      );
       if (cursorPath.length > _maxPersonalPlies) {
         throw const FormatException('Exploration cursor is too deep.');
       }
@@ -345,6 +433,7 @@ final class ExplorationSession {
         origin: origin,
         root: root,
         currentPath: cursorPath,
+        selectedPath: selectedPath,
       );
       session._validateTree();
       session.position;
@@ -359,10 +448,12 @@ final class ExplorationSession {
   ExplorationSession _with({
     List<ExplorationMoveNode>? root,
     List<int>? currentPath,
+    List<int>? selectedPath,
   }) => ExplorationSession._(
     origin: origin,
     root: root ?? this.root,
     currentPath: List.unmodifiable(currentPath ?? this.currentPath),
+    selectedPath: List.unmodifiable(selectedPath ?? this.selectedPath),
   );
 
   chess.Chess _positionFor(List<int> personalPath) {
@@ -407,6 +498,18 @@ final class ExplorationSession {
     for (final childIndex in currentPath) {
       if (childIndex < 0 || childIndex >= siblings.length) {
         throw const FormatException('Exploration cursor path is invalid.');
+      }
+      siblings = siblings[childIndex].children;
+    }
+    if (!_isPathPrefix(currentPath, selectedPath)) {
+      throw const FormatException(
+        'Selected exploration path must continue from the cursor.',
+      );
+    }
+    siblings = root;
+    for (final childIndex in selectedPath) {
+      if (childIndex < 0 || childIndex >= siblings.length) {
+        throw const FormatException('Selected exploration path is invalid.');
       }
       siblings = siblings[childIndex].children;
     }
@@ -495,6 +598,7 @@ List<ExplorationMoveNode> _appendAtPath(
   final replaced = ExplorationMoveNode._(
     uci: old.uci,
     children: _appendAtPath(old.children, path.sublist(1), addition),
+    engineOrigin: old.engineOrigin,
   );
   final result = List<ExplorationMoveNode>.of(siblings);
   result[index] = replaced;
@@ -519,6 +623,7 @@ List<Map<String, Object?>> _treeToJson(List<ExplorationMoveNode> nodes) =>
         (node) => <String, Object?>{
           'uci': node.uci,
           'children': _treeToJson(node.children),
+          if (node.engineOrigin) 'engineOrigin': true,
         },
       ),
     );
@@ -551,8 +656,102 @@ List<ExplorationMoveNode> _readTree(
       depth: depth + 1,
       counter: counter,
     );
-    result.add(ExplorationMoveNode._(uci: uci, children: children));
+    final engineOrigin = data['engineOrigin'];
+    if (engineOrigin != null && engineOrigin is! bool) {
+      throw const FormatException('Engine move provenance must be a boolean.');
+    }
+    result.add(
+      ExplorationMoveNode._(
+        uci: uci,
+        children: children,
+        engineOrigin: engineOrigin == true,
+      ),
+    );
   }
+  return List.unmodifiable(result);
+}
+
+List<int> _completePath(List<ExplorationMoveNode> root, List<int> path) {
+  final result = List<int>.of(path);
+  var siblings = root;
+  for (final index in result) {
+    if (index < 0 || index >= siblings.length) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'The selected path does not exist.',
+      );
+    }
+    siblings = siblings[index].children;
+  }
+  while (siblings.isNotEmpty) {
+    result.add(0);
+    siblings = siblings.first.children;
+  }
+  return List.unmodifiable(result);
+}
+
+void _validatePath(List<ExplorationMoveNode> root, List<int> path) {
+  var siblings = root;
+  for (var depth = 0; depth < path.length; depth++) {
+    final index = path[depth];
+    if (index < 0 || index >= siblings.length) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'The selected path does not exist in the personal tree.',
+      );
+    }
+    siblings = siblings[index].children;
+  }
+}
+
+bool _isPathPrefix(List<int> prefix, List<int> path) {
+  if (prefix.length > path.length) return false;
+  for (var index = 0; index < prefix.length; index++) {
+    if (prefix[index] != path[index]) return false;
+  }
+  return true;
+}
+
+List<int> _pathAfterDeletion(List<int> candidate, List<int> deletedPath) {
+  final parentPath = deletedPath.sublist(0, deletedPath.length - 1);
+  if (candidate.length < deletedPath.length - 1 ||
+      !_isPathPrefix(parentPath, candidate)) {
+    return candidate;
+  }
+  if (candidate.length == parentPath.length) return candidate;
+
+  final deletedIndex = deletedPath.last;
+  final candidateIndex = candidate[parentPath.length];
+  if (candidateIndex == deletedIndex) {
+    return List.unmodifiable(candidate.take(parentPath.length));
+  }
+  if (candidateIndex > deletedIndex) {
+    final result = List<int>.of(candidate);
+    result[parentPath.length]--;
+    return List.unmodifiable(result);
+  }
+  return candidate;
+}
+
+List<ExplorationMoveNode> _removeAtPath(
+  List<ExplorationMoveNode> siblings,
+  List<int> path,
+) {
+  final index = path.first;
+  if (path.length == 1) {
+    final result = List<ExplorationMoveNode>.of(siblings)..removeAt(index);
+    return List.unmodifiable(result);
+  }
+  final old = siblings[index];
+  final replaced = ExplorationMoveNode._(
+    uci: old.uci,
+    children: _removeAtPath(old.children, path.sublist(1)),
+    engineOrigin: old.engineOrigin,
+  );
+  final result = List<ExplorationMoveNode>.of(siblings);
+  result[index] = replaced;
   return List.unmodifiable(result);
 }
 

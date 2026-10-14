@@ -36,6 +36,7 @@ class StudyMoveButton extends StatelessWidget {
         minimumSize: const Size(48, 48),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         tapTargetSize: MaterialTapTargetSize.padded,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

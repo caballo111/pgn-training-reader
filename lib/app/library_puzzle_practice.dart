@@ -819,8 +819,8 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
                           minimumSize: const Size(48, 48),
                         ),
                         onPressed: _busy ? null : _start,
@@ -834,7 +834,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                     Expanded(
                       child: StudyNextBlockButton(
                         label: next == null ? 'Back to book' : 'Next block',
-                        primary: false,
+                        primary: true,
                         onPressed: _busy
                             ? null
                             : () => next == null

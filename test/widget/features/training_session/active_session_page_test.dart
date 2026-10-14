@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/core/time/app_clock.dart';
 import 'package:pgntrainingreader/core/utilities/id_generator.dart';
+import 'package:pgntrainingreader/domain/analysis/exploration_repository.dart';
+import 'package:pgntrainingreader/domain/analysis/exploration_session.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content_repository.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
-import 'package:pgntrainingreader/domain/analysis/exploration_repository.dart';
-import 'package:pgntrainingreader/domain/analysis/exploration_session.dart';
 import 'package:pgntrainingreader/domain/training/attempt_move.dart';
 import 'package:pgntrainingreader/domain/training/authored_line_puzzle_evaluator.dart';
 import 'package:pgntrainingreader/domain/training/cycle.dart';
@@ -21,15 +21,162 @@ import 'package:pgntrainingreader/domain/training/training_session.dart';
 import 'package:pgntrainingreader/domain/training/training_session_service.dart';
 import 'package:pgntrainingreader/domain/training/training_set.dart';
 import 'package:pgntrainingreader/domain/training/training_set_item.dart';
+import 'package:pgntrainingreader/features/analysis/presentation/exploration_workspace.dart';
+import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
+import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solving_view.dart';
 import 'package:pgntrainingreader/features/training_session/application/active_session_controller.dart';
 import 'package:pgntrainingreader/features/training_session/presentation/active_session_page.dart';
-import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solving_view.dart';
-import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
 
 final _startedAt = DateTime.utc(2026, 9, 28, 12);
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 void main() {
+  testWidgets(
+    'scope lookup failure keeps review visible and retry restores exploration',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final clock = _TestClock();
+      final item = TrainingSetItem(
+        id: 'lookup-item',
+        trainingSetId: 'lookup-set',
+        blockId: 'lookup-block',
+        position: 0,
+        contentType: ContentType.puzzle,
+        addedAt: _startedAt,
+      );
+      final attempt = PuzzleAttempt(
+        id: 'lookup-attempt',
+        blockId: item.blockId,
+        cycleId: 'lookup-cycle',
+        sessionId: 'lookup-session',
+        startedAt: _startedAt,
+      );
+      final cycle = Cycle(
+        id: 'lookup-cycle',
+        trainingSetId: item.trainingSetId,
+        status: CycleStatus.active,
+        startedAt: _startedAt,
+        createdAt: _startedAt,
+      );
+      final session = TrainingSession(
+        id: 'lookup-session',
+        cycleId: cycle.id,
+        status: TrainingSessionStatus.active,
+        startedAt: _startedAt,
+        studyDay: DateTime.utc(2026, 9, 28),
+      );
+      final content = ChessContent(
+        headers: const {'Event': 'Scope lookup fixture'},
+        startingFen: _startFen,
+        contentType: ContentType.puzzle,
+        rootMoves: [
+          MoveNode(
+            san: 'e4',
+            uci: 'e2e4',
+            fenBefore: _startFen,
+            fenAfter:
+                'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
+          ),
+        ],
+      );
+      final repository = _TrainingRepository(attempt: attempt, item: item);
+      final service = _SessionService(
+        cycle: cycle,
+        session: session,
+        item: item,
+        repository: repository,
+      );
+      final controller = ActiveSessionController(
+        trainingSet: TrainingSet(
+          id: item.trainingSetId,
+          name: 'Scope lookup set',
+          items: [item],
+          createdAt: _startedAt,
+          updatedAt: _startedAt,
+        ),
+        sessionService: service,
+        repository: repository,
+        contentRepository: _ContentRepository(content),
+        clock: clock,
+        evaluatorFactory: () =>
+            AuthoredLinePuzzleEvaluator(clock: clock, idGenerator: _Ids()),
+      );
+      var lookupCalls = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActiveSessionPage(
+            controller: controller,
+            explorationRepository: _ExplorationRepository(),
+            explorationScopeIdResolver: (_) async {
+              lookupCalls++;
+              if (lookupCalls == 1) throw StateError('lookup unavailable');
+              return null;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final solver = tester.widget<PuzzleSolvingView>(
+        find.byType(PuzzleSolvingView),
+      );
+      await solver.controller.reveal();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Solution revealed'), findsOneWidget);
+      expect(
+        find.text(
+          'Exploration persistence could not be loaded. Retry lookup before exploring.',
+        ),
+        findsOneWidget,
+      );
+      expect(lookupCalls, 1);
+      expect(find.text('Explore position'), findsOneWidget);
+      final exploreButton = tester.widget<OutlinedButton>(
+        find.ancestor(
+          of: find.text('Explore position'),
+          matching: find.byType(OutlinedButton),
+        ),
+      );
+      expect(exploreButton.onPressed, isNull);
+
+      await tester.tap(find.text('Retry lookup'));
+      await tester.pumpAndSettle();
+      expect(lookupCalls, 2);
+      expect(find.text('Solution revealed'), findsOneWidget);
+      expect(find.text('Retry lookup'), findsNothing);
+      expect(
+        find.text('Exploration drafts will be temporary for this item.'),
+        findsOneWidget,
+      );
+      final enabledExploreButton = tester.widget<OutlinedButton>(
+        find.ancestor(
+          of: find.text('Explore position'),
+          matching: find.byType(OutlinedButton),
+        ),
+      );
+      expect(enabledExploreButton.onPressed, isNotNull);
+      await tester.tap(find.text('Explore position'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(ExplorationWorkspace),
+          matching: find.text(
+            'Exploration drafts will be temporary for this item.',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    },
+  );
+
   testWidgets(
     'cycle reading waits for a durable exploration save before completing',
     (tester) async {
@@ -685,6 +832,32 @@ final class _SessionService implements TrainingSessionService {
   }
 
   @override
+  Future<PuzzleAttempt> finalizeAttempt({
+    required String attemptId,
+    required PuzzleAttemptOutcome outcome,
+    required DateTime completedAt,
+    Duration activeSegmentDuration = Duration.zero,
+    PuzzleAttemptFailureReason? failureReason,
+    bool revealed = false,
+  }) async {
+    final current = repository.attempt;
+    if (current.id != attemptId) {
+      throw StateError('Unknown attempt: $attemptId');
+    }
+    final finalized = _copyAttempt(
+      current,
+      status: PuzzleAttemptStatus.finalized,
+      activeDuration: current.activeDuration + activeSegmentDuration,
+      outcome: outcome,
+      completedAt: completedAt,
+      failureReason: failureReason,
+      revealed: revealed,
+    );
+    repository.saveAttempt(finalized);
+    return finalized;
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -695,6 +868,7 @@ PuzzleAttempt _copyAttempt(
   PuzzleAttemptOutcome? outcome,
   DateTime? completedAt,
   PuzzleAttemptFailureReason? failureReason,
+  bool? revealed,
 }) => PuzzleAttempt(
   id: attempt.id,
   blockId: attempt.blockId,
@@ -708,5 +882,5 @@ PuzzleAttempt _copyAttempt(
   failureReason: failureReason ?? attempt.failureReason,
   wrongMoveCount: attempt.wrongMoveCount,
   hintCount: attempt.hintCount,
-  revealed: attempt.revealed,
+  revealed: revealed ?? attempt.revealed,
 );

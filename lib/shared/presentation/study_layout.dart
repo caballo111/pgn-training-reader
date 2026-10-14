@@ -10,6 +10,8 @@ class StudyLayout extends StatelessWidget {
     this.header,
     this.actions,
     this.controls,
+    this.tools,
+    this.compactBoard = false,
     this.controlCount = 5,
     this.actionTopPadding = 4,
     this.controlTrailingWidth = 0,
@@ -19,6 +21,10 @@ class StudyLayout extends StatelessWidget {
 
   final Widget board;
   final Widget details;
+
+  /// Compact exploration and engine controls, kept beside the position.
+  final Widget? tools;
+  final bool compactBoard;
 
   /// Compact context retained above the board and independently of details.
   final Widget? header;
@@ -62,8 +68,10 @@ class StudyLayout extends StatelessWidget {
   Widget build(BuildContext context) => SafeArea(
     child: LayoutBuilder(
       builder: (context, constraints) {
-        final viewport = MediaQuery.sizeOf(context);
-        final wide = viewport.width >= 840 || viewport.width > viewport.height;
+        final wide =
+            constraints.maxWidth >= 840 ||
+            (constraints.maxWidth >= 500 &&
+                constraints.maxWidth > constraints.maxHeight);
         final compactWide = wide && constraints.maxHeight < 420;
         if (compactWide) {
           return Row(
@@ -76,13 +84,15 @@ class StudyLayout extends StatelessWidget {
                       context,
                       boardConstraints.maxWidth,
                     );
-                    final size = math.max(
-                      24.0,
-                      math.min(
-                        boardConstraints.maxWidth,
-                        boardConstraints.maxHeight - controlHeight,
-                      ),
-                    );
+                    final size =
+                        math.max(
+                          24.0,
+                          math.min(
+                            boardConstraints.maxWidth,
+                            boardConstraints.maxHeight - controlHeight,
+                          ),
+                        ) *
+                        (compactBoard ? .72 : 1);
                     return Center(child: _position(size));
                   },
                 ),
@@ -95,8 +105,15 @@ class StudyLayout extends StatelessWidget {
                     if (header != null)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
-                        child: header,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: constraints.maxHeight * .25,
+                          ),
+                          child: SingleChildScrollView(child: header),
+                        ),
                       ),
+                    if (tools != null)
+                      _tools(math.min(120, constraints.maxHeight * .3)),
                     Expanded(child: details),
                     if (actions != null)
                       SafeArea(
@@ -112,7 +129,8 @@ class StudyLayout extends StatelessWidget {
             ],
           );
         }
-        final sideBySide = wide && actions == null && header == null;
+        final sideBySide =
+            wide && actions == null && header == null && tools == null;
         if (sideBySide) {
           final size = math.max(
             80.0,
@@ -161,43 +179,65 @@ class StudyLayout extends StatelessWidget {
                   // Keep at least a useful notes/move viewport on short
                   // phones. The reservation includes the gap below the board,
                   // leaving 140px for details when the available height allows.
+                  final toolsReserve = tools == null
+                      ? 0.0
+                      : math.min(
+                          104.0 * MediaQuery.textScalerOf(context).scale(1),
+                          mainConstraints.maxHeight * .24,
+                        );
                   final detailReserve = math.min(
-                    148.0,
+                    tools == null
+                        ? 148.0
+                        : math.max(148.0, mainConstraints.maxHeight * .36),
                     mainConstraints.maxHeight,
                   );
-                  final boardSize = wide
-                      ? math.max(
-                          24.0,
-                          math.min(
-                            520.0,
-                            math.min(
-                              (mainConstraints.maxWidth * .6) - 24,
-                              mainConstraints.maxHeight - controlHeight - 16,
-                            ),
-                          ),
-                        )
-                      : math.max(
-                          24.0,
-                          math.min(
-                            mainConstraints.maxWidth,
-                            mainConstraints.maxHeight -
-                                controlHeight -
-                                detailReserve,
-                          ),
-                        );
+                  final boardSize =
+                      (wide
+                          ? math.max(
+                              24.0,
+                              math.min(
+                                520.0,
+                                math.min(
+                                  (mainConstraints.maxWidth * .6) - 24,
+                                  mainConstraints.maxHeight -
+                                      controlHeight -
+                                      16,
+                                ),
+                              ),
+                            )
+                          : math.max(
+                              24.0,
+                              math.min(
+                                mainConstraints.maxWidth,
+                                mainConstraints.maxHeight -
+                                    controlHeight -
+                                    detailReserve -
+                                    toolsReserve,
+                              ),
+                            )) *
+                      (compactBoard ? .72 : 1);
                   final position = _position(boardSize);
                   if (wide) {
                     return Row(
                       children: [
                         Expanded(flex: 3, child: Center(child: position)),
                         const SizedBox(width: 16),
-                        Expanded(flex: 2, child: details),
+                        Expanded(
+                          flex: 2,
+                          child: Column(
+                            children: [
+                              if (tools != null) _tools(toolsReserve),
+                              Expanded(child: details),
+                            ],
+                          ),
+                        ),
                       ],
                     );
                   }
                   return Column(
                     children: [
                       Center(child: position),
+                      if (tools != null) _tools(toolsReserve),
                       const SizedBox(height: 8),
                       Expanded(child: details),
                     ],
@@ -221,6 +261,16 @@ class StudyLayout extends StatelessWidget {
           ],
         );
       },
+    ),
+  );
+
+  Widget _tools(double maxHeight) => ConstrainedBox(
+    constraints: BoxConstraints(maxHeight: math.max(0, maxHeight)),
+    child: SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: tools,
+      ),
     ),
   );
 

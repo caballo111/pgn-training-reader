@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/analysis/exploration_repository.dart';
 import 'package:pgntrainingreader/domain/analysis/exploration_session.dart';
 import 'package:pgntrainingreader/features/analysis/presentation/exploration_workspace.dart';
+import 'package:pgntrainingreader/features/analysis/presentation/analysis_panel.dart';
 import 'package:pgntrainingreader/domain/training/puzzle_evaluator.dart';
 
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -201,6 +202,7 @@ void main() {
         _workspace(
           repository: repository,
           initialMoves: const ['e2e4', 'e7e5'],
+          initialMovesAreEngine: true,
         ),
       );
       await tester.pumpAndSettle();
@@ -209,10 +211,179 @@ void main() {
       // branch remains available at the authored origin.
       expect(find.text('1. e4'), findsOneWidget);
       expect(find.text('1... e5'), findsOneWidget);
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .controller
+            .fen,
+        _startFen,
+      );
       await tester.tap(find.byTooltip('First personal move'));
       await tester.pumpAndSettle();
       expect(find.text('d4'), findsWidgets);
       expect(find.text('e4'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'invalid seeded line retains existing draft without partial moves',
+    (tester) async {
+      final original = ExplorationSession.initial(origin: _origin())
+          .playUci('d2d4');
+      final repository = _FakeExplorationRepository()..loaded = original;
+      await tester.pumpWidget(
+        _workspace(
+          repository: repository,
+          initialMoves: const ['e2e4', 'e2e3'],
+          initialMovesAreEngine: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final board = tester.widget<chessground.Chessboard>(
+        find.byType(chessground.Chessboard),
+      );
+      expect(board.controller.fen, original.position.fen);
+      expect(
+        find.textContaining('does not match the selected position'),
+        findsOneWidget,
+      );
+      expect(repository.saveCalls, 0);
+      expect(find.text('1. e4'), findsNothing);
+    },
+  );
+
+  testWidgets('clear exploration can be undone and saves restored moves', (
+    tester,
+  ) async {
+    final repository = _FakeExplorationRepository();
+    await tester.pumpWidget(_workspace(repository: repository));
+    await tester.pumpAndSettle();
+    await _submit(tester, 'e2e4');
+    await _submit(tester, 'e7e5');
+    final originalFen = tester
+        .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+        .controller
+        .fen;
+    await tester.ensureVisible(find.text('Clear exploration'));
+    await tester.tap(find.text('Clear exploration'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+          .controller
+          .fen,
+      _startFen,
+    );
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+          .controller
+          .fen,
+      originalFen,
+    );
+    expect(repository.saved.last.moves, ['e2e4', 'e7e5']);
+  });
+
+  testWidgets(
+    'adding an engine line preserves the board cursor and labels its moves',
+    (tester) async {
+      final repository = _FakeExplorationRepository();
+      await tester.pumpWidget(_workspace(repository: repository));
+      await tester.pumpAndSettle();
+      await _submit(tester, 'e2e4');
+      final originalFen = tester
+          .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+          .controller
+          .fen;
+      tester
+          .widget<AnalysisPanel>(find.byType(AnalysisPanel))
+          .onExploreSuggestion!(const ['e7e5', 'g1f3']);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .controller
+            .fen,
+        originalFen,
+      );
+      final saved = repository.saved.last;
+      expect(saved.currentPath, [0]);
+      expect(saved.selectedLine.map((move) => move.uci), [
+        'e2e4',
+        'e7e5',
+        'g1f3',
+      ]);
+      expect(saved.selectedLine.map((move) => move.engineOrigin), [
+        false,
+        true,
+        true,
+      ]);
+      await tester.tap(find.byTooltip('Next personal move'));
+      await tester.pumpAndSettle();
+      expect(repository.saved.last.moves, ['e2e4', 'e7e5']);
+    },
+  );
+
+  testWidgets(
+    'invalid added engine line does not leave a partially inserted branch',
+    (tester) async {
+      final repository = _FakeExplorationRepository();
+      await tester.pumpWidget(_workspace(repository: repository));
+      await tester.pumpAndSettle();
+      await _submit(tester, 'e2e4');
+      final saves = repository.saveCalls;
+      tester
+          .widget<AnalysisPanel>(find.byType(AnalysisPanel))
+          .onExploreSuggestion!(const ['e7e5', 'e7e6']);
+      await tester.pumpAndSettle();
+      expect(repository.saveCalls, saves);
+      expect(repository.saved.last.selectedLine.map((move) => move.uci), [
+        'e2e4',
+      ]);
+      expect(
+        find.textContaining('Your moves have not changed'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('compact board frees reading space and expands again', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_workspace());
+    await tester.pumpAndSettle();
+    final initialWidth = tester
+        .getSize(find.byType(chessground.Chessboard))
+        .width;
+    await tester.tap(find.byTooltip('Compact board'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(chessground.Chessboard)).width,
+      lessThan(initialWidth),
+    );
+    await tester.tap(find.byTooltip('Expand board'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(chessground.Chessboard)).width,
+      initialWidth,
+    );
+  });
+
+  testWidgets(
+    'temporary draft and engine handoff are visible without scrolling',
+    (tester) async {
+      await tester.pumpWidget(_workspace(engineWasEnabled: true));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Temporary exploration'), findsOneWidget);
+      expect(
+        find.text('Engine paused on entry · enable it to continue analysis'),
+        findsOneWidget,
+      );
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
     },
   );
 }
@@ -221,6 +392,8 @@ Widget _workspace({
   ExplorationOrigin? origin,
   ExplorationRepository? repository,
   List<String> initialMoves = const [],
+  bool initialMovesAreEngine = false,
+  bool engineWasEnabled = false,
   VoidCallback? onReturn,
   TextScaler? textScaler,
 }) => MaterialApp(
@@ -236,6 +409,8 @@ Widget _workspace({
       repository: repository,
       orientation: PuzzleSide.white,
       initialMoves: initialMoves,
+      initialMovesAreEngine: initialMovesAreEngine,
+      engineWasEnabled: engineWasEnabled,
       onReturn: onReturn ?? () {},
     ),
   ),

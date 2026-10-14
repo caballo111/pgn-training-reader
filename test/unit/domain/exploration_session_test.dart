@@ -122,6 +122,150 @@ void main() {
       },
     );
 
+    test('next and last follow the explicitly selected sibling variation', () {
+      final session = ExplorationSession.initial(origin: _origin())
+          .playUci('e2e4')
+          .playUci('e7e5')
+          .previous()
+          .playUci('c7c5')
+          .playUci('g1f3');
+      final rewound = session.previous();
+
+      expect(rewound.currentPath, [0, 1]);
+      expect(rewound.selectedPath, [0, 1, 0]);
+      expect(rewound.next().currentPath, [0, 1, 0]);
+      expect(rewound.last().currentPath, [0, 1, 0]);
+      expect(rewound.root.single.children.map((node) => node.uci), [
+        'e7e5',
+        'c7c5',
+      ]);
+    });
+
+    test(
+      'cursor history stays shorter than the selected line after rewind',
+      () {
+        final session = ExplorationSession.initial(origin: _origin())
+            .playUci('e2e4')
+            .playUci('e7e5')
+            .playUci('g1f3')
+            .previous();
+
+        expect(session.currentPath, [0, 0]);
+        expect(session.activeLine.map((node) => node.uci), ['e2e4', 'e7e5']);
+        expect(session.moves, ['e2e4', 'e7e5']);
+        expect(session.selectedPath, [0, 0, 0]);
+        expect(session.selectedLine.map((node) => node.uci), [
+          'e2e4',
+          'e7e5',
+          'g1f3',
+        ]);
+        expect(session.next().currentPath, [0, 0, 0]);
+      },
+    );
+
+    test('deletes one variation while retaining its sibling', () {
+      final session = ExplorationSession.initial(origin: _origin())
+          .playUci('e2e4')
+          .playUci('e7e5')
+          .previous()
+          .playUci('c7c5');
+      final deleted = session.selectPath([0, 0]).deleteVariation([0, 1]);
+
+      expect(deleted.currentPath, [0, 0]);
+      expect(deleted.selectedPath, [0, 0]);
+      expect(deleted.root.single.children.map((node) => node.uci), ['e7e5']);
+      expect(deleted.moves, ['e2e4', 'e7e5']);
+      expect(session.root.single.children, hasLength(2));
+      expect(() => session.deleteVariation([]), throwsArgumentError);
+      expect(() => session.deleteVariation([1]), throwsArgumentError);
+    });
+
+    test(
+      'deleting the selected branch moves to its parent and keeps sibling',
+      () {
+        final session = ExplorationSession.initial(origin: _origin())
+            .playUci('e2e4')
+            .playUci('e7e5')
+            .previous()
+            .playUci('c7c5');
+        final deleted = session.deleteVariation([0, 1]);
+
+        expect(deleted.currentPath, [0]);
+        expect(deleted.selectedPath, [0, 0]);
+        expect(deleted.moves, ['e2e4']);
+        expect(deleted.canNext, isTrue);
+        expect(deleted.last().moves, ['e2e4', 'e7e5']);
+      },
+    );
+
+    test('clears personal moves while keeping the authored origin', () {
+      final origin = _origin(
+        path: [2],
+        moves: ['e2e4'],
+        discriminator: 'try-1',
+      );
+      final cleared = ExplorationSession.initial(origin: origin)
+          .playUci('e7e5')
+          .clearExploration();
+
+      expect(cleared.origin, origin);
+      expect(cleared.root, isEmpty);
+      expect(cleared.currentPath, isEmpty);
+      expect(cleared.selectedPath, isEmpty);
+      expect(cleared.moves, ['e2e4']);
+    });
+
+    test(
+      'stores engine provenance and leaves an existing manual move manual',
+      () {
+        final origin = _origin();
+        final engineLine = ExplorationSession.initial(origin: origin)
+            .playUci('e2e4', engineOrigin: true)
+            .playUci('e7e5');
+        final restored = ExplorationSession.fromJson(engineLine.toJson());
+        final manualMove = ExplorationSession.initial(origin: origin)
+            .playUci('e2e4');
+        final duplicateSuggestion = manualMove.previous().playUci(
+          'e2e4',
+          engineOrigin: true,
+        );
+
+        expect(engineLine.root.single.engineOrigin, isTrue);
+        expect(
+          engineLine.toJson()['tree'],
+          contains(containsPair('engineOrigin', true)),
+        );
+        expect(engineLine.root.single.engineOrigin, isTrue);
+        expect(engineLine.root.single.children.single.engineOrigin, isFalse);
+        expect(restored.root.single.engineOrigin, isTrue);
+        expect(restored.root.single.children.single.engineOrigin, isFalse);
+        expect(duplicateSuggestion.root.single.engineOrigin, isFalse);
+      },
+    );
+
+    test('loads version 1 drafts without selected path or node provenance', () {
+      final session = ExplorationSession.initial(origin: _origin())
+          .playUci('e2e4')
+          .playUci('e7e5')
+          .previous();
+      final legacyJson = Map<String, Object?>.of(session.toJson())
+        ..remove('selectedPath');
+      final restored = ExplorationSession.fromJson(legacyJson);
+
+      expect(restored.currentPath, [0]);
+      expect(restored.selectedPath, [0, 0]);
+      expect(restored.activeLine.map((node) => node.uci), ['e2e4']);
+      expect(restored.selectedLine.map((node) => node.uci), ['e2e4', 'e7e5']);
+      expect(restored.root.single.engineOrigin, isFalse);
+      expect(
+        () => ExplorationSession.fromJson({
+          ...session.toJson(),
+          'selectedPath': [1],
+        }),
+        throwsFormatException,
+      );
+    });
+
     test('replays authored history before personal moves', () {
       final session = ExplorationSession.initial(
         origin: _origin(

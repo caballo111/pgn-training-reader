@@ -2,7 +2,8 @@
     <application
         android:label="pgntrainingreader"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_pgn_launcher"
+        android:roundIcon="@mipmap/ic_pgn_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"

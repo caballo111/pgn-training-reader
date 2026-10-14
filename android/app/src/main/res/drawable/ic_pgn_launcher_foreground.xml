@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keep the emblem inside the adaptive icon's safe area. The opaque artwork
+     extends beyond the launcher mask so its square edges remain hidden. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="14dp">
+    <bitmap
+        android:src="@drawable/pgn_launcher_art"
+        android:gravity="fill" />
+</inset>

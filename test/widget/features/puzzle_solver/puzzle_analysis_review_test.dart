@@ -10,6 +10,7 @@ import 'package:pgntrainingreader/domain/training/authored_line_puzzle_evaluator
 import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
 import 'package:pgntrainingreader/features/analysis/presentation/analysis_panel.dart';
 import 'package:pgntrainingreader/features/analysis/presentation/exploration_workspace.dart';
+import 'package:pgntrainingreader/features/analysis/presentation/exploration_board.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/application/puzzle_presentation_state.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solution_review_view.dart';
@@ -153,7 +154,7 @@ void main() {
       );
       expect(workspace.origin.authoredMoves, ['e2e4']);
       expect(workspace.origin.authoredPath, [0]);
-      expect(find.text('Engine: Off'), findsOneWidget);
+      expect(find.text('Analysis is off.'), findsOneWidget);
       expect(key.currentState!.isExploring, isTrue);
       await tester.tap(find.text('Return to review'));
       await tester.pumpAndSettle();
@@ -203,15 +204,27 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Your tries'));
+      expect(find.text('Solution revealed'), findsOneWidget);
+      expect(find.text('Review solution'), findsOneWidget);
+      await tester.tap(find.text('Review my tries'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Explore this try'));
+      await tester.ensureVisible(find.text('Explore after d4'));
+      await tester.tap(find.text('Explore after d4'));
       await tester.pumpAndSettle();
       final workspace = tester.widget<ExplorationWorkspace>(
         find.byType(ExplorationWorkspace),
       );
       expect(workspace.origin.authoredPath, isEmpty);
       expect(workspace.origin.discriminator, 'try:d2d4');
+      expect(workspace.origin.label, 'before 1. d4 (your rejected try)');
+      expect(
+        tester
+            .widget<ExplorationBoard>(find.byType(ExplorationBoard))
+            .session
+            .position
+            .fen,
+        contains('3P4'),
+      );
       await tester.tap(find.text('Return to review'));
       await tester.pumpAndSettle();
       expect(repository.draft!.moves, ['d2d4']);

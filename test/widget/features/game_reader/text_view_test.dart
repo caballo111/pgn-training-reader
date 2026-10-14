@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/analysis/analysis_engine.dart';
@@ -7,6 +9,7 @@ import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
+import 'package:pgntrainingreader/features/analysis/presentation/exploration_board.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/text_view.dart';
 
 void main() {
@@ -41,6 +44,13 @@ void main() {
       ),
     ],
   );
+
+  Finder readerDetailsScrollable() => find
+      .descendant(
+        of: find.byKey(const ValueKey('reader-details')),
+        matching: find.byType(Scrollable),
+      )
+      .first;
 
   testWidgets('prose hides board and controls; FEN shows a static board', (
     tester,
@@ -247,17 +257,20 @@ void main() {
       await tester.scrollUntilVisible(
         find.text('e4'),
         100,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: readerDetailsScrollable(),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('e4'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Flip board'));
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView).first, const Offset(0, -120));
+      await tester.drag(
+        find.byKey(const ValueKey('reader-details')),
+        const Offset(0, -120),
+      );
       await tester.pumpAndSettle();
       final scrollBefore = tester
-          .state<ScrollableState>(find.byType(Scrollable).first)
+          .state<ScrollableState>(readerDetailsScrollable())
           .position
           .pixels;
 
@@ -267,12 +280,13 @@ void main() {
       expect(repository.loadedOrigin?.scopeId, 'source-a-revision-7');
       expect(repository.loadedOrigin?.authoredPath, [0]);
       expect(repository.loadedOrigin?.authoredMoves, ['e2e4']);
+      expect(repository.loadedOrigin?.label, '1. e4');
 
       await tester.tap(find.text('Return to reading'));
       await tester.pumpAndSettle();
       expect(
         tester
-            .state<ScrollableState>(find.byType(Scrollable).first)
+            .state<ScrollableState>(readerDetailsScrollable())
             .position
             .pixels,
         closeTo(scrollBefore, 1),
@@ -329,6 +343,102 @@ void main() {
     expect(find.text('Explore position'), findsNothing);
   });
 
+  testWidgets(
+    'entry snapshots the tapped origin while engine shutdown blocks navigation',
+    (tester) async {
+      tester.view.physicalSize = const Size(600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repository = _RecordingExplorationRepository();
+      final stopGate = Completer<void>();
+      final engine = _SuggestionEngine(stopGate: stopGate);
+      final snapshotContent = ChessContent(
+        headers: const {},
+        startingFen: content.startingFen,
+        contentType: ContentType.text,
+        comments: List.generate(12, (index) => 'Snapshot note ${index + 1}.'),
+        rootMoves: content.rootMoves,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TextView(
+              content: snapshotContent,
+              explorationScopeId: 'snapshot-source',
+              explorationRepository: repository,
+              analysisEngineFactory: () => engine,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Compact board'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Flip board'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('e4'),
+        120,
+        scrollable: readerDetailsScrollable(),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('e4'));
+      await tester.pumpAndSettle();
+      final details = tester.state<ScrollableState>(readerDetailsScrollable());
+      final tapScrollOffset = details.position.pixels;
+      expect(tapScrollOffset, greaterThan(0));
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('explore-position')),
+      );
+      await tester.tap(find.byKey(const ValueKey('explore-position')));
+      await tester.pump();
+      expect(engine.stopCalls, 1);
+      await tester.ensureVisible(find.byTooltip('Next move'));
+      // Pointer input is intentionally absorbed during engine shutdown.
+      await tester.tap(find.byTooltip('Next move'), warnIfMissed: false);
+      await tester.pump();
+      expect(find.text('Return to reading'), findsNothing);
+
+      stopGate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Exploring from 1. e4'), findsOneWidget);
+      expect(
+        find.text('Engine paused on entry · enable it to continue analysis'),
+        findsOneWidget,
+      );
+      expect(repository.loadedOrigin?.authoredPath, [0]);
+      expect(repository.loadedOrigin?.authoredMoves, ['e2e4']);
+      expect(repository.loadedOrigin?.label, '1. e4');
+      expect(
+        tester
+            .widget<ExplorationBoard>(find.byType(ExplorationBoard))
+            .orientation
+            .name,
+        'black',
+      );
+      await tester.tap(find.text('Return to reading'));
+      await tester.pumpAndSettle();
+      final restoredDetails = tester.state<ScrollableState>(
+        readerDetailsScrollable(),
+      );
+      expect(restoredDetails.position.pixels, closeTo(tapScrollOffset, 0.5));
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.label == 'Black to move',
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('an explicit engine suggestion seeds a personal line only', (
     tester,
   ) async {
@@ -351,25 +461,28 @@ void main() {
       ),
     );
 
-    await tester.ensureVisible(find.byType(SwitchListTile));
+    await tester.ensureVisible(find.byType(Switch));
     await tester.pumpAndSettle();
     // Keep these pumps bounded while the analysis panel can show its busy
     // indicator; pumpAndSettle would wait for that indicator's animation.
-    await tester.tap(find.byType(SwitchListTile));
+    await tester.tap(find.byType(Switch));
     for (var pump = 0; pump < 8; pump++) {
-      if (find.text('Analysis ready.').evaluate().isNotEmpty) break;
+      if (find
+          .byKey(const ValueKey('view-engine-line'))
+          .evaluate()
+          .isNotEmpty) {
+        break;
+      }
       await tester.pump(const Duration(milliseconds: 20));
     }
-    expect(find.text('Analysis ready.'), findsOneWidget);
-    await tester.ensureVisible(find.text('Show suggestion'));
+    expect(find.byKey(const ValueKey('view-engine-line')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('view-engine-line')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Show suggestion'));
-    await tester.pump();
-    expect(find.text('Suggested line: e2e4 e7e5'), findsOneWidget);
-
-    await tester.ensureVisible(find.text('Explore suggestion'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Explore suggestion'));
+    expect(find.text('Engine line preview'), findsOneWidget);
+    expect(find.text('1. e4'), findsOneWidget);
+    expect(find.text('1... e5'), findsOneWidget);
+    await tester.ensureVisible(find.text('Add line to exploration'));
+    await tester.tap(find.text('Add line to exploration'));
     for (var pump = 0; pump < 8; pump++) {
       if (find.text('Return to reading').evaluate().isNotEmpty) break;
       await tester.pump(const Duration(milliseconds: 20));
@@ -394,7 +507,11 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(repository.drafts.values.single.moves, ['e2e4', 'e7e5']);
+    final savedLine = repository.drafts.values.single;
+    expect(savedLine.currentPath, isEmpty);
+    expect(savedLine.moves, isEmpty);
+    expect(savedLine.selectedLine.map((move) => move.uci), ['e2e4', 'e7e5']);
+    expect(savedLine.selectedLine.every((move) => move.engineOrigin), isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -469,18 +586,28 @@ void main() {
       ),
     );
 
+    expect(find.byKey(const ValueKey('explore-position')), findsOneWidget);
+    expect(find.text('Analysis is off.'), findsOneWidget);
+    final entryTop = tester
+        .getTopLeft(find.byKey(const ValueKey('explore-position')))
+        .dy;
     expect(tester.takeException(), isNull);
     await tester.scrollUntilVisible(
       find.text('Introductory note 8.'),
       120,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: readerDetailsScrollable(),
     );
     await tester.pumpAndSettle();
     expect(find.text('Introductory note 8.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('explore-position')), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('explore-position'))).dy,
+      entryTop,
+    );
     await tester.scrollUntilVisible(
       find.text('e4'),
       150,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: readerDetailsScrollable(),
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -505,6 +632,11 @@ final class _RecordingExplorationRepository implements ExplorationRepository {
 }
 
 final class _SuggestionEngine implements AnalysisEngine {
+  _SuggestionEngine({this.stopGate});
+
+  final Completer<void>? stopGate;
+  int stopCalls = 0;
+
   @override
   Stream<AnalysisResult> analyze({
     required String startingFen,
@@ -520,7 +652,11 @@ final class _SuggestionEngine implements AnalysisEngine {
   );
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    stopCalls++;
+    final gate = stopGate;
+    if (gate != null && !gate.isCompleted) await gate.future;
+  }
 
   @override
   Future<void> dispose() async {}

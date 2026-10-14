@@ -37,6 +37,8 @@ final class GameReaderPage extends StatefulWidget {
     this.explorationScopeId,
     this.explorationRepository,
     this.analysisEngineFactory,
+    this.explorationEnabled = true,
+    this.persistenceMessage,
     this.isNestedExploring,
     this.onReturnFromExploration,
     this.onPrepareToLeave,
@@ -58,6 +60,8 @@ final class GameReaderPage extends StatefulWidget {
   final String? explorationScopeId;
   final ExplorationRepository? explorationRepository;
   final AnalysisEngineFactory? analysisEngineFactory;
+  final bool explorationEnabled;
+  final String? persistenceMessage;
   final bool Function()? isNestedExploring;
   final Future<void> Function()? onReturnFromExploration;
   final Future<void> Function()? onPrepareToLeave;
@@ -448,6 +452,8 @@ final class GameReaderPageState extends State<GameReaderPage> {
                 explorationScopeId: widget.explorationScopeId,
                 explorationRepository: widget.explorationRepository,
                 analysisEngineFactory: widget.analysisEngineFactory,
+                explorationEnabled: widget.explorationEnabled,
+                persistenceMessage: widget.persistenceMessage,
                 onStateChanged: widget.onSaveReaderState == null
                     ? null
                     : _readerChanged,

@@ -150,6 +150,17 @@ void main() {
       final readerRoute = ModalRoute.of(
         tester.element(find.byType(GameReaderPage)),
       );
+      expect(
+        find.ancestor(
+          of: find.text('Solve puzzle'),
+          matching: find.byType(OutlinedButton),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(of: _nextBlock, matching: find.byType(FilledButton)),
+        findsOneWidget,
+      );
       await tester.tap(_nextBlock);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('second-block')), findsOneWidget);
@@ -234,11 +245,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Review'), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.text('1... d5'),
+        find.byKey(const ValueKey('rejected-try-1')),
         180,
-        scrollable: find.byType(Scrollable).last,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('review-details')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
-      expect(find.text('1... d5'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('rejected-try-1')),
+          matching: find.text('1... d5'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Next block'), findsOneWidget);
       expect(
         ModalRoute.of(tester.element(find.byType(GameReaderPage))),

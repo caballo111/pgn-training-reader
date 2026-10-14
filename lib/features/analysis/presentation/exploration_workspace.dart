@@ -25,6 +25,9 @@ final class ExplorationWorkspace extends StatefulWidget {
     this.engineFactory,
     this.initialMoveUci,
     this.initialMoves = const [],
+    this.initialMovesAreEngine = false,
+    this.engineWasEnabled = false,
+    this.persistenceMessage,
     this.bookContext,
     this.returnLabel = 'Return to reading',
     super.key,
@@ -36,6 +39,9 @@ final class ExplorationWorkspace extends StatefulWidget {
   final PuzzleSide orientation;
   final String? initialMoveUci;
   final List<String> initialMoves;
+  final bool initialMovesAreEngine;
+  final bool engineWasEnabled;
+  final String? persistenceMessage;
   final Widget? bookContext;
   final VoidCallback onReturn;
   final String returnLabel;
@@ -53,6 +59,8 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
   bool _returning = false;
   bool _dirty = false;
   bool _saveFailed = false;
+  bool _compactBoard = false;
+  ExplorationSession? _undoSession;
   String? _failureMessage;
   int _changeGeneration = 0;
   Timer? _saveDebounce;
@@ -79,6 +87,7 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
       _dirty = false;
       _saveFailed = false;
       _failureMessage = null;
+      _undoSession = null;
       _changeGeneration++;
       _saveDebounce?.cancel();
       _loadFuture = _loadDraft();
@@ -136,17 +145,21 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
         initial.removeAt(0);
       }
       if (initial.isNotEmpty) {
-        final savedPath = next.currentPath;
         var seed = next.first();
-        for (final move in initial) {
-          try {
-            seed = seed.playUci(move);
-            seeded = true;
-          } on ArgumentError {
-            break;
+        try {
+          for (final move in initial) {
+            seed = seed.playUci(
+              move,
+              engineOrigin: widget.initialMovesAreEngine,
+            );
           }
+          seeded = true;
+          next = widget.initialMovesAreEngine ? seed.first() : seed;
+        } on ArgumentError {
+          _failureMessage =
+              'This line does not match the selected position. '
+              'Your existing exploration is still here.';
         }
-        next = seeded ? seed : seed.selectPath(savedPath);
       }
       setState(() {
         _session = next;
@@ -192,6 +205,7 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
     final session = _session;
     if (session == null || _loadFailed || _returning) return;
     try {
+      _undoSession = null;
       _accept(session.playUci(uci));
     } on ArgumentError catch (error) {
       setState(() => _failureMessage = _messageFor(error));
@@ -202,14 +216,57 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
     final current = _session;
     if (current == null || _loadFailed || _returning) return;
     var session = current;
-    for (final move in moves) {
-      try {
-        session = session.playUci(move);
-      } on ArgumentError {
-        break;
+    try {
+      for (final move in moves) {
+        session = session.playUci(move, engineOrigin: true);
       }
+    } on ArgumentError {
+      setState(() {
+        _failureMessage =
+            'The engine line could not be added at this position. '
+            'Your moves have not changed.';
+      });
+      return;
     }
-    if (session != current) _accept(session);
+    if (session != current) {
+      _undoSession = null;
+      _accept(session.selectPath(current.currentPath));
+    }
+  }
+
+  void _deleteVariation(List<int> path) {
+    final current = _session;
+    if (current == null || _loadFailed || _returning) return;
+    _undoSession = current;
+    _accept(current.deleteVariation(path));
+    _offerUndo('Variation deleted');
+  }
+
+  void _clearExploration() {
+    final current = _session;
+    if (current == null || current.root.isEmpty || _loadFailed || _returning) {
+      return;
+    }
+    _undoSession = current;
+    _accept(current.clearExploration());
+    _offerUndo('Exploration cleared');
+  }
+
+  void _offerUndo(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () {
+            final previous = _undoSession;
+            if (previous == null || _returning || !mounted) return;
+            _undoSession = null;
+            _accept(previous);
+          },
+        ),
+      ),
+    );
   }
 
   void _navigate(ExplorationSession Function(ExplorationSession) transform) {
@@ -324,11 +381,37 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
         if (!didPop) unawaited(_return());
       },
       child: StudyLayout(
+        compactBoard: _compactBoard,
         header: Align(
           alignment: Alignment.centerLeft,
-          child: Text(
-            fromTitle,
-            style: Theme.of(context).textTheme.titleMedium,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Tooltip(
+                message: fromTitle,
+                child: Text(
+                  fromTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              if (widget.persistenceMessage != null ||
+                  widget.repository == null)
+                Text(
+                  widget.persistenceMessage ?? 'Temporary exploration · moves are not saved after leaving',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              if (widget.engineWasEnabled)
+                Text(
+                  'Engine paused on entry · enable it to continue analysis',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
           ),
         ),
         board: ExplorationBoard(
@@ -340,6 +423,13 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
         controls: Row(
           children: [
             Expanded(child: _treeControls(session)),
+            IconButton(
+              tooltip: _compactBoard ? 'Expand board' : 'Compact board',
+              onPressed: _returning
+                  ? null
+                  : () => setState(() => _compactBoard = !_compactBoard),
+              icon: Icon(_compactBoard ? Icons.expand : Icons.compress),
+            ),
             FlipBoardButton(
               onPressed: _returning || _loadFailed
                   ? null
@@ -352,7 +442,18 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
           ],
         ),
         controlCount: 4,
-        controlTrailingWidth: 48,
+        controlTrailingWidth: 96,
+        tools: AbsorbPointer(
+          absorbing: _returning,
+          child: AnalysisPanel(
+            key: _analysisKey,
+            startingFen: widget.origin.startingFen,
+            moves: session.moves,
+            engineFactory: widget.engineFactory,
+            compact: true,
+            onExploreSuggestion: _playSuggestedMoves,
+          ),
+        ),
         details: _details(session, from),
         actions: _returnActions(),
       ),
@@ -412,6 +513,10 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
           onSelectBranch: (index) => _navigate(
             (session) => session.selectPath([...session.currentPath, index]),
           ),
+          onDeleteBranch: _returning || _loadFailed ? null : _deleteVariation,
+          onClearExploration: _returning || _loadFailed
+              ? null
+              : _clearExploration,
         ),
         if (_failureMessage case final message?) ...[
           const SizedBox(height: 8),
@@ -445,7 +550,8 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
           const SizedBox(height: 12),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
-            title: Text('Book context at $from'),
+            title: const Text('Explore another book move'),
+            subtitle: Text('Book context at $from'),
             children: [
               Align(
                 alignment: Alignment.centerLeft,
@@ -454,20 +560,6 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
             ],
           ),
         ],
-        const SizedBox(height: 8),
-        AbsorbPointer(
-          absorbing: _returning,
-          child: Semantics(
-            enabled: !_returning,
-            child: AnalysisPanel(
-              key: _analysisKey,
-              startingFen: widget.origin.startingFen,
-              moves: session.moves,
-              engineFactory: widget.engineFactory,
-              onExploreSuggestion: _playSuggestedMoves,
-            ),
-          ),
-        ),
       ],
     );
   }

@@ -68,7 +68,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('e4'),
       150,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('reader-details')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.pumpAndSettle();
 

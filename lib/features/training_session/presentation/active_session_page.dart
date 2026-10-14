@@ -312,18 +312,30 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
       child: FutureBuilder<String?>(
         future: item == null ? Future<String?>.value() : _scopeForItem(item),
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final scopeId = snapshot.data;
-          return GameReaderPage(
-            key: _readerKey,
-            content: content,
-            explorationScopeId: scopeId,
-            explorationRepository: scopeId == null
-                ? null
-                : widget.explorationRepository,
-            analysisEngineFactory: widget.analysisEngineFactory,
+          final scopeId = snapshot.connectionState == ConnectionState.done
+              ? snapshot.data
+              : null;
+          final message = _scopeMessage(snapshot);
+          return Column(
+            children: [
+              if (message != null)
+                _scopeNotice(message, item: item, retry: snapshot.hasError),
+              Expanded(
+                child: GameReaderPage(
+                  key: _readerKey,
+                  content: content,
+                  explorationScopeId: scopeId,
+                  explorationRepository: scopeId == null
+                      ? null
+                      : widget.explorationRepository,
+                  analysisEngineFactory: widget.analysisEngineFactory,
+                  explorationEnabled:
+                      !snapshot.hasError &&
+                      snapshot.connectionState == ConnectionState.done,
+                  persistenceMessage: message,
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -339,29 +351,43 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
     return FutureBuilder<String?>(
       future: _scopeForItem(item),
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final scopeId = snapshot.data;
-        return PuzzleSolutionReviewView(
-          key: _reviewKey,
-          presentation: presentation,
-          initialPath: _puzzleControllers[state.attempt?.id]?.reviewPath,
-          onPathChanged: (path) => _saveReviewPath(state.attempt?.id, path),
-          initialOrientation:
-              _puzzleControllers[state.attempt?.id]?.reviewOrientation,
-          onOrientationChanged: (orientation) =>
-              _saveReviewOrientation(state.attempt?.id, orientation),
-          nextLabel: current >= total ? 'Finish cycle' : 'Next exercise',
-          onNext: _nextFromReview,
-          canAdvance:
-              state.status == ActiveSessionStatus.active && !_advancePending,
-          isFinalExercise: current >= total,
-          explorationScopeId: scopeId,
-          explorationRepository: scopeId == null
-              ? null
-              : widget.explorationRepository,
-          analysisEngineFactory: widget.analysisEngineFactory,
+        final scopeId = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
+        final message = _scopeMessage(snapshot);
+        return Column(
+          children: [
+            if (message != null)
+              _scopeNotice(message, item: item, retry: snapshot.hasError),
+            Expanded(
+              child: PuzzleSolutionReviewView(
+                key: _reviewKey,
+                presentation: presentation,
+                initialPath: _puzzleControllers[state.attempt?.id]?.reviewPath,
+                onPathChanged: (path) =>
+                    _saveReviewPath(state.attempt?.id, path),
+                initialOrientation:
+                    _puzzleControllers[state.attempt?.id]?.reviewOrientation,
+                onOrientationChanged: (orientation) =>
+                    _saveReviewOrientation(state.attempt?.id, orientation),
+                nextLabel: current >= total ? 'Finish cycle' : 'Next exercise',
+                onNext: _nextFromReview,
+                canAdvance:
+                    state.status == ActiveSessionStatus.active &&
+                    !_advancePending,
+                isFinalExercise: current >= total,
+                explorationScopeId: scopeId,
+                explorationRepository: scopeId == null
+                    ? null
+                    : widget.explorationRepository,
+                analysisEngineFactory: widget.analysisEngineFactory,
+                persistenceMessage: message,
+                explorationEnabled:
+                    !snapshot.hasError &&
+                    snapshot.connectionState == ConnectionState.done,
+              ),
+            ),
+          ],
         );
       },
     );
@@ -373,11 +399,55 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
       final resolver = widget.explorationScopeIdResolver;
       _scopeFuture = resolver == null
           ? Future<String?>.value()
-          : Future<String?>.sync(() => resolver(item))
-                .catchError((Object _) => null);
+          : Future<String?>.sync(() => resolver(item));
     }
     return _scopeFuture!;
   }
+
+  String? _scopeMessage(AsyncSnapshot<String?> snapshot) {
+    if (snapshot.hasError) {
+      return 'Exploration persistence could not be loaded. Retry lookup before exploring.';
+    }
+    if (snapshot.connectionState != ConnectionState.done) {
+      return 'Checking exploration persistence…';
+    }
+    if (snapshot.data == null) {
+      return 'Exploration drafts will be temporary for this item.';
+    }
+    return null;
+  }
+
+  Widget _scopeNotice(
+    String message, {
+    required TrainingSetItem? item,
+    required bool retry,
+  }) => Material(
+    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+    child: Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 4, 8, 4),
+      child: Row(
+        children: [
+          Icon(
+            retry ? Icons.sync_problem_outlined : Icons.info_outline,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 12))),
+          if (retry)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  if (item != null && _scopeItemId == item.id) {
+                    _scopeFuture = null;
+                  }
+                });
+              },
+              child: const Text('Retry lookup'),
+            ),
+        ],
+      ),
+    ),
+  );
 
   Future<void> _saveReviewPath(String? attemptId, List<int> path) async {
     try {

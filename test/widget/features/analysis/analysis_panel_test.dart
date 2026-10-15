@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/analysis/analysis_engine.dart';
 import 'package:pgntrainingreader/features/analysis/presentation/analysis_panel.dart';
+import 'package:pgntrainingreader/shared/chessboard/move_arrows.dart';
 
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -141,6 +142,12 @@ void main() {
         find.byKey(const ValueKey('engine-line-preview-move-3')),
       );
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChessboardMoveArrows>(find.byType(ChessboardMoveArrows))
+            .moves,
+        ['b8c6'],
+      );
       expect(find.text('After 2... Nc6 · White to move'), findsOneWidget);
       expect(
         tester
@@ -154,6 +161,12 @@ void main() {
 
       await tester.tap(find.text('Previous'));
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChessboardMoveArrows>(find.byType(ChessboardMoveArrows))
+            .moves,
+        ['g1f3'],
+      );
       expect(find.text('After 2. Nf3 · Black to move'), findsOneWidget);
       expect(
         tester
@@ -651,6 +664,72 @@ void main() {
     expect(engine.disposeCalls, 1);
   });
 
+  testWidgets(
+    'publishes one legal current engine move and clears stale arrows',
+    (tester) async {
+      final engine = _FakeEngine(controlledStreams: true);
+      AnalysisEngine engineFactory() => engine;
+      final arrowUpdates = <List<String>>[];
+      final panelKey = GlobalKey<AnalysisPanelState>();
+      Widget host(List<String> moves) => _host(
+        moves: moves,
+        engineFactory: engineFactory,
+        panelKey: panelKey,
+        compact: true,
+        onSuggestionArrowsChanged: (moves) =>
+            arrowUpdates.add(List.unmodifiable(moves)),
+      );
+
+      await tester.pumpWidget(host(const []));
+      await _enableWithoutSettling(tester);
+      engine.emit(0, _lineResult(const ['e2e4', 'e7e5', 'g1f3']));
+      await tester.pump();
+      expect(arrowUpdates.last, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('view-engine-line')));
+      await tester.pumpAndSettle();
+      expect(arrowUpdates.last, ['e2e4']);
+      expect(arrowUpdates.last, isNot(contains('e7e5')));
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('engine-controls-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Hide suggestions'));
+      await tester.pumpAndSettle();
+      expect(arrowUpdates.last, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('view-engine-line')));
+      await tester.pumpAndSettle();
+      expect(arrowUpdates.last, ['e2e4']);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(host(const ['e2e4']));
+      await tester.pump();
+      expect(arrowUpdates.last, isEmpty);
+      engine.emit(0, _lineResult(const ['e2e4', 'e7e5']));
+      await tester.pump();
+      expect(arrowUpdates.last, isEmpty);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(engine.requests, hasLength(2));
+      engine.emit(1, _lineResult(const ['e7e5', 'g1f3']));
+      await tester.pump();
+      expect(arrowUpdates.last, ['e7e5']);
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(arrowUpdates.last, isEmpty);
+      final updatesBeforeLeave = arrowUpdates.length;
+      unawaited(panelKey.currentState!.prepareToLeave());
+      await tester.pumpAndSettle();
+      expect(arrowUpdates.length, updatesBeforeLeave + 1);
+      expect(arrowUpdates.last, isEmpty);
+    },
+  );
+
   testWidgets('fits a 320px surface with enlarged text', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -692,6 +771,7 @@ Widget _host({
   List<String> moves = const [],
   AnalysisEngineFactory? engineFactory,
   ValueChanged<List<String>>? onExploreSuggestion,
+  ValueChanged<List<String>>? onSuggestionArrowsChanged,
   bool enabled = true,
   TextScaler? textScaler,
   Key? panelKey,
@@ -713,6 +793,7 @@ Widget _host({
         moves: moves,
         engineFactory: engineFactory,
         onExploreSuggestion: onExploreSuggestion,
+        onSuggestionArrowsChanged: onSuggestionArrowsChanged,
         enabled: enabled,
         compact: compact,
       ),

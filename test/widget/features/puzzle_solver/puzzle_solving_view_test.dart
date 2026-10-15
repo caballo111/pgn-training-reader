@@ -353,6 +353,92 @@ void main() {
     },
   );
 
+  testWidgets(
+    'solver toolbar uses icon actions and keeps hints in the more menu',
+    (tester) async {
+      final attempt = PuzzleAttempt(
+        id: 'attempt-toolbar',
+        blockId: 'block',
+        cycleId: 'cycle',
+        sessionId: 'session',
+        startedAt: _started,
+      );
+      final controller = PuzzleSolverController(
+        repository: _Repository(attempt),
+        evaluatorFactory: () =>
+            AuthoredLinePuzzleEvaluator(idGenerator: _Ids()),
+        automaticReplyDelay: Duration.zero,
+      );
+      await controller.initialize(puzzle: _puzzle, attemptId: attempt.id);
+      var previous = 0;
+      var toggled = 0;
+      var reset = 0;
+      var next = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PuzzleSolvingView(
+              controller: controller,
+              currentExercise: 1,
+              totalExercises: 2,
+              orientation: PuzzleSide.white,
+              onPause: () {},
+              showBlockNavigation: true,
+              onPreviousBlock: () => previous++,
+              onToggleMode: () => toggled++,
+              onReset: () => reset++,
+              onNextBlock: () => next++,
+              nextBlockLabel: 'Next block',
+            ),
+          ),
+        ),
+      );
+
+      for (final tooltip in [
+        'Previous block',
+        'Switch to read mode',
+        'Reset board',
+        'Analyze position',
+        'Next block',
+        'More board actions',
+      ]) {
+        expect(find.byTooltip(tooltip), findsOneWidget);
+      }
+      final analyzeButton = tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byTooltip('Analyze position'),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(analyzeButton.onPressed, isNull);
+      expect(find.text('Hint'), findsNothing);
+
+      await tester.tap(find.byTooltip('Previous block'));
+      await tester.tap(find.byTooltip('Switch to read mode'));
+      await tester.tap(find.byTooltip('Reset board'));
+      await tester.tap(find.byTooltip('Next block'));
+      expect((previous, toggled, reset, next), (1, 1, 1, 1));
+
+      await tester.tap(find.byTooltip('More board actions'));
+      await tester.pumpAndSettle();
+      for (final label in [
+        'Flip board',
+        'Compact board',
+        'Hint',
+        'Show solution',
+        'Pause',
+        'Skip puzzle',
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.text('Secret solution comment'), findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      controller.dispose();
+    },
+  );
+
   testWidgets('pause persists, disables the board, and can be resumed', (
     tester,
   ) async {
@@ -386,7 +472,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.byTooltip('More puzzle actions'));
+    await tester.tap(find.byTooltip('More board actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Pause'));
     await tester.pumpAndSettle();
@@ -408,7 +494,7 @@ void main() {
       isTrue,
     );
     expect(find.text('Attempt paused'), findsNothing);
-    await tester.tap(find.byTooltip('More puzzle actions'));
+    await tester.tap(find.byTooltip('More board actions'));
     await tester.pumpAndSettle();
     expect(find.text('Pause'), findsOneWidget);
   });

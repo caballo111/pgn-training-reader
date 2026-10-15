@@ -142,6 +142,9 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
               : state.activeItem?.contentType == ContentType.puzzle
               ? StudyMode.solving
               : StudyMode.reading;
+          final solvingPuzzle =
+              state.activeItem?.contentType == ContentType.puzzle &&
+              _review == null;
           final subtitle = [
             'Cycle training',
             'Item ${current.clamp(0, total)} of $total',
@@ -241,7 +244,8 @@ final class _ActiveSessionPageState extends State<ActiveSessionPage> {
                 ),
               ),
               actions: [
-                if (state.status == ActiveSessionStatus.active)
+                if (state.status == ActiveSessionStatus.active &&
+                    !solvingPuzzle)
                   IconButton(
                     tooltip: 'Pause session',
                     onPressed: _pauseSession,

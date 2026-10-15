@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../domain/training/puzzle_evaluator.dart';
 import '../../../shared/chessboard/chessboard_adapter.dart';
+import '../../../shared/chessboard/move_arrows.dart';
 
 /// Interactive puzzle board limited to the evaluator's legal destinations.
 ///
@@ -101,20 +102,26 @@ final class _PuzzleBoardState extends State<PuzzleBoard> {
           child: Stack(
             children: [
               LayoutBuilder(
-                builder: (context, constraints) => chessground.Chessboard(
-                  size: constraints.maxWidth,
-                  controller: _controller,
+                builder: (context, constraints) => ChessboardMoveArrows(
+                  moves: [
+                    ?(widget.displayLastMoveUci ?? widget.lastMoveUci),
+                  ],
                   orientation: _orientation(widget.orientation),
-                  settings: const chessground.ChessboardSettings(
-                    enableCoordinates: true,
-                    enablePremoves: false,
-                    enableDrops: false,
-                    showLastMove: true,
-                    showValidMoves: true,
-                    animationDuration: Duration(milliseconds: 200),
+                  child: chessground.Chessboard(
+                    size: constraints.maxWidth,
+                    controller: _controller,
+                    orientation: _orientation(widget.orientation),
+                    settings: const chessground.ChessboardSettings(
+                      enableCoordinates: true,
+                      enablePremoves: false,
+                      enableDrops: false,
+                      showLastMove: true,
+                      showValidMoves: true,
+                      animationDuration: Duration(milliseconds: 200),
+                    ),
+                    onMove: (move, {viaDragAndDrop}) =>
+                        widget.onMoveSubmitted(move.uci),
                   ),
-                  onMove: (move, {viaDragAndDrop}) =>
-                      widget.onMoveSubmitted(move.uci),
                 ),
               ),
               if (widget.hintSquare case final square?)

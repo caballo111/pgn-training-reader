@@ -96,23 +96,26 @@ void main() {
             findsNothing,
           );
           expect(find.text('Cycle training'), findsNothing);
-          for (final label in ['Hint', 'Show solution']) {
-            final rect = tester.getRect(
-              label == 'Show solution'
-                  ? find.byTooltip(label)
-                  : find.text(label),
-            );
-            expect(rect.top, greaterThanOrEqualTo(0));
-            expect(rect.bottom, lessThanOrEqualTo(size.height));
-          }
-          await tester.tap(find.byTooltip('Show solution'));
+          await tester.tap(find.byTooltip('More board actions'));
           await tester.pumpAndSettle();
-          expect(tester.takeException(), isNull);
-          for (final label in ['Try again', 'Back to book']) {
+          for (final label in ['Hint', 'Show solution']) {
             final rect = tester.getRect(find.text(label));
             expect(rect.top, greaterThanOrEqualTo(0));
             expect(rect.bottom, lessThanOrEqualTo(size.height));
           }
+          await tester.tap(find.text('Show solution'));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          await tester.tap(find.byTooltip('More board actions'));
+          await tester.pumpAndSettle();
+          final retryRect = tester.getRect(find.text('Try again'));
+          expect(retryRect.top, greaterThanOrEqualTo(0));
+          expect(retryRect.bottom, lessThanOrEqualTo(size.height));
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          final backRect = tester.getRect(find.byTooltip('Back to book'));
+          expect(backRect.top, greaterThanOrEqualTo(0));
+          expect(backRect.bottom, lessThanOrEqualTo(size.height));
           await tester.pumpWidget(const SizedBox());
         },
       );
@@ -131,15 +134,25 @@ void main() {
         await db.customStatement(
           "CREATE TRIGGER reject_exposure BEFORE INSERT ON app_settings WHEN NEW.key = 'study.presentation.puzzle' AND NEW.value LIKE '%exposed%' BEGIN SELECT RAISE(FAIL, 'exposure save failed'); END",
         );
-        await tester.tap(find.byTooltip('Show solution'));
+        await _tapMoreAction(tester, 'Show solution');
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        for (final label in ['Retry', 'Try again', 'Back to book']) {
-          expect(
-            tester.getRect(find.text(label)).bottom,
-            lessThanOrEqualTo(size.height),
-          );
-        }
+        expect(
+          tester.getRect(find.text('Retry')).bottom,
+          lessThanOrEqualTo(size.height),
+        );
+        await tester.tap(find.byTooltip('More board actions'));
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(find.text('Try again')).bottom,
+          lessThanOrEqualTo(size.height),
+        );
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(find.byTooltip('Back to book')).bottom,
+          lessThanOrEqualTo(size.height),
+        );
         await tester.pumpWidget(const SizedBox());
       },
     );
@@ -153,7 +166,7 @@ void main() {
       await db.customStatement(
         "CREATE TRIGGER reject_exposure BEFORE INSERT ON app_settings WHEN NEW.key = 'study.presentation.puzzle' AND NEW.value LIKE '%exposed%' BEGIN SELECT RAISE(FAIL, 'exposure save failed'); END",
       );
-      await tester.tap(find.byTooltip('Show solution'));
+      await _tapMoreAction(tester, 'Show solution');
       await tester.pumpAndSettle();
       expect(find.text('Casual practice · Review'), findsOneWidget);
       expect(find.text('Solution already viewed'), findsNothing);
@@ -165,7 +178,7 @@ void main() {
                   )
                   .getSingle())
               .data['value'];
-      await tester.tap(find.text('Try again'));
+      await _tapMoreAction(tester, 'Try again');
       await tester.pumpAndSettle();
       expect(
         (await db
@@ -177,7 +190,7 @@ void main() {
         original,
       );
       await db.customStatement('DROP TRIGGER reject_exposure');
-      await tester.tap(find.text('Try again'));
+      await _tapMoreAction(tester, 'Try again');
       await tester.pumpAndSettle();
       expect(find.text('Solution already viewed'), findsNothing);
       expect(
@@ -206,13 +219,13 @@ void main() {
         .game
         .fen;
     expect(readingFen, isNot(_fen));
-    await tester.tap(find.text('Solve puzzle'));
+    await tester.tap(find.byTooltip('Switch to solve mode'));
     await tester.pumpAndSettle();
     expect(tester.widget<PuzzleBoard>(find.byType(PuzzleBoard)).fen, _fen);
     expect(find.text('Solution already viewed'), findsNothing);
-    await tester.tap(find.byTooltip('Show solution'));
+    await _tapMoreAction(tester, 'Show solution');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Read'));
+    await tester.tap(find.byTooltip('Switch to read mode'));
     await tester.pumpAndSettle();
     expect(
       tester.widget<ReaderBoard>(find.byType(ReaderBoard)).board.game.fen,
@@ -228,4 +241,11 @@ void main() {
     expect(saved['exposed'], true);
     await tester.pumpWidget(const SizedBox());
   });
+}
+
+Future<void> _tapMoreAction(WidgetTester tester, String label) async {
+  await tester.tap(find.byTooltip('More board actions'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label));
+  await tester.pumpAndSettle();
 }

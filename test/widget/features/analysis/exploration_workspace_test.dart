@@ -8,6 +8,7 @@ import 'package:pgntrainingreader/domain/analysis/exploration_repository.dart';
 import 'package:pgntrainingreader/domain/analysis/exploration_session.dart';
 import 'package:pgntrainingreader/features/analysis/presentation/exploration_workspace.dart';
 import 'package:pgntrainingreader/features/analysis/presentation/analysis_panel.dart';
+import 'package:pgntrainingreader/features/analysis/presentation/exploration_board.dart';
 import 'package:pgntrainingreader/domain/training/puzzle_evaluator.dart';
 
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -74,7 +75,7 @@ void main() {
     await tester.pumpAndSettle();
     await _submit(tester, 'e2e4');
 
-    await tester.tap(find.text('Return to reading'));
+    await tester.tap(find.byTooltip('Return to reading'));
     await tester.pump();
     expect(repository.saveCalls, 1);
     expect(returned, isFalse);
@@ -94,7 +95,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await _submit(tester, 'e2e4', settle: false);
-    await tester.tap(find.text('Return to reading'));
+    await tester.tap(find.byTooltip('Return to reading'));
     await tester.pumpAndSettle();
 
     expect(returns, 0);
@@ -104,7 +105,7 @@ void main() {
     await tester.tap(find.text('Retry save'));
     await tester.pumpAndSettle();
     expect(repository.saveCalls, 2);
-    await tester.tap(find.text('Return to reading'));
+    await tester.tap(find.byTooltip('Return to reading'));
     await tester.pump(const Duration(milliseconds: 50));
     expect(returns, 1);
   });
@@ -158,39 +159,42 @@ void main() {
     },
   );
 
-  testWidgets('phone portrait and landscape preserve board and Return', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(320, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(_workspace(textScaler: TextScaler.linear(2)));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'phone portrait and landscape preserve board and Analysis return',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(_workspace(textScaler: TextScaler.linear(2)));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Return to reading'), findsOneWidget);
-    expect(find.text('Your exploration'), findsOneWidget);
-    expect(
-      tester
-          .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
-          .interactive,
-      isTrue,
-    );
-    await _tapSquare(tester, 'e2', orientation: chess.Side.white);
-    await _tapSquare(tester, 'e4', orientation: chess.Side.white);
+      expect(find.text('Analysis'), findsOneWidget);
+      expect(find.byTooltip('Return to reading'), findsOneWidget);
+      expect(find.text('Your exploration'), findsOneWidget);
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .interactive,
+        isTrue,
+      );
+      await _tapSquare(tester, 'e2', orientation: chess.Side.white);
+      await _tapSquare(tester, 'e4', orientation: chess.Side.white);
 
-    await tester.binding.setSurfaceSize(const Size(640, 320));
-    await tester.pumpWidget(_workspace(textScaler: TextScaler.linear(2)));
-    await tester.pumpAndSettle();
-    expect(find.text('Return to reading'), findsOneWidget);
-    expect(
-      tester
-          .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
-          .interactive,
-      isTrue,
-    );
-    await _tapSquare(tester, 'e7', orientation: chess.Side.white);
-    await _tapSquare(tester, 'e5', orientation: chess.Side.white);
-    expect(tester.takeException(), isNull);
-  });
+      await tester.binding.setSurfaceSize(const Size(640, 320));
+      await tester.pumpWidget(_workspace(textScaler: TextScaler.linear(2)));
+      await tester.pumpAndSettle();
+      expect(find.text('Analysis'), findsOneWidget);
+      expect(find.byTooltip('Return to reading'), findsOneWidget);
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .interactive,
+        isTrue,
+      );
+      await _tapSquare(tester, 'e7', orientation: chess.Side.white);
+      await _tapSquare(tester, 'e5', orientation: chess.Side.white);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'seeded suggestion selects its new branch and preserves a draft',
@@ -359,13 +363,17 @@ void main() {
     final initialWidth = tester
         .getSize(find.byType(chessground.Chessboard))
         .width;
-    await tester.tap(find.byTooltip('Compact board'));
+    await tester.tap(find.byTooltip('Analysis actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Compact board'));
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byType(chessground.Chessboard)).width,
       lessThan(initialWidth),
     );
-    await tester.tap(find.byTooltip('Expand board'));
+    await tester.tap(find.byTooltip('Analysis actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Expand board'));
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byType(chessground.Chessboard)).width,
@@ -386,6 +394,125 @@ void main() {
       expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
     },
   );
+
+  testWidgets(
+    'analysis arrows follow selected move before sibling alternatives and flip with the board',
+    (tester) async {
+      await tester.pumpWidget(
+        _workspace(
+          initialMoves: const ['e2e4', 'e7e5'],
+          initialMovesAreEngine: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final boardFinder = find.byType(ExplorationBoard);
+      expect(tester.widget<ExplorationBoard>(boardFinder).arrows, ['e2e4']);
+
+      await _submit(tester, 'd2d4');
+      await tester.tap(find.byTooltip('First personal move'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<ExplorationBoard>(boardFinder).arrows, [
+        'd2d4',
+        'e2e4',
+      ]);
+
+      await tester.tap(find.byTooltip('Analysis actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Flip board'));
+      await tester.pumpAndSettle();
+      final board = tester.widget<ExplorationBoard>(boardFinder);
+      expect(board.orientation, PuzzleSide.black);
+      expect(board.arrows, ['d2d4', 'e2e4']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'header menu clears exploration with undo while return stays in the header',
+    (tester) async {
+      await tester.pumpWidget(_workspace());
+      await tester.pumpAndSettle();
+      expect(find.text('Analysis'), findsOneWidget);
+      expect(find.byTooltip('Return to reading'), findsOneWidget);
+      expect(find.text('Return to reading'), findsNothing);
+
+      await _submit(tester, 'e2e4');
+      await tester.tap(find.byTooltip('Analysis actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('analysis-menu-clear')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .controller
+            .fen,
+        _startFen,
+      );
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .controller
+            .fen,
+        _fenAfter(const ['e2e4']),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Reset board returns to the authored origin and preserves the selected tree',
+    (tester) async {
+      final repository = _FakeExplorationRepository();
+      await tester.pumpWidget(
+        _workspace(
+          repository: repository,
+          initialMoves: const ['e2e4', 'e7e5'],
+          initialMovesAreEngine: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next personal move'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next personal move'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .controller
+            .fen,
+        _fenAfter(const ['e2e4', 'e7e5']),
+      );
+
+      await tester.tap(find.byTooltip('Analysis actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('analysis-menu-reset')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<chessground.Chessboard>(find.byType(chessground.Chessboard))
+            .controller
+            .fen,
+        _startFen,
+      );
+      expect(find.text('1. e4'), findsOneWidget);
+      expect(find.text('1... e5'), findsOneWidget);
+      expect(
+        tester.widget<ExplorationBoard>(find.byType(ExplorationBoard)).arrows,
+        ['e2e4'],
+      );
+
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(repository.saved.last.currentPath, isEmpty);
+      expect(repository.saved.last.selectedLine.map((move) => move.uci), [
+        'e2e4',
+        'e7e5',
+      ]);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Widget _workspace({
@@ -394,6 +521,7 @@ Widget _workspace({
   List<String> initialMoves = const [],
   bool initialMovesAreEngine = false,
   bool engineWasEnabled = false,
+  AnalysisEngineFactory? engineFactory,
   VoidCallback? onReturn,
   TextScaler? textScaler,
 }) => MaterialApp(
@@ -411,10 +539,19 @@ Widget _workspace({
       initialMoves: initialMoves,
       initialMovesAreEngine: initialMovesAreEngine,
       engineWasEnabled: engineWasEnabled,
+      engineFactory: engineFactory,
       onReturn: onReturn ?? () {},
     ),
   ),
 );
+
+String _fenAfter(List<String> moves) {
+  var position = chess.Chess.fromSetup(chess.Setup.parseFen(_startFen));
+  for (final uci in moves) {
+    position = position.play(chess.Move.parse(uci)!) as chess.Chess;
+  }
+  return position.fen;
+}
 
 Future<void> _submit(
   WidgetTester tester,

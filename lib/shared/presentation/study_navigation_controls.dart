@@ -13,6 +13,7 @@ class StudyNavigationControls extends StatelessWidget {
     required this.onLast,
     required this.onFlip,
     this.showNavigation = true,
+    this.showFlip = true,
     this.status,
     this.onReturnToPlayedLine,
     super.key,
@@ -26,12 +27,14 @@ class StudyNavigationControls extends StatelessWidget {
   final VoidCallback onLast;
   final VoidCallback onFlip;
   final bool showNavigation;
+  final bool showFlip;
   final Widget? status;
   final VoidCallback? onReturnToPlayedLine;
 
   @override
   Widget build(BuildContext context) => StudyBoardControls(
     onFlip: onFlip,
+    showFlip: showFlip,
     navigation: Wrap(
       alignment: WrapAlignment.center,
       children: [

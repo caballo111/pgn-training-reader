@@ -9,6 +9,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../../../domain/analysis/analysis_engine.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
+import '../../../shared/chessboard/move_arrows.dart';
 import '../../../shared/presentation/study_board_frame.dart';
 import '../application/analysis_controller.dart';
 
@@ -25,6 +26,7 @@ final class AnalysisPanel extends StatefulWidget {
     required this.moves,
     this.engineFactory,
     this.onExploreSuggestion,
+    this.onSuggestionArrowsChanged,
     this.enabled = true,
     this.compact = false,
     super.key,
@@ -43,6 +45,13 @@ final class AnalysisPanel extends StatefulWidget {
   ///
   /// Merely viewing or stepping through the line never invokes this callback.
   final ValueChanged<List<String>>? onExploreSuggestion;
+
+  /// Publishes legal engine candidates for the panel's current position.
+  ///
+  /// The current engine API returns one principal variation, so this callback
+  /// contains at most its first legal move. Results are cleared when they are
+  /// hidden, stale, disabled, or the owning route prepares to leave.
+  final ValueChanged<List<String>>? onSuggestionArrowsChanged;
 
   /// Parent eligibility gate. Disabling it immediately stops and clears search.
   final bool enabled;
@@ -70,6 +79,8 @@ final class AnalysisPanelState extends State<AnalysisPanel>
   bool _leaveRequested = false;
   String? _localMessage;
   int _engineIntentGeneration = 0;
+  int _arrowCallbackGeneration = 0;
+  List<String>? _lastScheduledArrowMoves;
 
   AnalysisStatus get _status =>
       _controller?.status ??
@@ -103,6 +114,7 @@ final class AnalysisPanelState extends State<AnalysisPanel>
     WidgetsBinding.instance.addObserver(this);
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     _appActive = lifecycle == null || lifecycle == AppLifecycleState.resumed;
+    _scheduleSuggestionArrows(force: true);
   }
 
   @override
@@ -161,6 +173,13 @@ final class AnalysisPanelState extends State<AnalysisPanel>
         unawaited(_enable(controller));
       }
     }
+    if (positionChanged ||
+        (oldWidget.enabled && !widget.enabled) ||
+        oldWidget.engineFactory != widget.engineFactory ||
+        oldWidget.onSuggestionArrowsChanged !=
+            widget.onSuggestionArrowsChanged) {
+      _scheduleSuggestionArrows(force: true);
+    }
   }
 
   @override
@@ -173,6 +192,7 @@ final class AnalysisPanelState extends State<AnalysisPanel>
       return;
     }
     _invalidateEngineIntent();
+    _scheduleSuggestionArrows(force: true);
     final controller = _controller;
     if (controller != null && controller.isEnabled && !controller.isPaused) {
       unawaited(_pause(controller));
@@ -185,6 +205,7 @@ final class AnalysisPanelState extends State<AnalysisPanel>
   Future<void> prepareToLeave() async {
     _invalidateEngineIntent();
     _leaveRequested = true;
+    _scheduleSuggestionArrows(force: true);
     _dismissLinePreview();
     _preparingToLeave = true;
     if (mounted) setState(() {});
@@ -228,6 +249,46 @@ final class AnalysisPanelState extends State<AnalysisPanel>
     if (_controller?.result == null) _dismissLinePreview();
     if (_controller?.result == null) _selectedLinePly = 0;
     setState(() {});
+    _scheduleSuggestionArrows();
+  }
+
+  void _scheduleSuggestionArrows({bool force = false}) {
+    if (widget.onSuggestionArrowsChanged == null) {
+      _arrowCallbackGeneration++;
+      _lastScheduledArrowMoves = null;
+      return;
+    }
+    final arrows = List<String>.unmodifiable(_suggestionArrowMoves());
+    if (!force && listEquals(_lastScheduledArrowMoves, arrows)) return;
+    _lastScheduledArrowMoves = arrows;
+    final generation = ++_arrowCallbackGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _arrowCallbackGeneration) return;
+      final current = _suggestionArrowMoves();
+      if (!listEquals(current, arrows)) {
+        _scheduleSuggestionArrows(force: true);
+        return;
+      }
+      widget.onSuggestionArrowsChanged?.call(arrows);
+    });
+  }
+
+  List<String> _suggestionArrowMoves() {
+    if (!_engineRequested ||
+        !_showSuggestion ||
+        !widget.enabled ||
+        !_appActive ||
+        _preparingToLeave ||
+        _leaveRequested) {
+      return const [];
+    }
+    final result = _result;
+    if (result == null) return const [];
+    final line = _engineLineFor(result);
+    if (line == null || line.isEmpty || line.first.move is! chess.NormalMove) {
+      return const [];
+    }
+    return [line.first.uci];
   }
 
   Future<void> _setEngineRequested(bool requested) async {
@@ -241,6 +302,7 @@ final class AnalysisPanelState extends State<AnalysisPanel>
       _selectedLinePly = 0;
       _dismissLinePreview();
       _localMessage = null;
+      _scheduleSuggestionArrows(force: true);
       if (mounted) setState(() {});
       final controller = _controller;
       if (controller != null) await _disable(controller);
@@ -361,6 +423,7 @@ final class AnalysisPanelState extends State<AnalysisPanel>
       _showSuggestion = true;
       _selectedLinePly = initialPly.clamp(0, line.length).toInt();
     });
+    _scheduleSuggestionArrows();
     _linePreviewOpen = true;
     final startingFen = widget.startingFen;
     final moves = List<String>.unmodifiable(widget.moves);
@@ -401,6 +464,14 @@ final class AnalysisPanelState extends State<AnalysisPanel>
         widget.onExploreSuggestion?.call(lineToAdd);
       }),
     );
+  }
+
+  void _hideSuggestions() {
+    setState(() {
+      _showSuggestion = false;
+      _selectedLinePly = 0;
+    });
+    _scheduleSuggestionArrows(force: true);
   }
 
   void _dismissLinePreview() {
@@ -553,12 +624,7 @@ final class AnalysisPanelState extends State<AnalysisPanel>
                     if (_showSuggestion)
                       TextButton(
                         key: const ValueKey<String>('hide-engine-line'),
-                        onPressed: _preparingToLeave
-                            ? null
-                            : () => setState(() {
-                                _showSuggestion = false;
-                                _selectedLinePly = 0;
-                              }),
+                        onPressed: _preparingToLeave ? null : _hideSuggestions,
                         child: const Text('Hide suggestions'),
                       ),
                   ],
@@ -795,10 +861,7 @@ final class AnalysisPanelState extends State<AnalysisPanel>
           unawaited(_retryEngine());
           break;
         case 'hide':
-          setState(() {
-            _showSuggestion = false;
-            _selectedLinePly = 0;
-          });
+          _hideSuggestions();
           break;
       }
     },
@@ -1149,19 +1212,25 @@ final class _EngineLinePreviewSheetState
                                     'Engine line board. $location. '
                                     '$sideName to move.',
                                 child: ExcludeSemantics(
-                                  child: chessground.StaticChessboard(
-                                    key: const ValueKey<String>(
-                                      'engine-line-board',
-                                    ),
-                                    size: boardSize,
+                                  child: ChessboardMoveArrows(
+                                    moves: lastMove == null
+                                        ? const []
+                                        : [lastMove.uci],
                                     orientation: chess.Side.white,
-                                    fen: position.fen,
-                                    lastMove: lastMove,
-                                    settings:
-                                        const chessground.StaticChessboardSettings(
-                                          enableCoordinates: true,
-                                          animationDuration: Duration.zero,
-                                        ),
+                                    child: chessground.StaticChessboard(
+                                      key: const ValueKey<String>(
+                                        'engine-line-board',
+                                      ),
+                                      size: boardSize,
+                                      orientation: chess.Side.white,
+                                      fen: position.fen,
+                                      lastMove: lastMove,
+                                      settings:
+                                          const chessground.StaticChessboardSettings(
+                                            enableCoordinates: true,
+                                            animationDuration: Duration.zero,
+                                          ),
+                                    ),
                                   ),
                                 ),
                               ),

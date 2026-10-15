@@ -3,18 +3,19 @@ import 'dart:async';
 import 'package:dartchess/dartchess.dart' as chess;
 import 'package:flutter/material.dart';
 
+import '../../../domain/analysis/analysis_engine.dart';
 import '../../../domain/analysis/exploration_repository.dart';
 import '../../../domain/analysis/exploration_session.dart';
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/content_type.dart';
 import '../../../domain/chess_content/move_node.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
-import '../../analysis/presentation/analysis_panel.dart';
 import '../../analysis/presentation/exploration_workspace.dart';
 import '../application/game_reader_controller.dart';
 import '../application/reader_navigation_state.dart';
 import 'move_tree_view.dart';
 import 'reader_board.dart';
+import '../../../shared/presentation/study_action_toolbar.dart';
 import '../../../shared/presentation/study_layout.dart';
 import '../../../shared/presentation/study_navigation_controls.dart';
 
@@ -31,6 +32,7 @@ final class TextView extends StatefulWidget {
     this.analysisEngineFactory,
     this.explorationEnabled = true,
     this.persistenceMessage,
+    this.blockActions,
     super.key,
   });
 
@@ -43,6 +45,7 @@ final class TextView extends StatefulWidget {
   final AnalysisEngineFactory? analysisEngineFactory;
   final bool explorationEnabled;
   final String? persistenceMessage;
+  final StudyBlockActions? blockActions;
 
   @override
   TextViewState createState() => TextViewState();
@@ -56,14 +59,10 @@ final class TextViewState extends State<TextView> {
   PuzzleSide _orientation = PuzzleSide.white;
   bool _compactBoard = false;
   late final ScrollController _scrollController;
-  final GlobalKey<AnalysisPanelState> _analysisPanelKey =
-      GlobalKey<AnalysisPanelState>();
   final GlobalKey<ExplorationWorkspaceState> _workspaceKey =
       GlobalKey<ExplorationWorkspaceState>();
   String _ephemeralScopeId = _newEphemeralScopeId();
   ExplorationOrigin? _workspaceOrigin;
-  List<String>? _suggestionMoves;
-  bool _suggestionMovesAreEngine = false;
   double _scrollOffsetBeforeExploration = 0;
   Future<void>? _returningFromExploration;
   Future<void>? _workspacePreparation;
@@ -76,10 +75,6 @@ final class TextViewState extends State<TextView> {
   bool _workspaceContentSuperseded = false;
   bool _openingWorkspace = false;
   bool _workspaceEngineWasEnabled = false;
-  bool _resumeAvailable = false;
-  String? _resumeLookupKey;
-  ExplorationRepository? _resumeLookupRepository;
-  int _resumeLookupGeneration = 0;
   int _contentGeneration = 0;
 
   static int _nextEphemeralScope = 0;
@@ -93,7 +88,6 @@ final class TextViewState extends State<TextView> {
   /// A workspace persistence failure propagates so callers can block exit.
   Future<void> prepareToLeave() async {
     _publishState();
-    await _analysisPanelKey.currentState?.prepareToLeave();
     await _prepareWorkspace();
   }
 
@@ -150,7 +144,6 @@ final class TextViewState extends State<TextView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _publishState();
-        unawaited(_refreshResumeStatus());
       }
     });
   }
@@ -191,9 +184,6 @@ final class TextViewState extends State<TextView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.content != widget.content) {
       final generation = ++_contentGeneration;
-      _resumeLookupGeneration++;
-      _resumeLookupKey = null;
-      _resumeAvailable = false;
       _controller = GameReaderController(widget.content);
       _orientation = PuzzleSide.white;
       _ephemeralScopeId = _newEphemeralScopeId();
@@ -209,17 +199,8 @@ final class TextViewState extends State<TextView> {
           if (!mounted) return;
           if (_scrollController.hasClients) _scrollController.jumpTo(0);
           _publishState();
-          unawaited(_refreshResumeStatus(force: true));
         });
       }
-    } else if (oldWidget.explorationScopeId != widget.explorationScopeId ||
-        oldWidget.explorationRepository != widget.explorationRepository) {
-      _resumeLookupGeneration++;
-      _resumeLookupKey = null;
-      _resumeAvailable = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_refreshResumeStatus(force: true));
-      });
     }
   }
 
@@ -278,8 +259,6 @@ final class TextViewState extends State<TextView> {
                 engineWasEnabled: _workspaceEngineWasEnabled,
                 persistenceMessage: widget.persistenceMessage,
                 orientation: _workspaceOrientation ?? _orientation,
-                initialMoves: _suggestionMoves ?? const [],
-                initialMovesAreEngine: _suggestionMovesAreEngine,
                 bookContext: _bookContext,
                 onReturn: _onWorkspaceReturn,
                 returnLabel: 'Return to reading',
@@ -348,10 +327,33 @@ final class TextViewState extends State<TextView> {
       ],
     );
     if (!_hasMoves && !_hasPosition) {
-      return Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: details,
+      return SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: details,
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                child: StudyActionToolbar(
+                  onPreviousBlock: widget.blockActions?.onPrevious,
+                  onToggleMode: widget.blockActions?.onToggleMode,
+                  solving: widget.blockActions?.solving ?? false,
+                  onNextBlock: widget.blockActions?.onNext,
+                  nextLabel: widget.blockActions?.nextLabel ?? 'Next block',
+                  extraMenuItems:
+                      widget.blockActions?.extraMenuItems ?? const [],
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -359,7 +361,7 @@ final class TextViewState extends State<TextView> {
       absorbing: _openingWorkspace,
       child: StudyLayout(
         controlCount: _hasMoves ? 4 : 0,
-        controlTrailingWidth: 96,
+        controlTrailingWidth: 0,
         compactBoard: _compactBoard,
         board: ReaderBoard(
           board: _controller.current.forBoard(orientation: _orientation),
@@ -376,29 +378,25 @@ final class TextViewState extends State<TextView> {
                 onPrevious: _perform(_controller.previous),
                 onNext: _perform(_controller.next),
                 onLast: _perform(_controller.last),
-                onFlip: () {
-                  if (_openingWorkspace) return;
-                  setState(() {
-                    _orientation = _orientation == PuzzleSide.white
-                        ? PuzzleSide.black
-                        : PuzzleSide.white;
-                    _publishState();
-                  });
-                },
+                onFlip: _flipBoard,
+                showFlip: false,
               ),
-            ),
-            IconButton(
-              tooltip: _compactBoard ? 'Expand board' : 'Compact board',
-              onPressed: _openingWorkspace
-                  ? null
-                  : () => setState(() => _compactBoard = !_compactBoard),
-              icon: Icon(_compactBoard ? Icons.expand : Icons.compress),
             ),
           ],
         ),
-        tools: _canExplore
-            ? _readerTools(navigation.path.map((node) => node.uci).toList())
-            : null,
+        actions: StudyActionToolbar(
+          onPreviousBlock: widget.blockActions?.onPrevious,
+          onToggleMode: widget.blockActions?.onToggleMode,
+          solving: widget.blockActions?.solving ?? false,
+          onReset: (_hasMoves || _hasPosition) ? _resetBoard : null,
+          onAnalyze: _canExplore ? _openExploration : null,
+          onNextBlock: widget.blockActions?.onNext,
+          nextLabel: widget.blockActions?.nextLabel ?? 'Next block',
+          onFlip: _flipBoard,
+          onToggleBoardSize: _toggleBoardSize,
+          compactBoard: _compactBoard,
+          extraMenuItems: widget.blockActions?.extraMenuItems ?? const [],
+        ),
         details: details,
       ),
     );
@@ -407,86 +405,27 @@ final class TextViewState extends State<TextView> {
   bool get _canExplore =>
       widget.explorationEnabled && (_hasMoves || _hasPosition);
 
-  Widget _readerTools(List<String> moves) {
-    final explore = OutlinedButton.icon(
-      key: const ValueKey('explore-position'),
-      style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-      onPressed: _openingWorkspace ? null : () => unawaited(_openExploration()),
-      icon: const Icon(Icons.explore_outlined),
-      label: Text(
-        _resumeAvailable ? 'Resume exploration' : 'Explore position',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-    final analysis = AnalysisPanel(
-      key: _analysisPanelKey,
-      startingFen: widget.content.startingFen,
-      moves: moves,
-      engineFactory: widget.analysisEngineFactory,
-      compact: true,
-      onExploreSuggestion: _exploreSuggestion,
-    );
-    return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth < 520
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 48),
-                  child: SizedBox(width: double.infinity, child: explore),
-                ),
-                const SizedBox(height: 4),
-                SizedBox(height: 48, width: double.infinity, child: analysis),
-              ],
-            )
-          : Row(
-              children: [
-                Expanded(flex: 2, child: explore),
-                const SizedBox(width: 8),
-                Expanded(flex: 3, child: analysis),
-              ],
-            ),
-    );
+  void _flipBoard() {
+    if (_openingWorkspace) return;
+    setState(() {
+      _orientation = _orientation == PuzzleSide.white
+          ? PuzzleSide.black
+          : PuzzleSide.white;
+      _publishState();
+    });
   }
 
-  Future<void> _refreshResumeStatus({bool force = false}) async {
-    final repository = widget.explorationRepository;
-    if (!_canExplore || repository == null || _workspaceOrigin != null) {
-      if (_resumeAvailable && mounted) {
-        setState(() => _resumeAvailable = false);
-      }
-      _resumeLookupGeneration++;
-      _resumeLookupKey = null;
-      _resumeLookupRepository = repository;
-      return;
-    }
-    final origin = _originForCurrentPosition();
-    final lookupKey = origin.identityKey;
-    if (!force &&
-        identical(repository, _resumeLookupRepository) &&
-        lookupKey == _resumeLookupKey) {
-      return;
-    }
-    _resumeLookupRepository = repository;
-    _resumeLookupKey = lookupKey;
-    final generation = ++_resumeLookupGeneration;
-    if (_resumeAvailable && mounted) {
-      setState(() => _resumeAvailable = false);
-    }
-    try {
-      final saved = await repository.load(origin);
-      if (!mounted || generation != _resumeLookupGeneration) return;
-      final hasTree = saved != null && saved.root.isNotEmpty;
-      if (_resumeAvailable != hasTree) {
-        setState(() => _resumeAvailable = hasTree);
-      }
-    } on Object {
-      if (!mounted || generation != _resumeLookupGeneration) return;
-      if (_resumeAvailable) setState(() => _resumeAvailable = false);
-      // Opening still proceeds normally; the workspace presents its
-      // recoverable load error and retry action when the learner enters.
-    }
+  void _resetBoard() {
+    if (_openingWorkspace) return;
+    setState(() {
+      _controller.first();
+      _publishState();
+    });
+  }
+
+  void _toggleBoardSize() {
+    if (_openingWorkspace) return;
+    setState(() => _compactBoard = !_compactBoard);
   }
 
   List<int> _pathIndices(
@@ -502,10 +441,6 @@ final class TextViewState extends State<TextView> {
       choices = node.children;
     }
     return result;
-  }
-
-  ExplorationOrigin _originForCurrentPosition() {
-    return _originForPosition(widget.content, _controller.navigation);
   }
 
   ExplorationOrigin _originForPosition(
@@ -540,7 +475,7 @@ final class TextViewState extends State<TextView> {
     return '$moveNumber$sidePrefix ';
   }
 
-  Future<void> _openExploration({List<String> initialMoves = const []}) async {
+  void _openExploration() {
     if (!_canExplore || _workspaceOrigin != null || _openingWorkspace) return;
     final contentAtTap = widget.content;
     final scopeAtTap = widget.explorationScopeId;
@@ -549,55 +484,33 @@ final class TextViewState extends State<TextView> {
     final navigationAtTap = _controller.navigation;
     final originAtTap = _originForPosition(contentAtTap, navigationAtTap);
     final orientationAtTap = _orientation;
-    final engineWasEnabledAtTap =
-        _analysisPanelKey.currentState?.engineRequested ?? false;
-    final initialMovesAtTap = List<String>.unmodifiable(initialMoves);
     final contentGenerationAtTap = _contentGeneration;
     _publishState();
     _scrollOffsetBeforeExploration = _scrollController.hasClients
         ? _scrollController.offset
         : 0;
     _openingWorkspace = true;
-    setState(() {});
-    try {
-      await _analysisPanelKey.currentState?.prepareToLeave();
-      if (!mounted ||
-          contentGenerationAtTap != _contentGeneration ||
-          contentAtTap != widget.content ||
-          scopeAtTap != widget.explorationScopeId ||
-          !identical(repositoryAtTap, widget.explorationRepository) ||
-          !identical(engineFactoryAtTap, widget.analysisEngineFactory)) {
-        return;
-      }
-      setState(() {
-        _workspaceOrigin = originAtTap;
-        _suggestionMoves = initialMovesAtTap;
-        _suggestionMovesAreEngine = initialMovesAtTap.isNotEmpty;
-        _workspaceContentSnapshot = contentAtTap;
-        _workspaceNavigationSnapshot = navigationAtTap;
-        _workspaceOrientation = orientationAtTap;
-        _workspaceRepository = repositoryAtTap;
-        _workspaceEngineFactory = engineFactoryAtTap;
-        _workspaceEngineWasEnabled = engineWasEnabledAtTap;
-        _workspaceContentSuperseded = false;
-        _contentReplacementPending = false;
-      });
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Engine analysis could not be stopped.'),
-          ),
-        );
-      }
-    } finally {
+    if (!mounted ||
+        contentGenerationAtTap != _contentGeneration ||
+        contentAtTap != widget.content ||
+        scopeAtTap != widget.explorationScopeId ||
+        !identical(repositoryAtTap, widget.explorationRepository) ||
+        !identical(engineFactoryAtTap, widget.analysisEngineFactory)) {
       _openingWorkspace = false;
-      if (mounted && _workspaceOrigin == null) setState(() {});
+      return;
     }
-  }
-
-  void _exploreSuggestion(List<String> moves) {
-    unawaited(_openExploration(initialMoves: moves));
+    setState(() {
+      _workspaceOrigin = originAtTap;
+      _workspaceContentSnapshot = contentAtTap;
+      _workspaceNavigationSnapshot = navigationAtTap;
+      _workspaceOrientation = orientationAtTap;
+      _workspaceRepository = repositoryAtTap;
+      _workspaceEngineFactory = engineFactoryAtTap;
+      _workspaceEngineWasEnabled = false;
+      _workspaceContentSuperseded = false;
+      _contentReplacementPending = false;
+    });
+    _openingWorkspace = false;
   }
 
   Widget get _bookContext {
@@ -674,8 +587,6 @@ final class TextViewState extends State<TextView> {
     if (!mounted || _workspaceOrigin == null) return;
     setState(() {
       _workspaceOrigin = null;
-      _suggestionMoves = null;
-      _suggestionMovesAreEngine = false;
       _workspaceContentSnapshot = null;
       _workspaceNavigationSnapshot = null;
       _workspaceOrientation = null;
@@ -692,7 +603,6 @@ final class TextViewState extends State<TextView> {
         _scrollController.jumpTo(_scrollOffsetBeforeExploration.clamp(0, max));
       }
       _publishState();
-      unawaited(_refreshResumeStatus(force: true));
     });
   }
 
@@ -702,7 +612,6 @@ final class TextViewState extends State<TextView> {
       action();
       _publishState();
     });
-    unawaited(_refreshResumeStatus());
   };
 
   void _acceptNavigation(ReaderNavigationState navigation) {
@@ -711,6 +620,5 @@ final class TextViewState extends State<TextView> {
       _setNavigation(navigation);
       _publishState();
     });
-    unawaited(_refreshResumeStatus());
   }
 }

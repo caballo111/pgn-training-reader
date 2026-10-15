@@ -75,13 +75,13 @@ void main() {
     );
     await tester.pumpWidget(app('revision-1'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Explore position'));
+    await tester.tap(find.byTooltip('Analyze position'));
     await tester.pumpAndSettle();
     expect(key.currentState!.isExploring, isTrue);
     await tester.pumpWidget(app('revision-2'));
     await tester.pumpAndSettle();
     expect(key.currentState!.isExploring, isFalse);
-    await tester.tap(find.text('Explore position'));
+    await tester.tap(find.byTooltip('Analyze position'));
     await tester.pumpAndSettle();
     expect(
       tester
@@ -110,7 +110,7 @@ void main() {
         ),
       );
       expect(find.byType(AnalysisPanel), findsNothing);
-      expect(find.text('Explore position'), findsNothing);
+      expect(find.byTooltip('Analyze position'), findsNothing);
       expect(find.text('Book introduction'), findsNothing);
     },
   );
@@ -147,16 +147,16 @@ void main() {
           .board
           .game
           .fen;
-      await tester.tap(find.text('Explore position'));
+      await tester.tap(find.byTooltip('Analyze position'));
       await tester.pumpAndSettle();
       final workspace = tester.widget<ExplorationWorkspace>(
         find.byType(ExplorationWorkspace),
       );
       expect(workspace.origin.authoredMoves, ['e2e4']);
       expect(workspace.origin.authoredPath, [0]);
-      expect(find.text('Analysis is off.'), findsOneWidget);
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
       expect(key.currentState!.isExploring, isTrue);
-      await tester.tap(find.text('Return to review'));
+      await tester.tap(find.byTooltip('Return to review'));
       await tester.pumpAndSettle();
       expect(
         tester.widget<ReaderBoard>(find.byType(ReaderBoard)).board.game.fen,
@@ -225,7 +225,7 @@ void main() {
             .fen,
         contains('3P4'),
       );
-      await tester.tap(find.text('Return to review'));
+      await tester.tap(find.byTooltip('Return to review'));
       await tester.pumpAndSettle();
       expect(repository.draft!.moves, ['d2d4']);
       expect(presentation.playedMoves, isEmpty);

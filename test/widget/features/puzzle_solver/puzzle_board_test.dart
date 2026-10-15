@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pgntrainingreader/domain/training/puzzle_evaluator.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_board.dart';
+import 'package:pgntrainingreader/shared/chessboard/move_arrows.dart';
 
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -11,6 +12,7 @@ Widget _host({
   required PuzzleSide orientation,
   required ValueChanged<String> onMoveSubmitted,
   String? hintSquare,
+  String? lastMoveUci,
 }) => MaterialApp(
   home: Scaffold(
     body: Center(
@@ -24,6 +26,7 @@ Widget _host({
           },
           orientation: orientation,
           hintSquare: hintSquare,
+          lastMoveUci: lastMoveUci,
           onMoveSubmitted: onMoveSubmitted,
         ),
       ),
@@ -49,6 +52,37 @@ Future<void> _tapSquare(
 }
 
 void main() {
+  testWidgets('active solve arrows contain only the supplied played move', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        orientation: PuzzleSide.white,
+        onMoveSubmitted: (_) {},
+        hintSquare: 'e2',
+      ),
+    );
+    expect(
+      tester
+          .widget<ChessboardMoveArrows>(find.byType(ChessboardMoveArrows))
+          .moves,
+      isEmpty,
+    );
+    expect(find.byKey(const ValueKey('chessboard-move-arrows')), findsNothing);
+    await tester.pumpWidget(
+      _host(
+        orientation: PuzzleSide.black,
+        onMoveSubmitted: (_) {},
+        lastMoveUci: 'e7e5',
+      ),
+    );
+    final overlay = tester.widget<ChessboardMoveArrows>(
+      find.byType(ChessboardMoveArrows),
+    );
+    expect(overlay.moves, ['e7e5']);
+    expect(overlay.orientation, chess.Side.black);
+  });
+
   testWidgets('uses orientation preference and only supplied destinations', (
     tester,
   ) async {

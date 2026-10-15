@@ -17,8 +17,8 @@ import '../features/puzzle_solver/presentation/puzzle_solution_review_view.dart'
 import 'casual_training_repository.dart';
 import 'dependencies.dart';
 import 'study_presentation_store.dart';
+import '../shared/presentation/study_action_toolbar.dart';
 import '../shared/presentation/study_mode.dart';
-import '../shared/presentation/study_block_navigation.dart';
 
 /// Embedded book study surface: reading, solving, and review share one route.
 final class LibraryPuzzlePractice extends StatefulWidget {
@@ -66,6 +66,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   bool _allowPop = false;
   bool _backgroundPaused = false;
   bool _readDefault = true;
+  bool _resettingAttempt = false;
   String? _error;
   String? _pendingFreshId;
   Future<void> Function()? _retryAction;
@@ -175,7 +176,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   }
 
   Future<void> _enterReview(PuzzlePresentationState value) async {
-    if (!mounted) return;
+    if (!mounted || _resettingAttempt) return;
     setState(() {
       _review = value;
       _presentation = {..._presentation, 'exposed': true};
@@ -278,7 +279,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
     }
   }
 
-  Future<void> _start({bool fresh = false}) async {
+  Future<void> _start({bool fresh = false, bool abandonCurrent = false}) async {
     if (_busy) return;
     setState(() => _busy = true);
     final openingDone = Completer<void>();
@@ -287,6 +288,11 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
     try {
       await _flushPresentation();
       if (fresh) await _settleController();
+      if (abandonCurrent) {
+        _resettingAttempt = true;
+        final current = _controller;
+        if (current?.state?.outcome == null) await current?.abandon();
+      }
       // Keep the current controller when returning from reading/review.
       final controller = candidate = fresh || _controller == null
           ? await _createController(fresh: fresh)
@@ -318,11 +324,13 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
         setState(() {
           _error =
               'Practice could not be opened. Your saved position is unchanged.';
-          _retryAction = () => _start(fresh: fresh);
+          _retryAction = () =>
+              _start(fresh: fresh, abandonCurrent: abandonCurrent);
         });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+      _resettingAttempt = false;
       if (identical(_openingDone, openingDone)) _openingDone = null;
       openingDone.complete();
     }
@@ -395,7 +403,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   }
 
   Future<void> _read() async {
-    if (_busy || (!_reading && _review == null)) return;
+    if (_busy || _reading) return;
     setState(() => _busy = true);
     try {
       await prepareForReading();
@@ -719,11 +727,6 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                       ),
                     ),
                   ],
-                  if (!_reading && review != null && _error == null)
-                    TextButton(
-                      onPressed: _busy ? null : _read,
-                      child: const Text('Read'),
-                    ),
                   if (_error == null && widget.showSettingsButton)
                     IconButton(
                       tooltip: 'Book settings',
@@ -746,6 +749,18 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                       analysisEngineFactory:
                           widget.dependencies.analysisEngineFactory,
                       readPuzzle: true,
+                      blockActions: StudyBlockActions(
+                        onPrevious: _busy || widget.onPreviousBlock == null
+                            ? null
+                            : () => _leave(widget.onPreviousBlock!),
+                        onToggleMode: _busy ? null : () => _start(),
+                        onNext: _busy
+                            ? null
+                            : () => next == null
+                                  ? _backToBook()
+                                  : _leave(() => next(_policy!)),
+                        nextLabel: next == null ? 'Back to book' : 'Next block',
+                      ),
                       initialState: _presentation['reader'] is Map
                           ? Map<String, dynamic>.from(
                               _presentation['reader'] as Map,
@@ -762,6 +777,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                       analysisEngineFactory:
                           widget.dependencies.analysisEngineFactory,
                       presentation: review,
+                      onToggleMode: _busy ? null : _read,
                       showBlockNavigation: true,
                       nextLabel: next == null ? 'Back to book' : 'Next block',
                       canAdvance: !_busy,
@@ -789,6 +805,10 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                       nextBlockLabel: next == null
                           ? 'Back to book'
                           : 'Next block',
+                      onToggleMode: _busy ? null : _read,
+                      onReset: _busy
+                          ? null
+                          : () => _start(fresh: true, abandonCurrent: true),
                       onNextBlock: _busy
                           ? null
                           : () => next == null
@@ -804,48 +824,6 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                     ),
             ),
           ),
-          if (_reading)
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                child: Row(
-                  children: [
-                    StudyPreviousBlockButton(
-                      showLabel: false,
-                      onPressed: _busy || widget.onPreviousBlock == null
-                          ? null
-                          : () => _leave(widget.onPreviousBlock!),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                        ),
-                        onPressed: _busy ? null : _start,
-                        child: Text(
-                          _busy ? 'Opening…' : 'Solve puzzle',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: StudyNextBlockButton(
-                        label: next == null ? 'Back to book' : 'Next block',
-                        primary: true,
-                        onPressed: _busy
-                            ? null
-                            : () => next == null
-                                  ? _backToBook()
-                                  : _leave(() => next(_policy!)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
         ],
       ),
     );

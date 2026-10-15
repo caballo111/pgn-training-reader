@@ -135,11 +135,11 @@ void main() {
         findsOneWidget,
       );
       expect(lookupCalls, 1);
-      expect(find.text('Explore position'), findsOneWidget);
-      final exploreButton = tester.widget<OutlinedButton>(
+      expect(find.byTooltip('Analyze position'), findsOneWidget);
+      final exploreButton = tester.widget<IconButton>(
         find.ancestor(
-          of: find.text('Explore position'),
-          matching: find.byType(OutlinedButton),
+          of: find.byTooltip('Analyze position'),
+          matching: find.byType(IconButton),
         ),
       );
       expect(exploreButton.onPressed, isNull);
@@ -153,14 +153,14 @@ void main() {
         find.text('Exploration drafts will be temporary for this item.'),
         findsOneWidget,
       );
-      final enabledExploreButton = tester.widget<OutlinedButton>(
+      final enabledExploreButton = tester.widget<IconButton>(
         find.ancestor(
-          of: find.text('Explore position'),
-          matching: find.byType(OutlinedButton),
+          of: find.byTooltip('Analyze position'),
+          matching: find.byType(IconButton),
         ),
       );
       expect(enabledExploreButton.onPressed, isNotNull);
-      await tester.tap(find.text('Explore position'));
+      await tester.tap(find.byTooltip('Analyze position'));
       await tester.pumpAndSettle();
       expect(
         find.descendant(
@@ -262,17 +262,14 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('explore-position')),
-      );
-      await tester.tap(find.byKey(const ValueKey('explore-position')));
+      await tester.tap(find.byTooltip('Analyze position'));
       await tester.pumpAndSettle();
       await _playMoveOnBoard(tester, from: 'e2', to: 'e4');
       await tester.tap(find.text('Complete item and continue'));
       await tester.pumpAndSettle();
       expect(service.completeNonPuzzleCalls, 0);
       expect(controller.state.activeItem?.id, item.id);
-      expect(find.text('Return to reading'), findsOneWidget);
+      expect(find.byTooltip('Return to reading'), findsOneWidget);
       expect(
         find.text('Reading could not be saved. Retry before continuing.'),
         findsOneWidget,
@@ -404,7 +401,18 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(PuzzleSolvingView), findsOneWidget);
-      await _checkActionGeometry(tester, ['Hint', 'Show solution']);
+      final readMode = find.byTooltip('Switch to read mode');
+      expect(readMode, findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.ancestor(of: readMode, matching: find.byType(IconButton)),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.byTooltip('Pause session'), findsNothing);
+      await _checkActionGeometry(tester, ['Hint', 'Show solution', 'Pause']);
 
       clock.elapsed += const Duration(seconds: 3);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -440,15 +448,14 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Continue to review'), findsNothing);
-      await tester.ensureVisible(find.text('Explore position'));
-      await tester.tap(find.text('Explore position'));
+      await tester.tap(find.byTooltip('Analyze position'));
       await tester.pumpAndSettle();
       expect(find.text('Exploring from 1. e4'), findsOneWidget);
       explorationRepository.failWrites = true;
       await _playMoveOnBoard(tester, from: 'd7', to: 'd5');
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      expect(find.text('Return to review'), findsOneWidget);
+      expect(find.byTooltip('Return to review'), findsOneWidget);
       expect(service.closeCalls, 0);
       expect(find.textContaining('Exploration not saved.'), findsOneWidget);
       explorationRepository.failWrites = false;
@@ -475,17 +482,12 @@ void main() {
       await tester.tap(find.byTooltip('Starting position'));
       await tester.pumpAndSettle();
       expect(find.text('Review position could not be saved.'), findsOneWidget);
-      ScaffoldMessenger.of(tester.element(find.text('Finish cycle')))
+      ScaffoldMessenger.of(tester.element(find.byTooltip('Finish cycle')))
           .clearSnackBars();
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.ancestor(
-          of: find.text('Finish cycle'),
-          matching: find.byType(FilledButton),
-        ),
-      );
+      await tester.tap(find.byTooltip('Finish cycle'));
       await tester.pumpAndSettle();
-      expect(find.text('Finish cycle'), findsOneWidget);
+      expect(find.byTooltip('Finish cycle'), findsOneWidget);
       expect(
         find.text('Review could not be saved. Retry to continue.'),
         findsOneWidget,
@@ -569,6 +571,9 @@ Future<void> _checkActionGeometry(
   WidgetTester tester,
   List<String> labels,
 ) async {
+  final needsMoreMenu = labels.any(
+    (label) => label == 'Hint' || label == 'Show solution',
+  );
   for (final size in [
     const Size(360, 640),
     const Size(412, 915),
@@ -583,6 +588,10 @@ Future<void> _checkActionGeometry(
         isNull,
         reason: 'Cycle layout at $size with text scale $scale',
       );
+      if (needsMoreMenu) {
+        await tester.tap(find.byTooltip('More board actions'));
+        await tester.pumpAndSettle();
+      }
       for (final label in labels) {
         final finder = find.text(label).evaluate().isNotEmpty
             ? find.text(label)
@@ -590,6 +599,10 @@ Future<void> _checkActionGeometry(
         final rect = tester.getRect(finder);
         expect(rect.top, greaterThanOrEqualTo(0));
         expect(rect.bottom, lessThanOrEqualTo(size.height));
+      }
+      if (needsMoreMenu) {
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
       }
     }
   }

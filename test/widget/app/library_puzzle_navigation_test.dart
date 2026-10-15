@@ -18,13 +18,11 @@ import 'package:pgntrainingreader/features/game_reader/presentation/game_reader_
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solving_view.dart';
 import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
 
-Finder get _nextBlock => find.text('Next block').evaluate().isNotEmpty
-    ? find.text('Next block')
-    : find.byTooltip('Next block');
+Finder get _nextBlock => find.byTooltip('Next block');
 
-Finder get _previousBlock => find.text('Previous block').evaluate().isNotEmpty
-    ? find.text('Previous block')
-    : find.byTooltip('Previous block');
+Finder get _previousBlock => find.byTooltip('Previous block');
+
+Finder get _backToBook => find.byTooltip('Back to book');
 
 void main() {
   testWidgets(
@@ -150,15 +148,10 @@ void main() {
       final readerRoute = ModalRoute.of(
         tester.element(find.byType(GameReaderPage)),
       );
+      expect(find.byTooltip('Switch to solve mode'), findsOneWidget);
+      expect(find.text('Solve puzzle'), findsNothing);
       expect(
-        find.ancestor(
-          of: find.text('Solve puzzle'),
-          matching: find.byType(OutlinedButton),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.ancestor(of: _nextBlock, matching: find.byType(FilledButton)),
+        find.ancestor(of: _nextBlock, matching: find.byType(IconButton)),
         findsOneWidget,
       );
       await tester.tap(_nextBlock);
@@ -181,7 +174,7 @@ void main() {
       expect(await db.select(db.puzzleAttempts).get(), isEmpty);
       expect(await db.select(db.trainingSets).get(), isEmpty);
       expect(await db.select(db.cycles).get(), isEmpty);
-      await tester.tap(find.text('Solve puzzle'));
+      await tester.tap(find.byTooltip('Switch to solve mode'));
       await tester.pumpAndSettle();
       expect(find.byType(PuzzleSolvingView), findsOneWidget);
       expect(
@@ -261,7 +254,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('Next block'), findsOneWidget);
+      expect(_nextBlock, findsOneWidget);
       expect(
         ModalRoute.of(tester.element(find.byType(GameReaderPage))),
         same(readerRoute),
@@ -278,7 +271,7 @@ void main() {
       );
 
       // Retry is a fresh identity; no cycle rows are created.
-      await tester.tap(find.text('Try again'));
+      await _tapMoreAction(tester, 'Try again');
       await tester.pumpAndSettle();
       final retryId =
           (await db
@@ -299,7 +292,7 @@ void main() {
       expect(find.byType(PuzzleSolvingView), findsNothing);
       await tester.tap(_previousBlock);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Solve puzzle'));
+      await tester.tap(find.byTooltip('Switch to solve mode'));
       await tester.pumpAndSettle();
       final restored = tester.widget<PuzzleSolvingView>(
         find.byType(PuzzleSolvingView),
@@ -327,19 +320,19 @@ void main() {
             .blockId,
         'second-block',
       );
-      await tester.tap(find.byTooltip('Show solution'));
+      await _showSolution(tester);
       await tester.pumpAndSettle();
-      expect(find.text('Next block'), findsOneWidget);
-      await tester.tap(find.text('Next block'));
+      expect(_nextBlock, findsOneWidget);
+      await tester.tap(_nextBlock);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('instruction')), findsOneWidget);
       expect(find.text('Pause and review the idea.'), findsOneWidget);
       expect(find.byType(PuzzleSolvingView), findsNothing);
-      expect(find.text('Back to book'), findsOneWidget);
+      expect(_backToBook, findsOneWidget);
       // Changing a puzzle to text retains its reader cursor and keeps saving.
       await tester.tap(_previousBlock);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Read'));
+      await tester.tap(find.byTooltip('Switch to read mode'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Last move on main line'));
       await tester.pumpAndSettle();
@@ -379,10 +372,21 @@ void main() {
             as String,
       ) as Map<String, dynamic>;
       expect((presentation['reader'] as Map)['path'], [0, 0]);
-      await tester.tap(find.text('Back to book'));
+      await tester.tap(_backToBook);
       await tester.pumpAndSettle();
       expect(find.byType(GameReaderPage), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );
+}
+
+Future<void> _showSolution(WidgetTester tester) async {
+  await _tapMoreAction(tester, 'Show solution');
+}
+
+Future<void> _tapMoreAction(WidgetTester tester, String label) async {
+  await tester.tap(find.byTooltip('More board actions'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label));
+  await tester.pumpAndSettle();
 }

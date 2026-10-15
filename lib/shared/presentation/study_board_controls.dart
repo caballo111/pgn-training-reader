@@ -8,17 +8,19 @@ class StudyBoardControls extends StatelessWidget {
     required this.onFlip,
     this.caption,
     this.navigation,
+    this.showFlip = true,
     super.key,
   });
 
   final VoidCallback? onFlip;
   final String? caption;
   final Widget? navigation;
+  final bool showFlip;
 
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      if (navigation == null) const SizedBox(width: 48),
+      if (navigation == null && showFlip) const SizedBox(width: 48),
       Expanded(
         child:
             navigation ??
@@ -32,10 +34,11 @@ class StudyBoardControls extends StatelessWidget {
                     ),
                   )),
       ),
-      FlipBoardButton(
-        key: const ValueKey('reader-board-orientation'),
-        onPressed: onFlip,
-      ),
+      if (showFlip)
+        FlipBoardButton(
+          key: const ValueKey('reader-board-orientation'),
+          onPressed: onFlip,
+        ),
     ],
   );
 }

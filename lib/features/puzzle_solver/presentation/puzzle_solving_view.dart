@@ -14,7 +14,7 @@ import 'puzzle_solution_review_view.dart';
 import '../../../shared/presentation/study_layout.dart';
 import '../../../shared/presentation/study_board_frame.dart';
 import '../../../shared/presentation/study_board_controls.dart';
-import '../../../shared/presentation/study_block_navigation.dart';
+import '../../../shared/presentation/study_action_toolbar.dart';
 
 /// Active puzzle surface. It consumes the safe presentation projection and
 /// never renders puzzle metadata or the authored move tree.
@@ -32,6 +32,8 @@ final class PuzzleSolvingView extends StatefulWidget {
     this.sectionLabel,
     this.blockLabel,
     this.modeLabel,
+    this.onToggleMode,
+    this.onReset,
     this.showBlockNavigation = false,
     this.onPreviousBlock,
     this.onNextBlock,
@@ -56,6 +58,8 @@ final class PuzzleSolvingView extends StatefulWidget {
   final String? sectionLabel;
   final String? blockLabel;
   final String? modeLabel;
+  final VoidCallback? onToggleMode;
+  final VoidCallback? onReset;
   final bool showBlockNavigation;
   final VoidCallback? onPreviousBlock;
   final VoidCallback? onNextBlock;
@@ -79,6 +83,7 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView>
 
   late PuzzleSide _orientation =
       widget.controller.state?.boardOrientation ?? widget.orientation;
+  bool _compactBoard = false;
   Timer? _rejectionTimer;
   Completer<void>? _rejectionDelay;
   int _interactionGeneration = 0;
@@ -188,7 +193,7 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView>
 
     return StudyLayout(
       controlCount: 0,
-      controlTrailingWidth: 48,
+      controlTrailingWidth: 0,
       // Reserve the same caption space after play starts to keep the board
       // stationary, including when the initial caption wraps at large text.
       controlCaption: presentation.startingFen.split(' ')[1] == 'b'
@@ -196,8 +201,10 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView>
           : 'White to move',
       controls: StudyBoardControls(
         caption: showStartingTurn ? turnLabel : null,
-        onFlip: _writePending ? null : _flip,
+        onFlip: null,
+        showFlip: false,
       ),
+      compactBoard: _compactBoard,
       board: StudyBoardFrame(
         sideToMove: presentation.sideToMove,
         child: PuzzleBoard(
@@ -267,20 +274,58 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView>
                     label: const Text('Resume'),
                   )
                 : const SizedBox.shrink()
-          : _SolverActionBar(
-              showMenu: !widget.isCasualPractice,
-              showBlockNavigation: widget.showBlockNavigation,
-              onPreviousBlock: widget.onPreviousBlock,
-              onNextBlock: widget.onNextBlock,
-              nextBlockLabel: widget.nextBlockLabel,
-              enabled: !_writePending,
-              showMove: presentation.hintSquare != null,
-              onHint: () => _run(widget.controller.hint),
-              onShowMove: () => _run(widget.controller.showMove),
-              onReveal: () => _run(widget.controller.reveal),
-              onPause: widget.pauseOwnAttempt ? _pause : null,
-              onSkip: () => _run(widget.controller.skip),
-            ),
+          : _actionToolbar(presentation),
+    );
+  }
+
+  Widget _actionToolbar(PuzzlePresentationState presentation) {
+    final enabled = !_writePending;
+    return StudyActionToolbar(
+      onPreviousBlock: widget.showBlockNavigation && enabled
+          ? widget.onPreviousBlock
+          : null,
+      onToggleMode: enabled ? widget.onToggleMode : null,
+      solving: true,
+      onReset: enabled ? widget.onReset : null,
+      // A live puzzle never exposes analysis. Finalized attempts switch to
+      // the dedicated review surface, where analysis is available there.
+      onAnalyze: null,
+      onNextBlock: widget.showBlockNavigation && enabled
+          ? widget.onNextBlock
+          : null,
+      nextLabel: widget.nextBlockLabel,
+      onFlip: enabled ? _flip : null,
+      onToggleBoardSize: enabled
+          ? () => setState(() => _compactBoard = !_compactBoard)
+          : null,
+      compactBoard: _compactBoard,
+      extraMenuItems: enabled
+          ? [
+              StudyMenuAction(
+                presentation.hintSquare == null ? 'Hint' : 'Show move',
+                presentation.hintSquare == null
+                    ? Icons.lightbulb_outline
+                    : Icons.play_arrow,
+                () => _run(
+                  presentation.hintSquare == null
+                      ? widget.controller.hint
+                      : widget.controller.showMove,
+                ),
+              ),
+              StudyMenuAction(
+                'Show solution',
+                Icons.visibility_outlined,
+                () => _run(widget.controller.reveal),
+              ),
+              StudyMenuAction('Pause', Icons.pause, _pause),
+              if (!widget.isCasualPractice)
+                StudyMenuAction(
+                  'Skip puzzle',
+                  Icons.skip_next,
+                  () => _run(widget.controller.skip),
+                ),
+            ]
+          : const [],
     );
   }
 
@@ -433,197 +478,6 @@ final class _PuzzleSolvingViewState extends State<PuzzleSolvingView>
       }
     }
   }
-}
-
-final class _SolverActionBar extends StatelessWidget {
-  const _SolverActionBar({
-    required this.showMenu,
-    required this.showBlockNavigation,
-    required this.onPreviousBlock,
-    required this.onNextBlock,
-    required this.nextBlockLabel,
-    required this.enabled,
-    required this.showMove,
-    required this.onHint,
-    required this.onShowMove,
-    required this.onReveal,
-    required this.onPause,
-    required this.onSkip,
-  });
-
-  final bool enabled;
-  final bool showMenu;
-  final bool showMove;
-  final VoidCallback onHint;
-  final VoidCallback onShowMove;
-  final VoidCallback onReveal;
-  final VoidCallback? onPause;
-  final VoidCallback onSkip;
-  final bool showBlockNavigation;
-  final VoidCallback? onPreviousBlock;
-  final VoidCallback? onNextBlock;
-  final String nextBlockLabel;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.center,
-    children: [
-      SizedBox(
-        width: 48,
-        child: showBlockNavigation
-            ? StudyPreviousBlockButton(
-                onPressed: enabled ? onPreviousBlock : null,
-              )
-            : null,
-      ),
-      Expanded(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final textStyle = Theme.of(context).textTheme.labelLarge;
-            final textScaler = MediaQuery.textScalerOf(context);
-            double labelWidth(String label) {
-              final painter = TextPainter(
-                text: TextSpan(text: label, style: textStyle),
-                textDirection: Directionality.of(context),
-                textScaler: textScaler,
-                maxLines: 1,
-              )..layout();
-              final width = painter.width;
-              painter.dispose();
-              return width;
-            }
-
-            // Reserve the wider label's width so the solution button stays
-            // in the same place when Hint changes to Show move.
-            final preferredWidth = labelWidth('Show move') + 18 + 8 + 32;
-            final availableActionWidth = (constraints.maxWidth - 52)
-                .clamp(48.0, double.infinity)
-                .toDouble();
-            final actionWidth = preferredWidth
-                .clamp(48.0, availableActionWidth)
-                .toDouble();
-            final showLabel = actionWidth >= 82;
-            final heightPainter = TextPainter(
-              text: TextSpan(text: 'Show move', style: textStyle),
-              textDirection: Directionality.of(context),
-              textScaler: textScaler,
-            )..layout(maxWidth: (actionWidth - 58).clamp(1.0, double.infinity));
-            final actionHeight = showLabel
-                ? (heightPainter.height + 16).clamp(48.0, double.infinity)
-                : 48.0;
-            heightPainter.dispose();
-
-            return Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 4,
-              runSpacing: 0,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Tooltip(
-                  message: showMove ? 'Show move' : 'Hint',
-                  excludeFromSemantics: true,
-                  child: SizedBox(
-                    width: actionWidth,
-                    height: actionHeight,
-                    child: !showLabel
-                        ? IconButton(
-                            tooltip: showMove ? 'Show move' : 'Hint',
-                            constraints: const BoxConstraints(
-                              minWidth: 48,
-                              minHeight: 48,
-                            ),
-                            onPressed: enabled
-                                ? (showMove ? onShowMove : onHint)
-                                : null,
-                            icon: Icon(
-                              showMove
-                                  ? Icons.play_arrow
-                                  : Icons.lightbulb_outline,
-                            ),
-                          )
-                        : TextButton(
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                            ),
-                            onPressed: enabled
-                                ? (showMove ? onShowMove : onHint)
-                                : null,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  showMove
-                                      ? Icons.play_arrow
-                                      : Icons.lightbulb_outline,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    showMove ? 'Show move' : 'Hint',
-                                    softWrap: true,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: enabled ? onReveal : null,
-                  tooltip: 'Show solution',
-                  constraints: const BoxConstraints(
-                    minWidth: 48,
-                    minHeight: 48,
-                  ),
-                  icon: const Icon(Icons.visibility_outlined),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-      SizedBox(
-        width: 48,
-        child: showBlockNavigation
-            ? StudyNextBlockButton(
-                label: nextBlockLabel,
-                iconOnly: true,
-                onPressed: enabled ? onNextBlock : null,
-              )
-            : showMenu
-            ? PopupMenuButton<String>(
-                enabled: enabled,
-                tooltip: 'More puzzle actions',
-                onSelected: (value) {
-                  if (value == 'pause') onPause?.call();
-                  if (value == 'skip') onSkip();
-                },
-                itemBuilder: (context) => [
-                  if (onPause != null)
-                    const PopupMenuItem(value: 'pause', child: Text('Pause')),
-                  const PopupMenuItem(
-                    value: 'skip',
-                    child: Text('Skip puzzle'),
-                  ),
-                ],
-                child: const SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: Icon(
-                    Icons.more_horiz,
-                    semanticLabel: 'More puzzle actions',
-                  ),
-                ),
-              )
-            : null,
-      ),
-    ],
-  );
 }
 
 final class _PlayedMoves extends StatelessWidget {

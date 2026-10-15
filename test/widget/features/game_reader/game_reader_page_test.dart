@@ -23,6 +23,50 @@ ChessContent _content(ContentType type) => ChessContent(
 );
 
 void main() {
+  testWidgets('prose-only reader keeps previous and next block actions', (
+    tester,
+  ) async {
+    var previous = 0;
+    var next = 0;
+    final prose = ChessContent(
+      headers: const {'X-ContentType': 'Text'},
+      startingFen: _startFen,
+      contentType: ContentType.text,
+      comments: const ['A lesson without a board.'],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(
+          content: prose,
+          showBlockNavigation: true,
+          onPreviousBlock: () => previous++,
+          onNextBlock: () => next++,
+        ),
+      ),
+    );
+
+    expect(find.text('A lesson without a board.'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is IconButton && widget.tooltip == 'Analyze position',
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.byTooltip('Previous block'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Next block'));
+    await tester.pumpAndSettle();
+
+    expect(previous, 1);
+    expect(next, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('block navigation invokes callbacks and disables boundaries', (
     tester,
   ) async {
@@ -121,6 +165,40 @@ void main() {
     expect(find.text('secret solution'), findsOneWidget);
   });
 
+  testWidgets('board reader puts book and classification actions in More', (
+    tester,
+  ) async {
+    var settingsCalls = 0;
+    ContentType? savedType;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameReaderPage(
+          content: _content(ContentType.text),
+          onBookSettings: () => settingsCalls++,
+          onClassificationOverride: (type) async => savedType = type,
+          puzzleViewBuilder: (_, _, _) => const Text('Puzzle mode'),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Change content type'), findsNothing);
+    await tester.tap(find.byTooltip('More board actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Book settings'), findsOneWidget);
+    expect(find.text('Puzzle'), findsOneWidget);
+    await tester.tap(find.text('Book settings'));
+    await tester.pumpAndSettle();
+    expect(settingsCalls, 1);
+
+    await tester.tap(find.byTooltip('More board actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Puzzle'));
+    await tester.pumpAndSettle();
+    expect(savedType, ContentType.puzzle);
+    expect(find.text('Puzzle mode'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Back to book returns one nested exploration first', (
     tester,
   ) async {
@@ -140,7 +218,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Back to book'));
+    await tester.tap(find.byTooltip('Back to book'));
     await tester.pumpAndSettle();
 
     expect(returned, 1);

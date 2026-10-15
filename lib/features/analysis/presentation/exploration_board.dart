@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../domain/analysis/exploration_session.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
+import '../../../shared/chessboard/move_arrows.dart';
 import '../../../shared/presentation/study_board_frame.dart';
 
 /// Interactive chess board for a personal exploration tree.
@@ -15,6 +16,7 @@ final class ExplorationBoard extends StatefulWidget {
     required this.session,
     required this.orientation,
     required this.onMove,
+    this.arrows = const [],
     this.enabled = true,
     super.key,
   });
@@ -22,6 +24,7 @@ final class ExplorationBoard extends StatefulWidget {
   final ExplorationSession session;
   final PuzzleSide orientation;
   final ValueChanged<String> onMove;
+  final List<String> arrows;
   final bool enabled;
 
   @override
@@ -68,21 +71,27 @@ final class _ExplorationBoardState extends State<ExplorationBoard> {
             child: AspectRatio(
               aspectRatio: 1,
               child: LayoutBuilder(
-                builder: (context, constraints) => chessground.Chessboard(
-                  size: constraints.maxWidth,
-                  controller: _controller,
+                builder: (context, constraints) => ChessboardMoveArrows(
+                  moves: widget.arrows,
                   orientation: widget.orientation == PuzzleSide.white
                       ? chess.Side.white
                       : chess.Side.black,
-                  settings: const chessground.ChessboardSettings(
-                    enableCoordinates: true,
-                    enablePremoves: false,
-                    enableDrops: false,
-                    showLastMove: true,
-                    showValidMoves: true,
-                    animationDuration: Duration(milliseconds: 180),
+                  child: chessground.Chessboard(
+                    size: constraints.maxWidth,
+                    controller: _controller,
+                    orientation: widget.orientation == PuzzleSide.white
+                        ? chess.Side.white
+                        : chess.Side.black,
+                    settings: const chessground.ChessboardSettings(
+                      enableCoordinates: true,
+                      enablePremoves: false,
+                      enableDrops: false,
+                      showLastMove: true,
+                      showValidMoves: true,
+                      animationDuration: Duration(milliseconds: 180),
+                    ),
+                    onMove: (move, {viaDragAndDrop}) => widget.onMove(move.uci),
                   ),
-                  onMove: (move, {viaDragAndDrop}) => widget.onMove(move.uci),
                 ),
               ),
             ),

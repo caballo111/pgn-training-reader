@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
 
 import '../../../shared/chessboard/chessboard_adapter.dart';
+import '../../../shared/chessboard/move_arrows.dart';
 import '../../../shared/presentation/flip_board_button.dart';
 import '../../../shared/presentation/study_board_frame.dart';
 
@@ -18,12 +19,16 @@ final class ReaderBoard extends StatefulWidget {
     required this.board,
     this.showOrientationControl = true,
     this.positionLabel,
+    this.arrows,
     super.key,
   });
 
   final ChessboardViewData board;
   final bool showOrientationControl;
   final String? positionLabel;
+
+  /// Explicit candidate moves, or the last played move when omitted.
+  final List<String>? arrows;
 
   @override
   State<ReaderBoard> createState() => _ReaderBoardState();
@@ -59,17 +64,25 @@ class _ReaderBoardState extends State<ReaderBoard> {
               child: AspectRatio(
                 aspectRatio: 1,
                 child: LayoutBuilder(
-                  builder: (context, constraints) =>
-                      chessground.StaticChessboard(
-                        size: constraints.maxWidth,
-                        orientation: _orientation,
-                        fen: widget.board.game.fen,
-                        lastMove: widget.board.game.lastMove,
-                        settings: const chessground.StaticChessboardSettings(
-                          enableCoordinates: true,
-                          showLastMove: true,
-                        ),
+                  builder: (context, constraints) => ChessboardMoveArrows(
+                    moves:
+                        widget.arrows ??
+                        [
+                          if (widget.board.game.lastMove case final move?)
+                            move.uci,
+                        ],
+                    orientation: _orientation,
+                    child: chessground.StaticChessboard(
+                      size: constraints.maxWidth,
+                      orientation: _orientation,
+                      fen: widget.board.game.fen,
+                      lastMove: widget.board.game.lastMove,
+                      settings: const chessground.StaticChessboardSettings(
+                        enableCoordinates: true,
+                        showLastMove: true,
                       ),
+                    ),
+                  ),
                 ),
               ),
             ),

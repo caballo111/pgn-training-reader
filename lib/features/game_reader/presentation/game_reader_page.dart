@@ -6,9 +6,10 @@ import '../../../domain/analysis/analysis_engine.dart';
 import '../../../domain/analysis/exploration_repository.dart';
 import '../../../domain/chess_content/chess_content.dart';
 import '../../../domain/chess_content/content_type.dart';
+import '../../../shared/presentation/study_action_toolbar.dart';
 import '../../../shared/presentation/study_block_navigation.dart';
-import 'text_view.dart';
 import '../../../shared/presentation/study_mode.dart';
+import 'text_view.dart';
 
 /// Builds the separately implemented puzzle-solving experience.
 typedef PuzzleViewBuilder = Widget Function(
@@ -286,6 +287,53 @@ final class GameReaderPageState extends State<GameReaderPage> {
         ? titlePainter.height + 24
         : 48 * MediaQuery.textScalerOf(context).scale(1.0);
     titlePainter.dispose();
+    final canSwitchToPuzzle =
+        content.contentType == ContentType.text &&
+        content.rootMoves.isNotEmpty &&
+        content.instructionalPlaceholder == null &&
+        widget.onClassificationOverride != null;
+    final textHasBoard =
+        content.contentType == ContentType.text &&
+        widget.unavailableMessage == null &&
+        (content.rootMoves.isNotEmpty ||
+            content.headers.containsKey('FEN') ||
+            content.headers['SetUp'] == '1');
+    final toolbarMenuItems = <StudyMenuAction>[
+      if (textHasBoard && widget.onBookSettings != null)
+        StudyMenuAction(
+          'Book settings',
+          Icons.settings_outlined,
+          widget.onBookSettings!,
+        ),
+      if (textHasBoard && canSwitchToPuzzle)
+        StudyMenuAction(
+          'Puzzle',
+          Icons.extension_outlined,
+          () => unawaited(_override(ContentType.puzzle)),
+        ),
+    ];
+    final useBoardActionMenu = textHasBoard && toolbarMenuItems.isNotEmpty;
+    final blockActions =
+        widget.showBlockNavigation || canSwitchToPuzzle || useBoardActionMenu
+        ? StudyBlockActions(
+            onPrevious:
+                widget.showBlockNavigation && widget.onPreviousBlock != null
+                ? () => unawaited(_navigateBlock(widget.onPreviousBlock!))
+                : null,
+            onToggleMode: canSwitchToPuzzle
+                ? () => unawaited(_override(ContentType.puzzle))
+                : null,
+            onNext: widget.showBlockNavigation
+                ? widget.onNextBlock == null
+                      ? () => unawaited(_returnToBook())
+                      : () => unawaited(_navigateBlock(widget.onNextBlock!))
+                : null,
+            nextLabel: widget.showBlockNavigation && widget.onNextBlock == null
+                ? 'Back to book'
+                : 'Next block',
+            extraMenuItems: toolbarMenuItems,
+          )
+        : null;
     final surface = Scaffold(
       appBar: AppBar(
         centerTitle: false,
@@ -369,26 +417,33 @@ final class GameReaderPageState extends State<GameReaderPage> {
               ),
         actions: [
           if (widget.onBookSettings != null &&
-              content.contentType == ContentType.puzzle)
+              (content.contentType == ContentType.puzzle ||
+                  !useBoardActionMenu))
             IconButton(
               tooltip: 'Book settings',
               onPressed: _saving ? null : widget.onBookSettings,
               icon: const Icon(Icons.settings_outlined),
             ),
-          if (widget.onClassificationOverride != null)
+          if (widget.onClassificationOverride != null && !useBoardActionMenu)
             PopupMenuButton<ContentType>(
               tooltip: 'Change content type',
               enabled: !_saving,
               onSelected: _override,
               itemBuilder: (_) => [
                 for (final type in const [ContentType.text, ContentType.puzzle])
-                  CheckedPopupMenuItem(
-                    value: type,
-                    checked: content.contentType == type,
-                    child: Text(
-                      type == ContentType.text ? 'Study text / game' : 'Puzzle',
+                  if (type != ContentType.puzzle ||
+                      content.contentType == ContentType.puzzle ||
+                      content.rootMoves.isNotEmpty &&
+                          content.instructionalPlaceholder == null)
+                    CheckedPopupMenuItem(
+                      value: type,
+                      checked: content.contentType == type,
+                      child: Text(
+                        type == ContentType.text
+                            ? 'Study text / game'
+                            : 'Puzzle',
+                      ),
                     ),
-                  ),
               ],
               icon: const Icon(Icons.more_vert),
             ),
@@ -397,8 +452,8 @@ final class GameReaderPageState extends State<GameReaderPage> {
       bottomNavigationBar:
           widget.showBlockNavigation &&
               (widget.unavailableMessage != null ||
-                  content.contentType != ContentType.puzzle ||
-                  widget.puzzleViewBuilder == null)
+                  (content.contentType == ContentType.puzzle &&
+                      widget.puzzleViewBuilder == null))
           ? SafeArea(
               top: false,
               child: Padding(
@@ -454,6 +509,7 @@ final class GameReaderPageState extends State<GameReaderPage> {
                 analysisEngineFactory: widget.analysisEngineFactory,
                 explorationEnabled: widget.explorationEnabled,
                 persistenceMessage: widget.persistenceMessage,
+                blockActions: blockActions,
                 onStateChanged: widget.onSaveReaderState == null
                     ? null
                     : _readerChanged,

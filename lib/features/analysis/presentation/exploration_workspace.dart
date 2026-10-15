@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:dartchess/dartchess.dart' as chess;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../../domain/analysis/exploration_repository.dart';
 import '../../../domain/analysis/exploration_session.dart';
 import '../../../domain/training/puzzle_evaluator.dart';
-import '../../../shared/presentation/flip_board_button.dart';
 import '../../../shared/presentation/study_layout.dart';
 import 'analysis_panel.dart';
 import 'exploration_board.dart';
@@ -53,6 +55,7 @@ final class ExplorationWorkspace extends StatefulWidget {
 /// Public state so a parent block-navigation action can await persistence.
 final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
   ExplorationSession? _session;
+  List<String> _engineSuggestionArrows = const [];
   late PuzzleSide _orientation = widget.orientation;
   bool _loading = true;
   bool _loadFailed = false;
@@ -82,6 +85,7 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.origin.identityKey != widget.origin.identityKey) {
       _session = null;
+      _engineSuggestionArrows = const [];
       _loading = true;
       _loadFailed = false;
       _dirty = false;
@@ -163,6 +167,7 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
       }
       setState(() {
         _session = next;
+        _engineSuggestionArrows = const [];
         _loading = false;
         _loadFailed = false;
         _dirty = seeded && widget.repository != null;
@@ -172,6 +177,7 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
       if (!mounted || widget.origin.identityKey != origin.identityKey) return;
       setState(() {
         _session = ExplorationSession.initial(origin: origin);
+        _engineSuggestionArrows = const [];
         _loading = false;
         _loadFailed = true;
         _failureMessage =
@@ -186,19 +192,95 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
       _loading = true;
       _loadFailed = false;
       _failureMessage = null;
+      _engineSuggestionArrows = const [];
     });
     _loadFuture = _loadDraft();
   }
 
   void _accept(ExplorationSession session) {
+    final previous = _session;
+    final positionChanged =
+        previous == null ||
+        previous.origin.identityKey != session.origin.identityKey ||
+        !listEquals(previous.moves, session.moves);
     setState(() {
       _session = session;
+      if (positionChanged) _engineSuggestionArrows = const [];
       _changeGeneration++;
       _dirty = widget.repository != null;
       _saveFailed = false;
       _failureMessage = null;
     });
     if (widget.repository != null) _scheduleSave();
+  }
+
+  void _onSuggestionArrowsChanged(List<String> moves) {
+    void apply() {
+      if (!mounted) return;
+      final session = _session;
+      final safe = <String>[];
+      if (session != null && !_loadFailed && !_returning) {
+        for (final uci in moves) {
+          final move = chess.Move.parse(uci);
+          if (move is! chess.NormalMove ||
+              !session.position.isLegal(move) ||
+              safe.contains(move.uci)) {
+            continue;
+          }
+          safe.add(move.uci);
+          if (safe.length == 3) break;
+        }
+      }
+      if (listEquals(_engineSuggestionArrows, safe)) return;
+      setState(() => _engineSuggestionArrows = List.unmodifiable(safe));
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => apply());
+      return;
+    }
+    apply();
+  }
+
+  List<String> _arrowsFor(ExplorationSession session) {
+    if (_returning || _loading || _loadFailed) return const [];
+    final engineMoves = <String>[];
+    for (final uci in _engineSuggestionArrows) {
+      final move = chess.Move.parse(uci);
+      if (move is chess.NormalMove &&
+          session.position.isLegal(move) &&
+          !engineMoves.contains(move.uci)) {
+        engineMoves.add(move.uci);
+        if (engineMoves.length == 3) break;
+      }
+    }
+    if (engineMoves.isNotEmpty) return List.unmodifiable(engineMoves);
+
+    final selectedLine = session.selectedLine;
+    final nextIndex = session.currentPath.length;
+    final candidates = <String>[
+      if (nextIndex < selectedLine.length) selectedLine[nextIndex].uci,
+      ...session.branches
+          .map((branch) => branch.uci)
+          .where(
+            (uci) =>
+                nextIndex >= selectedLine.length ||
+                uci != selectedLine[nextIndex].uci,
+          ),
+    ];
+    final safe = <String>[];
+    for (final uci in candidates) {
+      final move = chess.Move.parse(uci);
+      if (move is! chess.NormalMove ||
+          !session.position.isLegal(move) ||
+          safe.contains(move.uci)) {
+        continue;
+      }
+      safe.add(move.uci);
+      if (safe.length == 3) break;
+    }
+    return List.unmodifiable(safe);
   }
 
   void _play(String uci) {
@@ -374,7 +456,6 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
     final from = widget.origin.label.trim().isEmpty
         ? 'starting position'
         : widget.origin.label;
-    final fromTitle = 'Exploring from $from';
     return PopScope<void>(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -382,67 +463,16 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
       },
       child: StudyLayout(
         compactBoard: _compactBoard,
-        header: Align(
-          alignment: Alignment.centerLeft,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Tooltip(
-                message: fromTitle,
-                child: Text(
-                  fromTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              if (widget.persistenceMessage != null ||
-                  widget.repository == null)
-                Text(
-                  widget.persistenceMessage ?? 'Temporary exploration · moves are not saved after leaving',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              if (widget.engineWasEnabled)
-                Text(
-                  'Engine paused on entry · enable it to continue analysis',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-            ],
-          ),
-        ),
+        header: _analysisHeader(),
         board: ExplorationBoard(
           session: session,
           orientation: _orientation,
+          arrows: _arrowsFor(session),
           enabled: !_loadFailed && !_returning,
           onMove: _play,
         ),
-        controls: Row(
-          children: [
-            Expanded(child: _treeControls(session)),
-            IconButton(
-              tooltip: _compactBoard ? 'Expand board' : 'Compact board',
-              onPressed: _returning
-                  ? null
-                  : () => setState(() => _compactBoard = !_compactBoard),
-              icon: Icon(_compactBoard ? Icons.expand : Icons.compress),
-            ),
-            FlipBoardButton(
-              onPressed: _returning || _loadFailed
-                  ? null
-                  : () => setState(() {
-                      _orientation = _orientation == PuzzleSide.white
-                          ? PuzzleSide.black
-                          : PuzzleSide.white;
-                    }),
-            ),
-          ],
-        ),
+        controls: Row(children: [Expanded(child: _treeControls(session))]),
         controlCount: 4,
-        controlTrailingWidth: 96,
         tools: AbsorbPointer(
           absorbing: _returning,
           child: AnalysisPanel(
@@ -452,13 +482,98 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
             engineFactory: widget.engineFactory,
             compact: true,
             onExploreSuggestion: _playSuggestedMoves,
+            onSuggestionArrowsChanged: _onSuggestionArrowsChanged,
           ),
         ),
         details: _details(session, from),
-        actions: _returnActions(),
       ),
     );
   }
+
+  Widget _analysisHeader() => Row(
+    children: [
+      IconButton(
+        tooltip: widget.returnLabel,
+        onPressed: _returning ? null : _return,
+        icon: _returning
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.arrow_back),
+      ),
+      Expanded(
+        child: Text(
+          'Analysis',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+      ),
+      PopupMenuButton<String>(
+        tooltip: 'Analysis actions',
+        enabled: !_returning,
+        position: PopupMenuPosition.under,
+        constraints: const BoxConstraints(minWidth: 200),
+        onSelected: (action) {
+          switch (action) {
+            case 'flip':
+              setState(() {
+                _orientation = _orientation == PuzzleSide.white
+                    ? PuzzleSide.black
+                    : PuzzleSide.white;
+              });
+              break;
+            case 'compact':
+              setState(() => _compactBoard = !_compactBoard);
+              break;
+            case 'reset':
+              _navigate((session) => session.first());
+              break;
+            case 'clear':
+              _clearExploration();
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: 'flip',
+            child: _AnalysisMenuLabel(
+              icon: Icons.flip_camera_android_outlined,
+              label: 'Flip board',
+            ),
+          ),
+          PopupMenuItem(
+            value: 'compact',
+            child: _AnalysisMenuLabel(
+              icon: _compactBoard ? Icons.expand : Icons.compress,
+              label: _compactBoard ? 'Expand board' : 'Compact board',
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'reset',
+            key: ValueKey<String>('analysis-menu-reset'),
+            child: _AnalysisMenuLabel(
+              icon: Icons.restart_alt,
+              label: 'Reset board',
+            ),
+          ),
+          PopupMenuItem(
+            value: 'clear',
+            key: const ValueKey<String>('analysis-menu-clear'),
+            enabled:
+                !_loadFailed &&
+                !_returning &&
+                (_session?.root.isNotEmpty ?? false),
+            child: const _AnalysisMenuLabel(
+              icon: Icons.restart_alt,
+              label: 'Clear exploration',
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
 
   Widget _treeControls(ExplorationSession session) => Wrap(
     alignment: WrapAlignment.center,
@@ -506,6 +621,28 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
       children: [
+        Text(
+          'Exploring from $from',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        if (widget.persistenceMessage != null || widget.repository == null)
+          Text(
+            widget.persistenceMessage ??
+                'Temporary exploration · moves are not saved after leaving',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        if (widget.engineWasEnabled)
+          Text(
+            'Engine paused on entry · enable it to continue analysis',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        const SizedBox(height: 8),
         ExplorationMoveTree(
           session: session,
           onSelectPath: (path) =>
@@ -564,25 +701,26 @@ final class ExplorationWorkspaceState extends State<ExplorationWorkspace> {
     );
   }
 
-  Widget _returnActions() => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      FilledButton.icon(
-        onPressed: _returning ? null : _return,
-        icon: _returning
-            ? const SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.arrow_back),
-        label: Text(widget.returnLabel),
-      ),
-    ],
-  );
-
   String _messageFor(Object error) {
     final message = error.toString().replaceFirst('Exception: ', '');
     return message.length > 180 ? '${message.substring(0, 177)}…' : message;
   }
+}
+
+final class _AnalysisMenuLabel extends StatelessWidget {
+  const _AnalysisMenuLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(icon, size: 20),
+      const SizedBox(width: 12),
+      Flexible(
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+    ],
+  );
 }

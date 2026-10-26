@@ -398,24 +398,24 @@ void main() {
       for (final tooltip in [
         'Previous block',
         'Switch to read mode',
-        'Reset board',
         'Next block',
         'More board actions',
       ]) {
         expect(find.byTooltip(tooltip), findsOneWidget);
       }
+      expect(find.byTooltip('Reset board'), findsNothing);
       expect(find.byTooltip('Analyze position'), findsNothing);
       expect(find.text('Hint'), findsNothing);
 
       await tester.tap(find.byTooltip('Previous block'));
       await tester.tap(find.byTooltip('Switch to read mode'));
-      await tester.tap(find.byTooltip('Reset board'));
       await tester.tap(find.byTooltip('Next block'));
-      expect((previous, toggled, reset, next), (1, 1, 1, 1));
+      expect((previous, toggled, reset, next), (1, 1, 0, 1));
 
       await tester.tap(find.byTooltip('More board actions'));
       await tester.pumpAndSettle();
       for (final label in [
+        'Reset board',
         'Flip board',
         'Compact board',
         'Hint',
@@ -426,8 +426,9 @@ void main() {
         expect(find.text(label), findsOneWidget);
       }
       expect(find.text('Secret solution comment'), findsNothing);
-      await tester.binding.handlePopRoute();
+      await tester.tap(find.text('Reset board'));
       await tester.pumpAndSettle();
+      expect(reset, 1);
       controller.dispose();
     },
   );

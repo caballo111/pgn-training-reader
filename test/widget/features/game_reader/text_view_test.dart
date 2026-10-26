@@ -84,7 +84,7 @@ void main() {
       );
       expect(find.byTooltip('Next move'), findsNothing);
       expect(
-        find.byTooltip('Analyze position'),
+        find.byTooltip('More board actions'),
         hasPosition ? findsOneWidget : findsNothing,
       );
       expect(tester.takeException(), isNull);
@@ -276,7 +276,7 @@ void main() {
           .position
           .pixels;
 
-      await tester.tap(find.byTooltip('Analyze position'));
+      await selectMoreAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       expect(find.byTooltip('Return to reading'), findsOneWidget);
       expect(repository.loadedOrigin?.scopeId, 'source-a-revision-7');
@@ -341,7 +341,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Analyze position'));
+    await selectMoreAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(find.byType(ExplorationWorkspace), findsOneWidget);
     expect(repository.loadedOrigin?.identityKey, origin.identityKey);
@@ -388,7 +388,7 @@ void main() {
     final details = tester.state<ScrollableState>(readerDetailsScrollable());
     final tapScrollOffset = details.position.pixels;
     expect(tapScrollOffset, greaterThan(0));
-    await tester.tap(find.byTooltip('Analyze position'));
+    await selectMoreAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(find.text('Exploring from 1. e4'), findsOneWidget);
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
@@ -436,7 +436,7 @@ void main() {
 
     await tester.tap(find.text('e4'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Analyze position'));
+    await selectMoreAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Book context at'));
     await tester.pumpAndSettle();
@@ -489,8 +489,8 @@ void main() {
       ),
     );
 
-    expect(find.byTooltip('Analyze position'), findsOneWidget);
-    final entryTop = tester.getTopLeft(find.byTooltip('Analyze position')).dy;
+    expect(find.byTooltip('More board actions'), findsOneWidget);
+    final entryTop = tester.getTopLeft(find.byTooltip('More board actions')).dy;
     expect(tester.takeException(), isNull);
     await tester.scrollUntilVisible(
       find.text('Introductory note 8.'),
@@ -499,8 +499,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Introductory note 8.'), findsOneWidget);
-    expect(find.byTooltip('Analyze position'), findsOneWidget);
-    expect(tester.getTopLeft(find.byTooltip('Analyze position')).dy, entryTop);
+    expect(find.byTooltip('More board actions'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byTooltip('More board actions')).dy,
+      entryTop,
+    );
     await tester.scrollUntilVisible(
       find.text('e4'),
       150,

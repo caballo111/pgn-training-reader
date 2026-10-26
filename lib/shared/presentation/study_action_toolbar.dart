@@ -20,6 +20,12 @@ final class StudyBlockActions {
 }
 
 /// Stable, accessible icon actions shared by reading and puzzle boards.
+///
+/// Block navigation is permanently anchored: previous on the leading edge and
+/// next on the trailing edge. The center is a single reserved slot for the
+/// page's contextual action, so it can fade and crossfade in place without
+/// moving either navigation control. Every other secondary action lives in the
+/// overflow menu.
 final class StudyActionToolbar extends StatelessWidget {
   const StudyActionToolbar({
     this.onPreviousBlock,
@@ -50,9 +56,17 @@ final class StudyActionToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <StudyMenuAction>[
+    final menuItems = <StudyMenuAction>[
+      if (onReset != null)
+        StudyMenuAction('Reset board', Icons.restart_alt, onReset!),
+      if (onAnalyze != null)
+        StudyMenuAction('Analyze position', Icons.biotech_outlined, onAnalyze!),
       if (onFlip != null)
-        StudyMenuAction('Flip board', Icons.flip_camera_android, onFlip!),
+        StudyMenuAction(
+          'Flip board',
+          Icons.flip_camera_android_outlined,
+          onFlip!,
+        ),
       if (onToggleBoardSize != null)
         StudyMenuAction(
           compactBoard ? 'Expand board' : 'Compact board',
@@ -61,96 +75,168 @@ final class StudyActionToolbar extends StatelessWidget {
         ),
       ...extraMenuItems,
     ];
-    final buttons = <Widget>[
-      if (onPreviousBlock != null)
-        _button('Previous block', Icons.skip_previous, onPreviousBlock!),
-      if (onToggleMode != null)
-        IconButton(
-          tooltip: solving ? 'Switch to read mode' : 'Switch to solve mode',
-          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          onPressed: onToggleMode,
-          icon: solving
-              ? const Icon(Icons.menu_book_outlined)
-              : const StudySolveIcon(),
-        ),
-      if (onReset != null) _button('Reset board', Icons.restart_alt, onReset!),
-      if (onAnalyze != null)
-        _button('Analyze position', Icons.biotech_outlined, onAnalyze!),
-      if (onNextBlock != null)
-        _button(
-          nextLabel,
-          nextLabel == 'Back to book'
-              ? Icons.library_books_outlined
-              : Icons.skip_next,
-          onNextBlock!,
-        ),
-      if (items.isNotEmpty)
-        PopupMenuButton<int>(
-          tooltip: 'More board actions',
-          style: const ButtonStyle(
-            minimumSize: WidgetStatePropertyAll(Size(48, 48)),
-          ),
-          position: PopupMenuPosition.over,
-          icon: const Icon(Icons.more_vert),
-          constraints: const BoxConstraints(minWidth: 200),
-          onSelected: (index) => items[index].onSelected(),
-          itemBuilder: (context) => [
-            for (var i = 0; i < items.length; i++)
-              PopupMenuItem(
-                value: i,
-                child: Row(
-                  children: [
-                    Icon(items[i].icon, size: 20),
-                    const SizedBox(width: 12),
-                    Flexible(child: Text(items[i].label)),
-                  ],
-                ),
-              ),
-          ],
-        ),
-    ];
-    if (buttons.isEmpty) return const SizedBox.shrink();
+    final contextual = onToggleMode == null
+        ? null
+        : IconButton(
+            tooltip: solving ? 'Switch to read mode' : 'Switch to solve mode',
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            onPressed: onToggleMode,
+            icon: solving
+                ? const Icon(Icons.menu_book_outlined)
+                : const StudySolveIcon(),
+          );
+    if (onPreviousBlock == null &&
+        onNextBlock == null &&
+        contextual == null &&
+        menuItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(16),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Six 48px targets fit a 320px phone with standard page padding.
-          // Exceptionally narrow embedded panes can scroll without shrinking
-          // the controls or creating two visually unrelated action rows.
-          final row = Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: items.isEmpty
-                ? buttons
-                : [
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: buttons.take(buttons.length - 1).toList(),
-                      ),
-                    ),
-                    buttons.last,
-                  ],
-          );
-          final minimumWidth = buttons.length * 48.0;
-          return constraints.maxWidth < minimumWidth
-              ? SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(width: minimumWidth, child: row),
-                )
-              : row;
-        },
+      child: Stack(
+        children: [
+          Row(
+            children: [
+              _AnchoredButton(
+                tooltip: 'Previous block',
+                icon: Icons.skip_previous,
+                onPressed: onPreviousBlock,
+              ),
+              const Spacer(),
+              _AnchoredButton(
+                tooltip: nextLabel,
+                icon: nextLabel == 'Back to book'
+                    ? Icons.library_books_outlined
+                    : Icons.skip_next,
+                onPressed: onNextBlock,
+              ),
+            ],
+          ),
+          Center(
+            child: _ContextualSlot(
+              actionKey: solving ? 'read-mode' : 'solve-mode',
+              action: contextual,
+            ),
+          ),
+          if (menuItems.isNotEmpty)
+            Positioned(
+              top: 0,
+              bottom: 0,
+              right: 48,
+              child: Center(child: _OverflowMenu(items: menuItems)),
+            ),
+        ],
       ),
     );
   }
+}
 
-  Widget _button(String label, IconData icon, VoidCallback onPressed) =>
-      IconButton(
-        tooltip: label,
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-        onPressed: onPressed,
-        icon: Icon(icon),
-      );
+/// A navigation control that keeps its slot even when the action is disabled.
+final class _AnchoredButton extends StatelessWidget {
+  const _AnchoredButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: tooltip,
+    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+    onPressed: onPressed,
+    icon: Icon(icon),
+  );
+}
+
+/// The single reserved center slot. It fades and rises into place when the
+/// surface appears, then crossfades whenever the page swaps its action.
+final class _ContextualSlot extends StatefulWidget {
+  const _ContextualSlot({required this.actionKey, required this.action});
+
+  final Object actionKey;
+  final Widget? action;
+
+  @override
+  State<_ContextualSlot> createState() => _ContextualSlotState();
+}
+
+final class _ContextualSlotState extends State<_ContextualSlot> {
+  static const _entrance = Duration(milliseconds: 220);
+  static const _crossfade = Duration(milliseconds: 180);
+
+  var _entered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _entered = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final entrance = reduceMotion ? Duration.zero : _entrance;
+    return AnimatedSlide(
+      duration: entrance,
+      curve: Curves.easeOutCubic,
+      offset: _entered ? Offset.zero : const Offset(0, 0.18),
+      child: AnimatedOpacity(
+        duration: entrance,
+        curve: Curves.easeOut,
+        opacity: _entered ? 1 : 0,
+        child: SizedBox.square(
+          dimension: 48,
+          child: AnimatedSwitcher(
+            duration: reduceMotion ? Duration.zero : _crossfade,
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            child: widget.action == null
+                ? const SizedBox.shrink(key: ValueKey('no-contextual-action'))
+                : KeyedSubtree(
+                    key: ValueKey(widget.actionKey),
+                    child: widget.action!,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+final class _OverflowMenu extends StatelessWidget {
+  const _OverflowMenu({required this.items});
+
+  final List<StudyMenuAction> items;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<int>(
+    tooltip: 'More board actions',
+    style: const ButtonStyle(minimumSize: WidgetStatePropertyAll(Size(48, 48))),
+    position: PopupMenuPosition.over,
+    icon: const Icon(Icons.more_vert),
+    constraints: const BoxConstraints(minWidth: 200),
+    onSelected: (index) => items[index].onSelected(),
+    itemBuilder: (context) => [
+      for (var i = 0; i < items.length; i++)
+        PopupMenuItem(
+          value: i,
+          child: Row(
+            children: [
+              Icon(items[i].icon, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(items[i].label)),
+            ],
+          ),
+        ),
+    ],
+  );
 }
 
 final class StudyMenuAction {

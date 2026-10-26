@@ -53,6 +53,13 @@ final _terminalPuzzle = ChessContent(
 );
 
 void main() {
+  Future<void> selectMoreAction(WidgetTester tester, String label) async {
+    await tester.tap(find.byTooltip('More board actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('review reveals authored content for every terminal outcome', (
     tester,
   ) async {
@@ -522,7 +529,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Analyze position'));
+      await selectMoreAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       expect(find.text('Exploring from starting position'), findsOneWidget);
       expect(repository.loadedOrigins.last.authoredMoves, isEmpty);
@@ -621,7 +628,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Analyze position'));
+    await selectMoreAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     final workspace = tester.widget<ExplorationWorkspace>(
       find.byType(ExplorationWorkspace),
@@ -703,7 +710,18 @@ void main() {
       find.text('Full line used: no completion marker on this continuation.'),
       findsOneWidget,
     );
-    expect(find.byTooltip('Next exercise'), findsNothing);
+    expect(find.byTooltip('Next exercise'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.ancestor(
+              of: find.byIcon(Icons.skip_next),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
     expect(
       tester.widget<ReaderBoard>(find.byType(ReaderBoard)).board.orientation,
       chess.Side.black,
@@ -999,9 +1017,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(presentation.comments, hasLength(30));
-    expect(find.byTooltip('Analyze position'), findsOneWidget);
+    expect(find.byTooltip('More board actions'), findsOneWidget);
     final exploreEntryTop = tester
-        .getTopLeft(find.byTooltip('Analyze position'))
+        .getTopLeft(find.byTooltip('More board actions'))
         .dy;
     final detailsScroll = tester.state<ScrollableState>(
       _reviewDetailsScrollable(),
@@ -1021,7 +1039,7 @@ void main() {
     final next = find.byTooltip('Next block');
     expect(next, findsOneWidget);
     for (final action in [
-      find.byTooltip('Analyze position'),
+      find.byTooltip('More board actions'),
       find.byTooltip('Next block'),
     ]) {
       final rect = tester.getRect(action);
@@ -1046,9 +1064,9 @@ void main() {
     expect(detailsScroll.position.maxScrollExtent, greaterThan(0));
     expect(find.text('1 distinct wrong move'), findsNothing);
     expect(find.text('1. e3'), findsOneWidget);
-    expect(find.byTooltip('Analyze position'), findsOneWidget);
+    expect(find.byTooltip('More board actions'), findsOneWidget);
     expect(
-      tester.getTopLeft(find.byTooltip('Analyze position')).dy,
+      tester.getTopLeft(find.byTooltip('More board actions')).dy,
       exploreEntryTop,
     );
     expect(tester.getRect(next).bottom, actionBottomBeforeScroll);
@@ -1096,10 +1114,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Analyze position'), findsOneWidget);
+    expect(find.byTooltip('More board actions'), findsOneWidget);
     expect(find.byTooltip('Next block'), findsOneWidget);
     for (final action in [
-      find.byTooltip('Analyze position'),
+      find.byTooltip('More board actions'),
       find.byTooltip('Next block'),
     ]) {
       final rect = tester.getRect(action);

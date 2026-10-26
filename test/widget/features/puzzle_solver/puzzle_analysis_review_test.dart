@@ -51,6 +51,13 @@ AuthoredLinePuzzleEvaluator _evaluator() {
 }
 
 void main() {
+  Future<void> selectMoreAction(WidgetTester tester, String label) async {
+    await tester.tap(find.byTooltip('More board actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('a new scope clears exploration with the same presentation', (
     tester,
   ) async {
@@ -75,13 +82,13 @@ void main() {
     );
     await tester.pumpWidget(app('revision-1'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Analyze position'));
+    await selectMoreAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(key.currentState!.isExploring, isTrue);
     await tester.pumpWidget(app('revision-2'));
     await tester.pumpAndSettle();
     expect(key.currentState!.isExploring, isFalse);
-    await tester.tap(find.byTooltip('Analyze position'));
+    await selectMoreAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(
       tester
@@ -110,6 +117,7 @@ void main() {
         ),
       );
       expect(find.byType(AnalysisPanel), findsNothing);
+      expect(find.text('Analyze position'), findsNothing);
       expect(find.byTooltip('Analyze position'), findsNothing);
       expect(find.text('Book introduction'), findsNothing);
     },
@@ -147,7 +155,7 @@ void main() {
           .board
           .game
           .fen;
-      await tester.tap(find.byTooltip('Analyze position'));
+      await selectMoreAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       final workspace = tester.widget<ExplorationWorkspace>(
         find.byType(ExplorationWorkspace),

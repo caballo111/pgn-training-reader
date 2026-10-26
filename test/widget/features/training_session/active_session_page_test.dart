@@ -31,6 +31,21 @@ final _startedAt = DateTime.utc(2026, 9, 28, 12);
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 void main() {
+  Future<void> selectMoreAction(WidgetTester tester, String label) async {
+    await tester.tap(find.byTooltip('More board actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> expectNoMoreAction(WidgetTester tester, String label) async {
+    await tester.tap(find.byTooltip('More board actions'));
+    await tester.pumpAndSettle();
+    expect(find.text(label), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+  }
+
   testWidgets(
     'scope lookup failure keeps review visible and retry restores exploration',
     (tester) async {
@@ -135,7 +150,7 @@ void main() {
         findsOneWidget,
       );
       expect(lookupCalls, 1);
-      expect(find.byTooltip('Analyze position'), findsNothing);
+      await expectNoMoreAction(tester, 'Analyze position');
 
       await tester.tap(find.text('Retry lookup'));
       await tester.pumpAndSettle();
@@ -146,15 +161,7 @@ void main() {
         find.text('Exploration drafts will be temporary for this item.'),
         findsOneWidget,
       );
-      final enabledExploreButton = tester.widget<IconButton>(
-        find.ancestor(
-          of: find.byTooltip('Analyze position'),
-          matching: find.byType(IconButton),
-        ),
-      );
-      expect(enabledExploreButton.onPressed, isNotNull);
-      await tester.tap(find.byTooltip('Analyze position'));
-      await tester.pumpAndSettle();
+      await selectMoreAction(tester, 'Analyze position');
       expect(
         find.descendant(
           of: find.byType(ExplorationWorkspace),
@@ -255,7 +262,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Analyze position'));
+      await selectMoreAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       await _playMoveOnBoard(tester, from: 'e2', to: 'e4');
       await tester.tap(find.text('Complete item and continue'));
@@ -433,7 +440,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Continue to review'), findsNothing);
-      await tester.tap(find.byTooltip('Analyze position'));
+      await selectMoreAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       expect(find.text('Exploring from 1. e4'), findsOneWidget);
       explorationRepository.failWrites = true;

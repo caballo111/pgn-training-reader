@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Value, Variable;
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value, Variable;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,9 +26,37 @@ Finder get _previousBlock => find.byTooltip('Previous block');
 
 Finder get _backToBook => find.byTooltip('Back to book');
 
+final class _PreferenceReadGate extends QueryInterceptor {
+  bool delayNextPreferenceRead = false;
+  bool failNextPreferenceRead = false;
+  Completer<void>? readStarted;
+  Completer<void>? releaseRead;
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    final isPuzzlePreferenceRead =
+        statement.toLowerCase().contains('from app_settings') &&
+        args.contains('library.read-puzzles.source');
+    if (isPuzzlePreferenceRead && delayNextPreferenceRead) {
+      delayNextPreferenceRead = false;
+      readStarted!.complete();
+      await releaseRead!.future;
+    }
+    if (isPuzzlePreferenceRead && failNextPreferenceRead) {
+      failNextPreferenceRead = false;
+      throw StateError('Injected preference lookup failure');
+    }
+    return super.runSelect(executor, statement, args);
+  }
+}
+
 void main() {
   testWidgets(
-    'library casual solving avoids cycles and remembers book reading preference',
+    'library puzzle transitions keep content visible through delayed setup',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
@@ -80,7 +110,10 @@ void main() {
           ExternalSourceReference('content://fixture/exercise'),
         ),
       );
-      final db = AppDatabase(NativeDatabase.memory());
+      final preferenceReadGate = _PreferenceReadGate();
+      final db = AppDatabase(
+        NativeDatabase.memory().interceptWith(preferenceReadGate),
+      );
       final dependencies = AppDependencies(databaseFactory: () => db);
       addTearDown(db.close);
       await db
@@ -154,7 +187,28 @@ void main() {
         find.ancestor(of: _nextBlock, matching: find.byType(IconButton)),
         findsOneWidget,
       );
+      preferenceReadGate
+        ..readStarted = Completer<void>()
+        ..releaseRead = Completer<void>()
+        ..delayNextPreferenceRead = true;
       await tester.tap(_nextBlock);
+      await tester.pump();
+      await tester.runAsync(() => preferenceReadGate.readStarted!.future);
+      await tester.pump();
+      expect(find.text('Easy Exercises · Block 1'), findsOneWidget);
+      expect(find.textContaining('SECRET ANSWER'), findsWidgets);
+      expect(find.byKey(const ValueKey('second-block')), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(GameReaderPage), findsOneWidget);
+      expect(find.text('Easy Exercises · Block 1'), findsOneWidget);
+      expect(find.byKey(const ValueKey('second-block')), findsNothing);
+      expect(
+        ModalRoute.of(tester.element(find.byType(GameReaderPage))),
+        same(readerRoute),
+      );
+      preferenceReadGate.releaseRead!.complete();
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('second-block')), findsOneWidget);
       expect(
@@ -286,10 +340,31 @@ void main() {
       expect(await db.select(db.cycles).get(), isEmpty);
 
       // Leaving via the book controls pauses and restores unfinished practice.
+      await db.customStatement(
+        'CREATE TABLE presentation_write_log (id INTEGER PRIMARY KEY AUTOINCREMENT)',
+      );
+      await db.customStatement('''
+        CREATE TRIGGER log_current_presentation_write
+        AFTER INSERT ON app_settings
+        WHEN NEW.key = 'study.presentation.block'
+        BEGIN
+          INSERT INTO presentation_write_log (id) VALUES (NULL);
+        END
+      ''');
       await tester.tap(_nextBlock);
       await tester.pumpAndSettle();
+      final transitionWrites = await db
+          .customSelect('SELECT COUNT(*) AS count FROM presentation_write_log')
+          .getSingle();
+      expect(transitionWrites.data['count'], 1);
       expect(find.byKey(const ValueKey('second-block')), findsOneWidget);
       expect(find.byType(PuzzleSolvingView), findsNothing);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      final writesAfterOutgoingPageDisposal = await db
+          .customSelect('SELECT COUNT(*) AS count FROM presentation_write_log')
+          .getSingle();
+      expect(writesAfterOutgoingPageDisposal.data['count'], 1);
       await tester.tap(_previousBlock);
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Switch to solve mode'));
@@ -308,7 +383,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Open puzzles for solving'));
       await tester.pumpAndSettle();
+      preferenceReadGate.failNextPreferenceRead = true;
       await tester.tap(_nextBlock);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('second-block')), findsOneWidget);
+      expect(
+        find.textContaining('Study settings could not be loaded'),
+        findsOneWidget,
+      );
+      expect(find.text('Retry'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();
       expect(find.byType(PuzzleSolvingView), findsOneWidget);
       expect(

@@ -703,17 +703,7 @@ void main() {
       find.text('Full line used: no completion marker on this continuation.'),
       findsOneWidget,
     );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byWidgetPredicate(
-              (widget) =>
-                  widget is IconButton && widget.tooltip == 'Next exercise',
-            ),
-          )
-          .onPressed,
-      isNull,
-    );
+    expect(find.byTooltip('Next exercise'), findsNothing);
     expect(
       tester.widget<ReaderBoard>(find.byType(ReaderBoard)).board.orientation,
       chess.Side.black,

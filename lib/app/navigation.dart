@@ -7,6 +7,7 @@ import 'dependencies.dart';
 import 'library_puzzle_practice.dart';
 import 'study_presentation_store.dart';
 import '../core/errors/app_failure.dart';
+import '../domain/chess_content/chess_content.dart';
 import '../domain/chess_content/pgn_block_index.dart';
 import '../domain/chess_content/content_type.dart';
 import '../features/browse_library/application/library_controller.dart';
@@ -17,6 +18,27 @@ import '../features/import_library/application/import_controller.dart';
 import '../features/game_reader/presentation/game_reader_page.dart';
 import '../features/training_sets/presentation/training_sets_page.dart';
 import '../domain/training/authored_line_puzzle_evaluator.dart';
+
+final class _ReaderBlockEntry {
+  _ReaderBlockEntry({
+    required this.block,
+    required this.content,
+    required this.presentation,
+    required this.nextBlock,
+    required this.previousBlock,
+    this.unavailableMessage,
+  });
+
+  final PgnBlockIndex block;
+  final ChessContent content;
+  final GlobalKey<LibraryPuzzlePracticeState> practiceKey =
+      GlobalKey<LibraryPuzzlePracticeState>();
+  Map<String, dynamic> presentation;
+  final PgnBlockIndex? nextBlock;
+  final PgnBlockIndex? previousBlock;
+  final String? unavailableMessage;
+  Completer<void>? initializationDone;
+}
 
 /// Route names used by the application shell.
 abstract final class AppRoutes {
@@ -143,16 +165,16 @@ Future<void> _openBlock(
   PgnBlockIndex block,
 ) async {
   try {
-    var content = await dependencies.chessContentRepository.getById(block.id);
+    final content = await dependencies.chessContentRepository.getById(block.id);
     if (!context.mounted) return;
     if (content == null) {
       _showOpenFailure(context, 'This library item is no longer available.');
       return;
     }
-    var nextBlock = await dependencies.pgnIndexRepository.getNextInSource(
+    final nextBlock = await dependencies.pgnIndexRepository.getNextInSource(
       block,
     );
-    var previousBlock = await dependencies.pgnIndexRepository
+    final previousBlock = await dependencies.pgnIndexRepository
         .getPreviousInSource(block);
     if (!context.mounted) return;
     String? revisionFor(String sourceId) => libraryController.state.sources
@@ -171,30 +193,66 @@ Future<void> _openBlock(
     }
     if (!context.mounted) return;
     var loading = false;
-    String? openingFailure;
-    var practiceKey = GlobalKey<LibraryPuzzlePracticeState>();
+    var currentEntry = _ReaderBlockEntry(
+      block: block,
+      content: content,
+      presentation: readingPresentation,
+      nextBlock: nextBlock,
+      previousBlock: previousBlock,
+    );
+    var entries = <_ReaderBlockEntry>[currentEntry];
+    _ReaderBlockEntry? pendingEntry;
+    final routeClosed = Completer<void>();
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => StatefulBuilder(
           builder: (readerContext, setReaderState) {
-            Future<void> navigate(PgnBlockIndex target) async {
+            void practiceInitialized(_ReaderBlockEntry entry) {
+              if (!readerContext.mounted || !identical(pendingEntry, entry)) {
+                return;
+              }
+              setReaderState(() {
+                currentEntry = entry;
+                entries = [entry];
+                pendingEntry = null;
+              });
+              if (entry.initializationDone case final done?) {
+                if (!done.isCompleted) done.complete();
+              }
+            }
+
+            Future<void> navigate(
+              PgnBlockIndex target, {
+              bool callerPrepared = false,
+            }) async {
               if (loading) return;
-              setReaderState(() => loading = true);
+              final fromEntry = currentEntry;
+              setReaderState(() {
+                loading = true;
+                entries = [fromEntry];
+              });
               try {
-                await practiceKey.currentState?.prepareToLeave();
-                var loaded = content;
+                // Both reader and practice controls save/pause before they
+                // call into route navigation. Retry is the only direct call.
+                if (!callerPrepared) {
+                  await fromEntry.practiceKey.currentState?.prepareToLeave();
+                }
+                var loaded = fromEntry.content;
                 String? failure;
                 try {
-                  loaded = await dependencies.chessContentRepository.getById(
-                    target.id,
-                  );
-                  if (loaded == null) {
+                  final fetched = await dependencies.chessContentRepository
+                      .getById(target.id);
+                  if (fetched == null) {
                     failure = 'This library item is no longer available.';
+                  } else {
+                    loaded = fetched;
                   }
                 } on AppFailure catch (error) {
                   failure = error.message;
                 }
-                if (failure != null) loaded = content;
+                if (failure != null) {
+                  loaded = fromEntry.content;
+                }
                 final next = await dependencies.pgnIndexRepository
                     .getNextInSource(target);
                 final previous = await dependencies.pgnIndexRepository
@@ -211,15 +269,33 @@ Future<void> _openBlock(
                   };
                 }
                 if (!readerContext.mounted) return;
+                final targetEntry = _ReaderBlockEntry(
+                  block: target,
+                  content: loaded,
+                  presentation: readerSettings,
+                  nextBlock: next,
+                  previousBlock: previous,
+                  unavailableMessage: failure,
+                );
+                final waitForPractice =
+                    failure == null && loaded.contentType == ContentType.puzzle;
+                if (waitForPractice) {
+                  targetEntry.initializationDone = Completer<void>();
+                }
                 setReaderState(() {
-                  block = target;
-                  readingPresentation = readerSettings;
-                  content = loaded;
-                  openingFailure = failure;
-                  nextBlock = next;
-                  previousBlock = previous;
-                  practiceKey = GlobalKey<LibraryPuzzlePracticeState>();
+                  entries = [fromEntry, targetEntry];
+                  pendingEntry = waitForPractice ? targetEntry : null;
+                  if (!waitForPractice) {
+                    currentEntry = targetEntry;
+                    entries = [targetEntry];
+                  }
                 });
+                if (waitForPractice) {
+                  await Future.any<void>([
+                    targetEntry.initializationDone!.future,
+                    routeClosed.future,
+                  ]);
+                }
               } catch (error) {
                 if (!readerContext.mounted) return;
                 _showOpenFailure(
@@ -235,117 +311,173 @@ Future<void> _openBlock(
               }
             }
 
-            final currentBlock = block;
-            return GameReaderPage(
-              key: ValueKey(currentBlock.id),
-              content: content!,
-              explorationScopeId: jsonEncode([
-                currentBlock.sourceId,
-                currentBlock.id,
-                revisionFor(currentBlock.sourceId),
-              ]),
-              explorationRepository: dependencies.explorationRepository,
-              analysisEngineFactory: dependencies.analysisEngineFactory,
-              isNestedExploring: () =>
-                  practiceKey.currentState?.isExploring == true,
-              onReturnFromExploration: () async {
-                await practiceKey.currentState?.returnFromExploration();
-              },
-              onPrepareToLeave: () async {
-                await practiceKey.currentState?.prepareToLeave();
-              },
-              unavailableMessage: openingFailure,
-              initialReaderState: readingPresentation['reader'] is Map
-                  ? Map<String, dynamic>.from(
-                      readingPresentation['reader'] as Map,
-                    )
-                  : null,
-              onSaveReaderState: (value) async {
-                final snapshot = {...readingPresentation, 'reader': value};
-                await StudyPresentationStore(
-                  dependencies.database,
+            Widget buildPage(_ReaderBlockEntry entry) {
+              final active = identical(entry, currentEntry);
+              final currentBlock = entry.block;
+              final practiceKey = entry.practiceKey;
+              return GameReaderPage(
+                key: ValueKey(currentBlock.id),
+                content: entry.content,
+                navigationEnabled: active && !loading,
+                explorationScopeId: jsonEncode([
+                  currentBlock.sourceId,
                   currentBlock.id,
-                ).save(snapshot);
-                readingPresentation = snapshot;
-              },
-              onRetryContent: openingFailure == null
-                  ? null
-                  : () => unawaited(navigate(currentBlock)),
-              bookName:
-                  libraryController.state.sources
-                      .where((source) => source.id == currentBlock.sourceId)
-                      .firstOrNull
-                      ?.displayName ??
-                  'Book',
-              section: currentBlock.section,
-              blockNumber: currentBlock.ordinal + 1,
-              showBlockNavigation: true,
-              onBookSettings: openingFailure == null
-                  ? () => unawaited(
-                      practiceKey.currentState?.openBookSettings() ??
-                          Future<void>.value(),
-                    )
-                  : null,
-              onPreviousBlock: loading || previousBlock == null
-                  ? null
-                  : () => unawaited(navigate(previousBlock!)),
-              onNextBlock: loading || nextBlock == null
-                  ? null
-                  : () => unawaited(navigate(nextBlock!)),
-              puzzleViewBuilder: (_, puzzle, onModeChanged) =>
-                  LibraryPuzzlePractice(
-                    key: practiceKey,
-                    dependencies: dependencies,
-                    blockId: currentBlock.id,
-                    bookId: currentBlock.sourceId,
-                    sourceRevision: libraryController.state.sources
+                  revisionFor(currentBlock.sourceId),
+                ]),
+                explorationRepository: dependencies.explorationRepository,
+                analysisEngineFactory: dependencies.analysisEngineFactory,
+                explorationEnabled: active && !loading,
+                isNestedExploring: () =>
+                    practiceKey.currentState?.isExploring == true,
+                onReturnFromExploration: () async {
+                  await practiceKey.currentState?.returnFromExploration();
+                },
+                onPrepareToLeave: () async {
+                  await practiceKey.currentState?.prepareToLeave();
+                },
+                unavailableMessage: entry.unavailableMessage,
+                initialReaderState: entry.presentation['reader'] is Map
+                    ? Map<String, dynamic>.from(
+                        entry.presentation['reader'] as Map,
+                      )
+                    : null,
+                onSaveReaderState: (value) async {
+                  final snapshot = {...entry.presentation, 'reader': value};
+                  await StudyPresentationStore(
+                    dependencies.database,
+                    currentBlock.id,
+                  ).save(snapshot);
+                  entry.presentation = snapshot;
+                },
+                onRetryContent:
+                    !active || loading || entry.unavailableMessage == null
+                    ? null
+                    : () => unawaited(navigate(currentBlock)),
+                bookName:
+                    libraryController.state.sources
                         .where((source) => source.id == currentBlock.sourceId)
                         .firstOrNull
-                        ?.fingerprint,
-                    showSettingsButton: false,
-                    showModeInBody: false,
-                    onModeChanged: onModeChanged,
-                    puzzle: puzzle,
-                    onPreviousBlock: previousBlock == null
-                        ? null
-                        : () => navigate(previousBlock!),
-                    onNextPuzzle: nextBlock == null
-                        ? null
-                        : (_) => navigate(nextBlock!),
-                  ),
-              onClassificationOverride:
-                  openingFailure == null &&
-                      currentBlock.authoredContentType == null
-                  ? (type) async {
-                      if (type == ContentType.text) {
-                        await practiceKey.currentState?.prepareForReading();
-                      } else {
-                        await practiceKey.currentState?.prepareToLeave();
+                        ?.displayName ??
+                    'Book',
+                section: currentBlock.section,
+                blockNumber: currentBlock.ordinal + 1,
+                showBlockNavigation: true,
+                onBookSettings:
+                    active && !loading && entry.unavailableMessage == null
+                    ? () => unawaited(
+                        practiceKey.currentState?.openBookSettings() ??
+                            Future<void>.value(),
+                      )
+                    : null,
+                onPreviousBlock:
+                    !active || loading || entry.previousBlock == null
+                    ? null
+                    : () => unawaited(
+                        navigate(entry.previousBlock!, callerPrepared: true),
+                      ),
+                onNextBlock: !active || loading || entry.nextBlock == null
+                    ? null
+                    : () => unawaited(
+                        navigate(entry.nextBlock!, callerPrepared: true),
+                      ),
+                puzzleViewBuilder: (_, puzzle, onModeChanged) =>
+                    LibraryPuzzlePractice(
+                      key: practiceKey,
+                      dependencies: dependencies,
+                      blockId: currentBlock.id,
+                      bookId: currentBlock.sourceId,
+                      sourceRevision: revisionFor(currentBlock.sourceId),
+                      showSettingsButton: false,
+                      showModeInBody: false,
+                      navigationEnabled: active && !loading,
+                      onInitialized: identical(entry, pendingEntry)
+                          ? () => practiceInitialized(entry)
+                          : null,
+                      onModeChanged: onModeChanged,
+                      puzzle: puzzle,
+                      onPreviousBlock:
+                          !active || loading || entry.previousBlock == null
+                          ? null
+                          : () => navigate(
+                              entry.previousBlock!,
+                              callerPrepared: true,
+                            ),
+                      onNextPuzzle:
+                          !active || loading || entry.nextBlock == null
+                          ? null
+                          : (_) => navigate(
+                              entry.nextBlock!,
+                              callerPrepared: true,
+                            ),
+                    ),
+                onClassificationOverride:
+                    active &&
+                        !loading &&
+                        entry.unavailableMessage == null &&
+                        currentBlock.authoredContentType == null
+                    ? (type) async {
+                        if (type == ContentType.text) {
+                          await practiceKey.currentState?.prepareForReading();
+                        } else {
+                          await practiceKey.currentState?.prepareToLeave();
+                        }
+                        final store = StudyPresentationStore(
+                          dependencies.database,
+                          currentBlock.id,
+                        );
+                        var presentation = await store.load();
+                        if (type == ContentType.puzzle &&
+                            practiceKey.currentState == null) {
+                          presentation = {...presentation, 'exposed': true};
+                          await store.save(presentation);
+                        }
+                        await dependencies.pgnIndexRepository
+                            .overrideClassification(currentBlock.id, type);
+                        if (readerContext.mounted) {
+                          setReaderState(() {
+                            entry.presentation = presentation;
+                          });
+                        }
                       }
-                      final store = StudyPresentationStore(
-                        dependencies.database,
-                        currentBlock.id,
-                      );
-                      var presentation = await store.load();
-                      if (type == ContentType.puzzle &&
-                          practiceKey.currentState == null) {
-                        presentation = {...presentation, 'exposed': true};
-                        await store.save(presentation);
-                      }
-                      await dependencies.pgnIndexRepository
-                          .overrideClassification(currentBlock.id, type);
-                      if (readerContext.mounted) {
-                        setReaderState(() {
-                          readingPresentation = presentation;
-                        });
-                      }
-                    }
-                  : null,
+                    : null,
+              );
+            }
+
+            return PopScope(
+              canPop: !loading,
+              onPopInvokedWithResult: (didPop, _) {
+                if (!didPop && loading) return;
+              },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  for (final entry in entries)
+                    KeyedSubtree(
+                      key: ObjectKey(entry),
+                      child: Offstage(
+                        offstage: !identical(entry, currentEntry),
+                        child: TickerMode(
+                          enabled: identical(entry, currentEntry),
+                          child: ExcludeFocus(
+                            excluding:
+                                loading || !identical(entry, currentEntry),
+                            child: IgnorePointer(
+                              ignoring:
+                                  loading || !identical(entry, currentEntry),
+                              child: buildPage(entry),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             );
           },
         ),
       ),
     );
+    if (!routeClosed.isCompleted) routeClosed.complete();
     if (!context.mounted) return;
     await libraryController.refresh(preserveLoadedPages: true);
   } on AppFailure catch (failure) {

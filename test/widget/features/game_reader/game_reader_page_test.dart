@@ -46,17 +46,7 @@ void main() {
     );
 
     expect(find.text('A lesson without a board.'), findsOneWidget);
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byWidgetPredicate(
-              (widget) =>
-                  widget is IconButton && widget.tooltip == 'Analyze position',
-            ),
-          )
-          .onPressed,
-      isNull,
-    );
+    expect(find.byTooltip('Analyze position'), findsNothing);
     await tester.tap(find.byTooltip('Previous block'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Next block'));
@@ -67,42 +57,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('block navigation invokes callbacks and disables boundaries', (
-    tester,
-  ) async {
-    var previous = 0;
-    var next = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: GameReaderPage(
-          content: _content(ContentType.puzzle),
-          showBlockNavigation: true,
-          onPreviousBlock: () => previous++,
-          onNextBlock: () => next++,
+  testWidgets(
+    'block navigation invokes callbacks and hides unavailable boundaries',
+    (tester) async {
+      var previous = 0;
+      var next = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GameReaderPage(
+            content: _content(ContentType.puzzle),
+            showBlockNavigation: true,
+            onPreviousBlock: () => previous++,
+            onNextBlock: () => next++,
+          ),
         ),
-      ),
-    );
-    await tester.tap(find.text('Previous block'));
-    await tester.tap(find.text('Next block'));
-    expect(previous, 1);
-    expect(next, 1);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: GameReaderPage(
-          content: _content(ContentType.puzzle),
-          showBlockNavigation: true,
+      );
+      await tester.tap(find.text('Previous block'));
+      await tester.tap(find.text('Next block'));
+      expect(previous, 1);
+      expect(next, 1);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GameReaderPage(
+            content: _content(ContentType.puzzle),
+            showBlockNavigation: true,
+          ),
         ),
-      ),
-    );
-    expect(
-      tester
-          .widget<TextButton>(find.widgetWithText(TextButton, 'Previous block'))
-          .onPressed,
-      isNull,
-    );
-    expect(find.text('Next block'), findsNothing);
-    expect(find.text('Back to book'), findsOneWidget);
-  });
+      );
+      expect(find.text('Previous block'), findsNothing);
+      expect(find.text('Next block'), findsNothing);
+      expect(find.text('Back to book'), findsOneWidget);
+    },
+  );
 
   for (final token in ['Z0', '--']) {
     testWidgets(

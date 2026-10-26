@@ -135,14 +135,7 @@ void main() {
         findsOneWidget,
       );
       expect(lookupCalls, 1);
-      expect(find.byTooltip('Analyze position'), findsOneWidget);
-      final exploreButton = tester.widget<IconButton>(
-        find.ancestor(
-          of: find.byTooltip('Analyze position'),
-          matching: find.byType(IconButton),
-        ),
-      );
-      expect(exploreButton.onPressed, isNull);
+      expect(find.byTooltip('Analyze position'), findsNothing);
 
       await tester.tap(find.text('Retry lookup'));
       await tester.pumpAndSettle();
@@ -402,15 +395,7 @@ void main() {
       );
       expect(find.byType(PuzzleSolvingView), findsOneWidget);
       final readMode = find.byTooltip('Switch to read mode');
-      expect(readMode, findsOneWidget);
-      expect(
-        tester
-            .widget<IconButton>(
-              find.ancestor(of: readMode, matching: find.byType(IconButton)),
-            )
-            .onPressed,
-        isNull,
-      );
+      expect(readMode, findsNothing);
       expect(find.byTooltip('Pause session'), findsNothing);
       await _checkActionGeometry(tester, ['Hint', 'Show solution', 'Pause']);
 

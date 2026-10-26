@@ -36,6 +36,8 @@ final class LibraryPuzzlePractice extends StatefulWidget {
     this.sourceRevision,
     this.showSettingsButton = true,
     this.showModeInBody = true,
+    this.navigationEnabled = true,
+    this.onInitialized,
   });
 
   final AppDependencies dependencies;
@@ -50,6 +52,11 @@ final class LibraryPuzzlePractice extends StatefulWidget {
   final Future<void> Function()? onPreviousBlock;
   final ValueChanged<StudyMode>? onModeChanged;
   final bool showModeInBody;
+  final bool navigationEnabled;
+
+  /// Called after the initial settings, presentation, and optional practice
+  /// controller have finished loading, including when that load fails.
+  final VoidCallback? onInitialized;
 
   @override
   LibraryPuzzlePracticeState createState() => LibraryPuzzlePracticeState();
@@ -120,6 +127,24 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant LibraryPuzzlePractice oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.navigationEnabled &&
+        widget.navigationEnabled &&
+        _backgroundPaused) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            widget.navigationEnabled &&
+            _backgroundPaused &&
+            WidgetsBinding.instance.lifecycleState ==
+                AppLifecycleState.resumed) {
+          unawaited(_backgroundResume());
+        }
+      });
+    }
+  }
+
   Future<void> _load() async {
     try {
       final rows = await widget.dependencies.database
@@ -155,6 +180,9 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
       } else {
         await _markExposed();
       }
+      if (mounted && !widget.navigationEnabled) {
+        await _pauseStagedController();
+      }
       if (mounted && (_readDefault || _controller != null)) {
         setState(() => _ready = true);
         _notifyModeChanged();
@@ -165,6 +193,18 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
           _error = 'Study settings could not be loaded. Retry to preserve your saved position.';
         });
       }
+    } finally {
+      if (mounted) widget.onInitialized?.call();
+    }
+  }
+
+  Future<void> _pauseStagedController() async {
+    final controller = _controller;
+    await controller?.whenIdle();
+    if (controller?.state?.outcome == null &&
+        controller?.state?.attemptStatus == PuzzleAttemptStatus.active) {
+      await controller!.pause();
+      _backgroundPaused = true;
     }
   }
 
@@ -360,7 +400,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   }
 
   Future<void> _leave(Future<void> Function() action) async {
-    if (_busy) return;
+    if (_busy || !widget.navigationEnabled) return;
     setState(() => _busy = true);
     try {
       await prepareToLeave();
@@ -378,6 +418,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   }
 
   Future<void> _backToBook() async {
+    if (!widget.navigationEnabled) return;
     if (isExploring) {
       try {
         await returnFromExploration();
@@ -403,7 +444,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   }
 
   Future<void> _read() async {
-    if (_busy || _reading) return;
+    if (_busy || !widget.navigationEnabled || _reading) return;
     setState(() => _busy = true);
     try {
       await prepareForReading();
@@ -563,8 +604,11 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
+      if (!widget.navigationEnabled && _controller == null) return;
       _backgroundPause();
-    } else if (state == AppLifecycleState.resumed && _backgroundPaused) {
+    } else if (state == AppLifecycleState.resumed &&
+        _backgroundPaused &&
+        widget.navigationEnabled) {
       _backgroundResume();
     }
   }
@@ -657,8 +701,9 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
         (!_reading && review != null) ||
         (_error == null && widget.showSettingsButton);
     return PopScope(
-      canPop: _allowPop,
+      canPop: !widget.navigationEnabled || _allowPop,
       onPopInvokedWithResult: (didPop, _) {
+        if (!widget.navigationEnabled) return;
         if (!didPop) _backToBook();
       },
       child: Column(
@@ -700,7 +745,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                   ),
                   if (_error != null) ...[
                     TextButton(
-                      onPressed: _retrySave,
+                      onPressed: widget.navigationEnabled ? _retrySave : null,
                       child: const Text('Retry'),
                     ),
                     Semantics(
@@ -709,28 +754,32 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
                       child: IconButton(
                         tooltip: 'Save error details',
                         icon: const Icon(Icons.info_outline),
-                        onPressed: () => showDialog<void>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Save needed'),
-                            content: SingleChildScrollView(
-                              child: Text(_error!),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('Close'),
+                        onPressed: !widget.navigationEnabled
+                            ? null
+                            : () => showDialog<void>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Save needed'),
+                                  content: SingleChildScrollView(
+                                    child: Text(_error!),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('Close'),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
                       ),
                     ),
                   ],
                   if (_error == null && widget.showSettingsButton)
                     IconButton(
                       tooltip: 'Book settings',
-                      onPressed: _busy ? null : _settings,
+                      onPressed: _busy || !widget.navigationEnabled
+                          ? null
+                          : _settings,
                       icon: const Icon(Icons.settings_outlined),
                     ),
                 ],
@@ -738,7 +787,7 @@ final class LibraryPuzzlePracticeState extends State<LibraryPuzzlePractice>
             ),
           Expanded(
             child: IgnorePointer(
-              ignoring: _busy,
+              ignoring: _busy || !widget.navigationEnabled,
               child: _reading
                   ? TextView(
                       key: _readerKey,

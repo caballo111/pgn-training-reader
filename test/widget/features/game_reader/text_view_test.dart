@@ -84,16 +84,8 @@ void main() {
       );
       expect(find.byTooltip('Next move'), findsNothing);
       expect(
-        tester
-            .widget<IconButton>(
-              find.byWidgetPredicate(
-                (widget) =>
-                    widget is IconButton &&
-                    widget.tooltip == 'Analyze position',
-              ),
-            )
-            .onPressed,
-        hasPosition ? isNotNull : isNull,
+        find.byTooltip('Analyze position'),
+        hasPosition ? findsOneWidget : findsNothing,
       );
       expect(tester.takeException(), isNull);
     }

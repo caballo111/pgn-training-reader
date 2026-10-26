@@ -40,6 +40,7 @@ final class GameReaderPage extends StatefulWidget {
     this.analysisEngineFactory,
     this.explorationEnabled = true,
     this.persistenceMessage,
+    this.navigationEnabled = true,
     this.isNestedExploring,
     this.onReturnFromExploration,
     this.onPrepareToLeave,
@@ -63,6 +64,7 @@ final class GameReaderPage extends StatefulWidget {
   final AnalysisEngineFactory? analysisEngineFactory;
   final bool explorationEnabled;
   final String? persistenceMessage;
+  final bool navigationEnabled;
   final bool Function()? isNestedExploring;
   final Future<void> Function()? onReturnFromExploration;
   final Future<void> Function()? onPrepareToLeave;
@@ -529,7 +531,8 @@ final class GameReaderPageState extends State<GameReaderPage> {
             },
     );
     final guardedSurface = IgnorePointer(ignoring: _saving, child: surface);
-    if (widget.onSaveReaderState == null ||
+    if (!widget.navigationEnabled ||
+        widget.onSaveReaderState == null ||
         content.contentType == ContentType.puzzle) {
       return guardedSurface;
     }

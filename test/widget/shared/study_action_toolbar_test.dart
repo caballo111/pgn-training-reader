@@ -28,6 +28,7 @@ void main() {
           ),
         ),
       );
+      expect(find.byIcon(Icons.biotech_outlined), findsOneWidget);
       for (final label in [
         'Previous block',
         'Switch to solve mode',
@@ -57,46 +58,63 @@ void main() {
     },
   );
 
-  testWidgets(
-    'solve mode offers a book toggle and disables unavailable actions',
-    (tester) async {
-      var read = false;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: StudyActionToolbar(
-              solving: true,
-              onToggleMode: () => read = true,
-              onNextBlock: () {},
-              nextLabel: 'Back to book',
-            ),
+  testWidgets('solve mode offers a book toggle and hides unavailable actions', (
+    tester,
+  ) async {
+    var read = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StudyActionToolbar(
+            solving: true,
+            onToggleMode: () => read = true,
+            onNextBlock: () {},
+            nextLabel: 'Back to book',
           ),
         ),
-      );
-      expect(find.byType(StudySolveIcon), findsNothing);
-      expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
-      expect(find.byTooltip('Switch to solve mode'), findsNothing);
-      for (final label in [
-        'Reset board',
-        'Analyze position',
-        'Previous block',
-      ]) {
-        expect(
-          tester
-              .widget<IconButton>(
-                find.byWidgetPredicate(
-                  (widget) => widget is IconButton && widget.tooltip == label,
-                ),
-              )
-              .onPressed,
-          isNull,
-        );
-      }
-      await tester.tap(find.byTooltip('Switch to read mode'));
-      expect(read, isTrue);
-      expect(find.byTooltip('Back to book'), findsOneWidget);
-    },
-  );
+      ),
+    );
+    expect(find.byType(StudySolveIcon), findsNothing);
+    expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+    expect(find.byTooltip('Switch to solve mode'), findsNothing);
+    for (final label in [
+      'Reset board',
+      'Analyze position',
+      'Previous block',
+      'More board actions',
+      'Next block',
+    ]) {
+      expect(find.byTooltip(label), findsNothing);
+    }
+    await tester.tap(find.byTooltip('Switch to read mode'));
+    expect(read, isTrue);
+    expect(find.byTooltip('Back to book'), findsOneWidget);
+  });
+
+  testWidgets('empty toolbar takes no space and actions track availability', (
+    tester,
+  ) async {
+    Widget toolbar({VoidCallback? analyze}) => MaterialApp(
+      home: Scaffold(
+        body: Center(child: StudyActionToolbar(onAnalyze: analyze)),
+      ),
+    );
+    var calls = 0;
+    await tester.pumpWidget(toolbar());
+    expect(tester.getSize(find.byType(StudyActionToolbar)), Size.zero);
+    expect(find.byType(IconButton), findsNothing);
+    expect(find.byType(PopupMenuButton<int>), findsNothing);
+
+    await tester.pumpWidget(toolbar(analyze: () => calls++));
+    expect(find.byIcon(Icons.biotech_outlined), findsOneWidget);
+    expect(find.byType(IconButton), findsOneWidget);
+    await tester.tap(find.byTooltip('Analyze position'));
+    expect(calls, 1);
+
+    await tester.pumpWidget(toolbar());
+    expect(find.byTooltip('Analyze position'), findsNothing);
+    expect(tester.getSize(find.byType(StudyActionToolbar)), Size.zero);
+  });
 
   testWidgets(
     'more menu exposes board size and assistance without shrinking targets',
@@ -124,11 +142,12 @@ void main() {
           ),
         ),
       );
-      await tester.drag(
-        find.byType(SingleChildScrollView),
-        const Offset(-180, 0),
+      expect(find.byType(SingleChildScrollView), findsNothing);
+      expect(
+        tester.getSize(find.byTooltip('More board actions')).width,
+        greaterThanOrEqualTo(48),
       );
-      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byTooltip('More board actions')).right, 240);
       await tester.tap(find.byTooltip('More board actions'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Expand board'));

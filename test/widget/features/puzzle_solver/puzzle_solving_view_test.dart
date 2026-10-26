@@ -399,19 +399,12 @@ void main() {
         'Previous block',
         'Switch to read mode',
         'Reset board',
-        'Analyze position',
         'Next block',
         'More board actions',
       ]) {
         expect(find.byTooltip(tooltip), findsOneWidget);
       }
-      final analyzeButton = tester.widget<IconButton>(
-        find.ancestor(
-          of: find.byTooltip('Analyze position'),
-          matching: find.byType(IconButton),
-        ),
-      );
-      expect(analyzeButton.onPressed, isNull);
+      expect(find.byTooltip('Analyze position'), findsNothing);
       expect(find.text('Hint'), findsNothing);
 
       await tester.tap(find.byTooltip('Previous block'));

@@ -10,9 +10,11 @@ import 'package:pgntrainingreader/data/database/app_database.dart';
 import 'package:pgntrainingreader/domain/chess_content/chess_content.dart';
 import 'package:pgntrainingreader/domain/chess_content/content_type.dart';
 import 'package:pgntrainingreader/domain/chess_content/move_node.dart';
+import 'package:pgntrainingreader/domain/training/puzzle_attempt.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/game_reader_page.dart';
 import 'package:pgntrainingreader/features/game_reader/presentation/reader_board.dart';
 import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_board.dart';
+import 'package:pgntrainingreader/features/puzzle_solver/presentation/puzzle_solving_view.dart';
 
 const _fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -76,6 +78,60 @@ Future<AppDatabase> _mount(
 }
 
 void main() {
+  testWidgets(
+    'staged solving remains paused while hidden until the app resumes',
+    (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      addTearDown(() {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      });
+      await db.customStatement(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?)',
+        ['library.read-puzzles.book', 'solve'],
+      );
+      final dependencies = AppDependencies(databaseFactory: () => db);
+      final practiceKey = GlobalKey<LibraryPuzzlePracticeState>();
+
+      Widget practice({required bool navigationEnabled}) => MaterialApp(
+        home: Scaffold(
+          body: LibraryPuzzlePractice(
+            key: practiceKey,
+            dependencies: dependencies,
+            blockId: 'staged-puzzle',
+            bookId: 'book',
+            puzzle: _puzzle(),
+            navigationEnabled: navigationEnabled,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(practice(navigationEnabled: false));
+      await tester.pumpAndSettle();
+      expect(find.byType(PuzzleSolvingView), findsOneWidget);
+      var controller = tester
+          .widget<PuzzleSolvingView>(find.byType(PuzzleSolvingView))
+          .controller;
+      expect(controller.state!.attemptStatus, PuzzleAttemptStatus.paused);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(practice(navigationEnabled: true));
+      await tester.pumpAndSettle();
+      controller = tester
+          .widget<PuzzleSolvingView>(find.byType(PuzzleSolvingView))
+          .controller;
+      expect(controller.state!.attemptStatus, PuzzleAttemptStatus.paused);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(controller.state!.attemptStatus, PuzzleAttemptStatus.active);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   for (final size in [
     const Size(360, 640),
     const Size(412, 915),

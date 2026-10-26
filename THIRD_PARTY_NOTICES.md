@@ -71,6 +71,7 @@ the review described in [distribution review](docs/distribution-license-review.m
 | `lints` | 6.1.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/lints.txt) |
 | `logging` | 1.3.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/logging.txt) |
 | `matcher` | 0.12.20 | BSD (see exact clauses) | [License](docs/third-party-licenses/matcher.txt) |
+| Material Symbols `swords` glyph | vendored path (Google LLC) | Apache-2.0 | [License](docs/third-party-licenses/material_symbols.txt) |
 | `material_color_utilities` | 0.13.0 | Apache-2.0 | [License](docs/third-party-licenses/material_color_utilities.txt) |
 | `meta` | 1.19.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/meta.txt) |
 | `mime` | 2.1.0 | BSD (see exact clauses) | [License](docs/third-party-licenses/mime.txt) |

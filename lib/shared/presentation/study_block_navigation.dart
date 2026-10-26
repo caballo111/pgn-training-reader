@@ -13,6 +13,7 @@ final class StudyPreviousBlockButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (onPressed == null) return const SizedBox.shrink();
     if (showLabel) {
       return TextButton.icon(
         onPressed: onPressed,
@@ -53,6 +54,7 @@ final class StudyNextBlockButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (onPressed == null) return const SizedBox.shrink();
     if (iconOnly) {
       return IconButton(
         tooltip: label,

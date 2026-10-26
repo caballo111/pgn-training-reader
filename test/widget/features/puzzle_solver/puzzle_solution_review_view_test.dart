@@ -53,10 +53,15 @@ final _terminalPuzzle = ChessContent(
 );
 
 void main() {
-  Future<void> selectMoreAction(WidgetTester tester, String label) async {
-    await tester.tap(find.byTooltip('More board actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label));
+  Future<void> selectBoardAction(WidgetTester tester, String label) async {
+    final inline = find.byTooltip(label);
+    if (inline.evaluate().isNotEmpty) {
+      await tester.tap(inline);
+    } else {
+      await tester.tap(find.byTooltip('More board actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+    }
     await tester.pumpAndSettle();
   }
 
@@ -529,7 +534,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await selectMoreAction(tester, 'Analyze position');
+      await selectBoardAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       expect(find.text('Exploring from starting position'), findsOneWidget);
       expect(repository.loadedOrigins.last.authoredMoves, isEmpty);
@@ -628,7 +633,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await selectMoreAction(tester, 'Analyze position');
+    await selectBoardAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     final workspace = tester.widget<ExplorationWorkspace>(
       find.byType(ExplorationWorkspace),

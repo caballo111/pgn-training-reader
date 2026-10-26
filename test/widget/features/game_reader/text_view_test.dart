@@ -50,10 +50,15 @@ void main() {
       )
       .first;
 
-  Future<void> selectMoreAction(WidgetTester tester, String label) async {
-    await tester.tap(find.byTooltip('More board actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label));
+  Future<void> selectBoardAction(WidgetTester tester, String label) async {
+    final inline = find.byTooltip(label);
+    if (inline.evaluate().isNotEmpty) {
+      await tester.tap(inline);
+    } else {
+      await tester.tap(find.byTooltip('More board actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+    }
     await tester.pumpAndSettle();
   }
 
@@ -181,7 +186,7 @@ void main() {
         .orientation
         .name;
     expect(orientation(), 'white');
-    await selectMoreAction(tester, 'Flip board');
+    await selectBoardAction(tester, 'Flip board');
     expect(orientation(), 'black');
 
     await tester.tap(find.byTooltip('Next move'));
@@ -265,7 +270,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('e4'));
       await tester.pumpAndSettle();
-      await selectMoreAction(tester, 'Flip board');
+      await selectBoardAction(tester, 'Flip board');
       await tester.drag(
         find.byKey(const ValueKey('reader-details')),
         const Offset(0, -120),
@@ -276,7 +281,7 @@ void main() {
           .position
           .pixels;
 
-      await selectMoreAction(tester, 'Analyze position');
+      await selectBoardAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       expect(find.byTooltip('Return to reading'), findsOneWidget);
       expect(repository.loadedOrigin?.scopeId, 'source-a-revision-7');
@@ -341,7 +346,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await selectMoreAction(tester, 'Analyze position');
+    await selectBoardAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(find.byType(ExplorationWorkspace), findsOneWidget);
     expect(repository.loadedOrigin?.identityKey, origin.identityKey);
@@ -376,7 +381,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await selectMoreAction(tester, 'Flip board');
+    await selectBoardAction(tester, 'Flip board');
     await tester.scrollUntilVisible(
       find.text('e4'),
       120,
@@ -388,7 +393,7 @@ void main() {
     final details = tester.state<ScrollableState>(readerDetailsScrollable());
     final tapScrollOffset = details.position.pixels;
     expect(tapScrollOffset, greaterThan(0));
-    await selectMoreAction(tester, 'Analyze position');
+    await selectBoardAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(find.text('Exploring from 1. e4'), findsOneWidget);
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
@@ -436,7 +441,7 @@ void main() {
 
     await tester.tap(find.text('e4'));
     await tester.pumpAndSettle();
-    await selectMoreAction(tester, 'Analyze position');
+    await selectBoardAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Book context at'));
     await tester.pumpAndSettle();

@@ -51,10 +51,15 @@ AuthoredLinePuzzleEvaluator _evaluator() {
 }
 
 void main() {
-  Future<void> selectMoreAction(WidgetTester tester, String label) async {
-    await tester.tap(find.byTooltip('More board actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label));
+  Future<void> selectBoardAction(WidgetTester tester, String label) async {
+    final inline = find.byTooltip(label);
+    if (inline.evaluate().isNotEmpty) {
+      await tester.tap(inline);
+    } else {
+      await tester.tap(find.byTooltip('More board actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+    }
     await tester.pumpAndSettle();
   }
 
@@ -82,13 +87,13 @@ void main() {
     );
     await tester.pumpWidget(app('revision-1'));
     await tester.pumpAndSettle();
-    await selectMoreAction(tester, 'Analyze position');
+    await selectBoardAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(key.currentState!.isExploring, isTrue);
     await tester.pumpWidget(app('revision-2'));
     await tester.pumpAndSettle();
     expect(key.currentState!.isExploring, isFalse);
-    await selectMoreAction(tester, 'Analyze position');
+    await selectBoardAction(tester, 'Analyze position');
     await tester.pumpAndSettle();
     expect(
       tester
@@ -155,7 +160,7 @@ void main() {
           .board
           .game
           .fen;
-      await selectMoreAction(tester, 'Analyze position');
+      await selectBoardAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       final workspace = tester.widget<ExplorationWorkspace>(
         find.byType(ExplorationWorkspace),

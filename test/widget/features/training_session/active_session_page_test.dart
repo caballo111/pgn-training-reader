@@ -31,10 +31,15 @@ final _startedAt = DateTime.utc(2026, 9, 28, 12);
 const _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 void main() {
-  Future<void> selectMoreAction(WidgetTester tester, String label) async {
-    await tester.tap(find.byTooltip('More board actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label));
+  Future<void> selectBoardAction(WidgetTester tester, String label) async {
+    final inline = find.byTooltip(label);
+    if (inline.evaluate().isNotEmpty) {
+      await tester.tap(inline);
+    } else {
+      await tester.tap(find.byTooltip('More board actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+    }
     await tester.pumpAndSettle();
   }
 
@@ -161,7 +166,7 @@ void main() {
         find.text('Exploration drafts will be temporary for this item.'),
         findsOneWidget,
       );
-      await selectMoreAction(tester, 'Analyze position');
+      await selectBoardAction(tester, 'Analyze position');
       expect(
         find.descendant(
           of: find.byType(ExplorationWorkspace),
@@ -262,7 +267,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await selectMoreAction(tester, 'Analyze position');
+      await selectBoardAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       await _playMoveOnBoard(tester, from: 'e2', to: 'e4');
       await tester.tap(find.text('Complete item and continue'));
@@ -440,7 +445,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Continue to review'), findsNothing);
-      await selectMoreAction(tester, 'Analyze position');
+      await selectBoardAction(tester, 'Analyze position');
       await tester.pumpAndSettle();
       expect(find.text('Exploring from 1. e4'), findsOneWidget);
       explorationRepository.failWrites = true;

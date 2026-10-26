@@ -55,12 +55,14 @@ void main() {
     expect(previousRect.width, greaterThanOrEqualTo(48));
     expect(nextRect.width, greaterThanOrEqualTo(48));
 
-    // The single contextual slot is reserved at the true center of the bar.
+    // The contextual cluster is centered as a whole and holds two actions.
     final toolbarRect = tester.getRect(find.byType(StudyActionToolbar));
-    expect(
-      tester.getRect(find.byTooltip('Switch to solve mode')).center.dx,
-      closeTo(toolbarRect.center.dx, 0.5),
-    );
+    final cluster = tester.getRect(find.byType(AnimatedSlide));
+    expect(cluster.center.dx, closeTo(toolbarRect.center.dx, 0.5));
+    expect(cluster.width, 96);
+    expect(find.byTooltip('Switch to solve mode'), findsOneWidget);
+    expect(find.byTooltip('Reset board'), findsOneWidget);
+    expect(find.byTooltip('Flip board'), findsNothing);
 
     // Crossfading the contextual action must not move either anchor.
     rebuild(() => solving = true);
@@ -71,6 +73,7 @@ void main() {
     expect(find.byType(StudySolveIcon), findsNothing);
     expect(tester.getRect(previous), previousRect);
     expect(tester.getRect(next), nextRect);
+    expect(tester.getRect(find.byType(AnimatedSlide)), cluster);
 
     // Secondary actions living in the overflow must not move them either.
     await tester.tap(find.byTooltip('Switch to read mode'));
@@ -121,67 +124,104 @@ void main() {
     expect(find.byType(StudySolveIcon), findsOneWidget);
   });
 
-  testWidgets('overflow holds every secondary action at a full target size', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 640);
+  testWidgets(
+    'center keeps at most two contextual actions and overflows the rest',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final actions = <String>[];
+      await tester.pumpWidget(
+        _host(
+          StudyActionToolbar(
+            compactBoard: true,
+            onPreviousBlock: () {},
+            onToggleMode: () => actions.add('toggle'),
+            onNextBlock: () {},
+            onReset: () => actions.add('reset'),
+            onAnalyze: () => actions.add('analyze'),
+            onFlip: () => actions.add('flip'),
+            onToggleBoardSize: () => actions.add('expand'),
+            extraMenuItems: [
+              StudyMenuAction('Hint', Icons.lightbulb_outline, () {
+                actions.add('hint');
+              }),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The first two contextual actions stay inline; every other action is in
+      // the overflow menu.
+      expect(find.byTooltip('Switch to solve mode'), findsOneWidget);
+      expect(find.byTooltip('Reset board'), findsOneWidget);
+      for (final label in [
+        'Analyze position',
+        'Flip board',
+        'Expand board',
+        'Hint',
+      ]) {
+        expect(find.byTooltip(label), findsNothing);
+        expect(find.text(label), findsNothing);
+      }
+      expect(tester.getSize(find.byTooltip('Reset board')).width, 48);
+      expect(tester.getSize(find.byTooltip('More board actions')).width, 48);
+
+      await tester.tap(find.byTooltip('More board actions'));
+      await tester.pumpAndSettle();
+      for (final label in [
+        'Analyze position',
+        'Flip board',
+        'Expand board',
+        'Hint',
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.text('Reset board'), findsNothing);
+
+      await tester.tap(find.text('Analyze position'));
+      await tester.pumpAndSettle();
+      expect(actions, ['analyze']);
+
+      await tester.tap(find.byTooltip('More board actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Hint'));
+      await tester.pumpAndSettle();
+      expect(actions, ['analyze', 'hint']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('narrow panes fall back to one center action', (tester) async {
+    tester.view.physicalSize = const Size(280, 640);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final actions = <String>[];
     await tester.pumpWidget(
       _host(
         StudyActionToolbar(
-          compactBoard: true,
-          onPreviousBlock: () {},
-          onNextBlock: () {},
-          onReset: () => actions.add('reset'),
-          onAnalyze: () => actions.add('analyze'),
-          onFlip: () => actions.add('flip'),
-          onToggleBoardSize: () => actions.add('expand'),
-          extraMenuItems: [
-            StudyMenuAction('Hint', Icons.lightbulb_outline, () {
-              actions.add('hint');
-            }),
-          ],
+          onToggleMode: () {},
+          onReset: () {},
+          onAnalyze: () {},
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    for (final label in [
-      'Reset board',
-      'Analyze position',
-      'Flip board',
-      'Expand board',
-      'Hint',
-    ]) {
-      expect(find.byTooltip(label), findsNothing);
-    }
-    expect(tester.getSize(find.byTooltip('More board actions')).width, 48);
+    expect(find.byTooltip('Switch to solve mode'), findsOneWidget);
+    expect(find.byTooltip('Reset board'), findsNothing);
+    expect(find.byTooltip('Analyze position'), findsNothing);
 
     await tester.tap(find.byTooltip('More board actions'));
     await tester.pumpAndSettle();
-    for (final label in [
-      'Reset board',
-      'Analyze position',
-      'Flip board',
-      'Expand board',
-      'Hint',
-    ]) {
-      expect(find.text(label), findsOneWidget);
-    }
-
-    await tester.tap(find.text('Reset board'));
+    expect(find.text('Reset board'), findsOneWidget);
+    expect(find.text('Analyze position'), findsOneWidget);
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(actions, ['reset']);
-
-    await tester.tap(find.byTooltip('More board actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Hint'));
-    await tester.pumpAndSettle();
-    expect(actions, ['reset', 'hint']);
     expect(tester.takeException(), isNull);
   });
 

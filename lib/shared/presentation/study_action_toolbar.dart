@@ -22,10 +22,9 @@ final class StudyBlockActions {
 /// Stable, accessible icon actions shared by reading and puzzle boards.
 ///
 /// Block navigation is permanently anchored: previous on the leading edge and
-/// next on the trailing edge. The center is a single reserved slot for the
-/// page's contextual action, so it can fade and crossfade in place without
-/// moving either navigation control. Every other secondary action lives in the
-/// overflow menu.
+/// next on the trailing edge. The center reserves up to two contextual actions,
+/// which fade and crossfade in place without moving either navigation control.
+/// Every other secondary action lives in the overflow menu.
 final class StudyActionToolbar extends StatelessWidget {
   const StudyActionToolbar({
     this.onPreviousBlock,
@@ -56,11 +55,34 @@ final class StudyActionToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final menuItems = <StudyMenuAction>[
+    final centerCandidates = <_CenterAction>[
+      if (onToggleMode != null)
+        _CenterAction(
+          label: solving ? 'Switch to read mode' : 'Switch to solve mode',
+          icon: solving
+              ? const Icon(Icons.menu_book_outlined)
+              : const StudySolveIcon(),
+          menuIcon: solving
+              ? Icons.menu_book_outlined
+              : Icons.extension_outlined,
+          onPressed: onToggleMode!,
+        ),
       if (onReset != null)
-        StudyMenuAction('Reset board', Icons.restart_alt, onReset!),
+        _CenterAction(
+          label: 'Reset board',
+          icon: const Icon(Icons.restart_alt),
+          menuIcon: Icons.restart_alt,
+          onPressed: onReset!,
+        ),
       if (onAnalyze != null)
-        StudyMenuAction('Analyze position', Icons.biotech_outlined, onAnalyze!),
+        _CenterAction(
+          label: 'Analyze position',
+          icon: const Icon(Icons.biotech_outlined),
+          menuIcon: Icons.biotech_outlined,
+          onPressed: onAnalyze!,
+        ),
+    ];
+    final secondary = <StudyMenuAction>[
       if (onFlip != null)
         StudyMenuAction(
           'Flip board',
@@ -75,60 +97,78 @@ final class StudyActionToolbar extends StatelessWidget {
         ),
       ...extraMenuItems,
     ];
-    final contextual = onToggleMode == null
-        ? null
-        : IconButton(
-            tooltip: solving ? 'Switch to read mode' : 'Switch to solve mode',
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-            onPressed: onToggleMode,
-            icon: solving
-                ? const Icon(Icons.menu_book_outlined)
-                : const StudySolveIcon(),
-          );
     if (onPreviousBlock == null &&
         onNextBlock == null &&
-        contextual == null &&
-        menuItems.isEmpty) {
+        centerCandidates.isEmpty &&
+        secondary.isEmpty) {
       return const SizedBox.shrink();
     }
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(16),
-      child: Stack(
-        children: [
-          Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final centerCount = _centerSlotsThatFit(
+            width: constraints.maxWidth,
+            candidates: centerCandidates.length,
+            secondaryCount: secondary.length,
+          );
+          final overflowItems = <StudyMenuAction>[
+            for (final action in centerCandidates.skip(centerCount))
+              StudyMenuAction(action.label, action.menuIcon, action.onPressed),
+            ...secondary,
+          ];
+          return Stack(
             children: [
-              _AnchoredButton(
-                tooltip: 'Previous block',
-                icon: Icons.skip_previous,
-                onPressed: onPreviousBlock,
+              Row(
+                children: [
+                  _AnchoredButton(
+                    tooltip: 'Previous block',
+                    icon: Icons.skip_previous,
+                    onPressed: onPreviousBlock,
+                  ),
+                  const Spacer(),
+                  _AnchoredButton(
+                    tooltip: nextLabel,
+                    icon: nextLabel == 'Back to book'
+                        ? Icons.library_books_outlined
+                        : Icons.skip_next,
+                    onPressed: onNextBlock,
+                  ),
+                ],
               ),
-              const Spacer(),
-              _AnchoredButton(
-                tooltip: nextLabel,
-                icon: nextLabel == 'Back to book'
-                    ? Icons.library_books_outlined
-                    : Icons.skip_next,
-                onPressed: onNextBlock,
+              Center(
+                child: _ContextualCluster(
+                  actions: centerCandidates.take(centerCount).toList(),
+                ),
               ),
+              if (overflowItems.isNotEmpty)
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  right: 48,
+                  child: Center(child: _OverflowMenu(items: overflowItems)),
+                ),
             ],
-          ),
-          Center(
-            child: _ContextualSlot(
-              actionKey: solving ? 'read-mode' : 'solve-mode',
-              action: contextual,
-            ),
-          ),
-          if (menuItems.isNotEmpty)
-            Positioned(
-              top: 0,
-              bottom: 0,
-              right: 48,
-              child: Center(child: _OverflowMenu(items: menuItems)),
-            ),
-        ],
+          );
+        },
       ),
     );
+  }
+
+  /// Keeps up to two actions in the centered cluster. On panes too narrow for
+  /// the cluster to clear the overflow and Next, the extra actions fall back to
+  /// the overflow menu instead of overlapping the anchors.
+  static int _centerSlotsThatFit({
+    required double width,
+    required int candidates,
+    required int secondaryCount,
+  }) {
+    for (var slots = candidates < 2 ? candidates : 2; slots >= 0; slots--) {
+      final overflow = candidates - slots + secondaryCount;
+      if (overflow == 0 || width >= 192 + 48.0 * slots) return slots;
+    }
+    return 0;
   }
 }
 
@@ -153,19 +193,35 @@ final class _AnchoredButton extends StatelessWidget {
   );
 }
 
-/// The single reserved center slot. It fades and rises into place when the
-/// surface appears, then crossfades whenever the page swaps its action.
-final class _ContextualSlot extends StatefulWidget {
-  const _ContextualSlot({required this.actionKey, required this.action});
+/// One candidate for the toolbar's centered contextual cluster.
+final class _CenterAction {
+  const _CenterAction({
+    required this.label,
+    required this.icon,
+    required this.menuIcon,
+    required this.onPressed,
+  });
 
-  final Object actionKey;
-  final Widget? action;
-
-  @override
-  State<_ContextualSlot> createState() => _ContextualSlotState();
+  final String label;
+  final Widget icon;
+  final IconData menuIcon;
+  final VoidCallback onPressed;
 }
 
-final class _ContextualSlotState extends State<_ContextualSlot> {
+/// The centered contextual cluster: up to two actions that fade and rise into
+/// place when the surface appears, then crossfade slot by slot whenever the
+/// page swaps an action. The cluster width follows the action count; the
+/// anchored navigation controls never move.
+final class _ContextualCluster extends StatefulWidget {
+  const _ContextualCluster({required this.actions});
+
+  final List<_CenterAction> actions;
+
+  @override
+  State<_ContextualCluster> createState() => _ContextualClusterState();
+}
+
+final class _ContextualClusterState extends State<_ContextualCluster> {
   static const _entrance = Duration(milliseconds: 220);
   static const _crossfade = Duration(milliseconds: 180);
 
@@ -191,19 +247,31 @@ final class _ContextualSlotState extends State<_ContextualSlot> {
         duration: entrance,
         curve: Curves.easeOut,
         opacity: _entered ? 1 : 0,
-        child: SizedBox.square(
-          dimension: 48,
-          child: AnimatedSwitcher(
-            duration: reduceMotion ? Duration.zero : _crossfade,
-            switchInCurve: Curves.easeOut,
-            switchOutCurve: Curves.easeIn,
-            child: widget.action == null
-                ? const SizedBox.shrink(key: ValueKey('no-contextual-action'))
-                : KeyedSubtree(
-                    key: ValueKey(widget.actionKey),
-                    child: widget.action!,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final action in widget.actions)
+              SizedBox.square(
+                dimension: 48,
+                child: AnimatedSwitcher(
+                  duration: reduceMotion ? Duration.zero : _crossfade,
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: KeyedSubtree(
+                    key: ValueKey(action.label),
+                    child: IconButton(
+                      tooltip: action.label,
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      onPressed: action.onPressed,
+                      icon: action.icon,
+                    ),
                   ),
-          ),
+                ),
+              ),
+          ],
         ),
       ),
     );

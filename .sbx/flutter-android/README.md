@@ -1,11 +1,14 @@
-# Flutter tools for the Codex sandbox
+# Flutter and Android tools for sbx
 
-This v3 mixin extends `docker/sbx-kit-codex:latest`. It preserves the published
-Codex workload's configuration and installs tools during sandbox creation.
+This is a **v3** kit (`schemaVersion: "3"`, `kind: mixin`). It is applied on top
+of a workload image such as `docker/sbx-kit-opencode:latest` or
+`docker/sbx-kit-codex:latest`, preserves that image's configuration, and installs
+tools during sandbox creation. Use `schemaVersion: "1"` / `sbxenv.yaml` only for
+the older Codex workflow.
 
 | Sandbox architecture | Installed tools | Workflow |
 | --- | --- | --- |
-| ARM64 (local Apple Silicon) | Flutter 3.47.5, web artifacts, JDK 21, Debian's native ADB | Run Flutter analysis and tests in the sandbox; run Android builds and `flutter run` on the Mac |
+| ARM64 (local Apple Silicon) | Flutter 3.47.5, host artifacts incl. `flutter_tester`, web artifacts, JDK 21, native arm64 ADB | Run Flutter analysis and tests in the sandbox; run Android builds and `flutter run` on the Mac |
 | x86-64 | Flutter 3.47.5, JDK 21, Android SDK 36, build tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1, ADB | Build Android apps in the sandbox |
 
 Google's Linux Android build tools require x86-64. ARM64 setup deliberately skips
@@ -22,9 +25,16 @@ run from the repository root:
 
 ```sh
 adb start-server
-sbx run docker/sbx-kit-codex:latest \
+sbx run docker/sbx-kit-opencode:latest \
   --name pgn-training-reader --kit ./.sbx/flutter-android \
   --cpus 4 --memory 6g
+```
+
+Use `docker/sbx-kit-codex:latest` instead when the sandbox runs Codex. Kits apply
+only at creation; for an existing sandbox run the idempotent script instead:
+
+```sh
+sbx exec pgn-training-reader bash .sbx/setup-flutter.sh
 ```
 
 Install hooks run during creation. Reattaching to an existing sandbox does not
@@ -39,9 +49,10 @@ After successful creation, reattach with:
 sbx run --name pgn-training-reader
 ```
 
-The root `sbxenv.yaml` uses the older built-in `codex` workflow and its separate
-Flutter script. It does not apply this v3 mixin; use the commands in this README.
-`latest` follows the publisher's updates for newly created sandboxes.
+The root `sbxenv.yaml` uses the older schema version 1 built-in workflow and its
+separate Flutter script. It does not apply this v3 mixin; use the commands in this
+README for v3 sandboxes. `latest` follows the publisher's updates for newly
+created sandboxes.
 
 ## Build requirements
 

@@ -28,14 +28,16 @@ Custom `X-` tags describe content/identity/filter metadata; see the tag referenc
 
 ## Development and documentation
 
+Use Flutter **3.47.5** / Dart **3.13.4** directly; FVM is optional:
+
 ```sh
-fvm install
-fvm flutter pub get
-fvm dart run build_runner build
-fvm flutter test --no-pub test
+flutter pub get
+dart run build_runner build
+flutter test --no-pub test
 ```
 
-`.fvmrc` pins Flutter 3.47.5 with Dart 3.13.4. Use the pinned formatter and
+`.fvmrc` records the pinned version for tools that read it. If you use FVM, add
+the `fvm` prefix to the commands above. Use the pinned formatter and
 `.editorconfig` conventions (UTF-8, LF, final newline, spaces).
 
 - [Setup, generation, validation and Android commands](specs/001-pgn-training-reader/quickstart.md)

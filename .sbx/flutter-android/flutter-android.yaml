@@ -1,6 +1,7 @@
 # syntax=docker/sandbox-kit:3
 # Run from the repository root with a NEW sandbox name:
-# sbx run docker/sbx-kit-codex:latest --name pgn-training-reader --kit ./.sbx/flutter-android
+# sbx run docker/sbx-kit-opencode:latest --name pgn-training-reader --kit ./.sbx/flutter-android
+# (or docker/sbx-kit-codex:latest for a Codex sandbox)
 # ARM64: Flutter, JDK and native ADB. x86-64: full Android SDK as well.
 # Installation happens once per sandbox and downloads several GB.
 # On x86-64, installation accepts Android SDK licenses; review them before use.
